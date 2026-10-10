@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Byte fixtures are compared byte for byte: no conversion
+tests/fixtures/*.md -text

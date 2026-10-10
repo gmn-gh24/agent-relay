@@ -1,0 +1,18 @@
+{
+  "comment": "Common American first names. In one room every name starts with a different letter. Names that read as verbs or ordinary words are in 'avoid' and are never handed out.",
+  "names": [
+    "Olivia", "Emma", "Jack", "Henry", "Sarah", "Liam", "Nora", "Daniel", "George", "Thomas",
+    "Rachel", "Benjamin", "Chloe", "Victor", "Megan", "Isaac", "Fiona", "Kevin", "Paul", "Wendy",
+    "Alice", "Zoe", "Andrew", "Bella", "Caleb", "Diana", "Ethan", "Frank", "Gloria", "Hannah",
+    "Irene", "Julia", "Karen", "Laura", "Michael", "Nathan", "Oscar", "Peter", "Ryan", "Sophie",
+    "Tina", "Vera", "Walter", "Zach", "Amy", "Brian", "Carol", "Dylan", "Emily", "Gary",
+    "James", "Kate", "Lucy", "Molly", "Noah", "Owen", "Ruth", "Sam", "Tyler"
+  ],
+  "avoid": [
+    "Mark", "Will", "Bill", "Rob", "Pat", "Sue", "Grant", "Chase", "Drew", "Hope", "Faith", "Skip", "Chuck",
+    "Nick", "Bob", "Don", "Dawn", "Josh", "Wade", "Pierce", "Rich", "Art", "Ray", "May", "June", "April",
+    "Angel", "Joy", "Rose", "Hunter", "Mason", "Carter", "Tanner", "Parker", "Reed", "Dean", "Lance", "Miles",
+    "Norm", "Earl", "Gene", "Guy", "Harry", "Jay", "Peg", "Penny", "Sandy", "Cliff", "Dale", "Glen", "Bud",
+    "Owner", "All"
+  ]
+}

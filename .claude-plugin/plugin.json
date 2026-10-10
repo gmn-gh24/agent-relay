@@ -1,0 +1,8 @@
+{
+  "name": "agent-relay",
+  "version": "0.1.0",
+  "description": "Coordinate any number of coding agents on this PC, on other machines over a shared folder, or over SSH, from one session: tasks, questions, approvals and a record of it all.",
+  "author": { "name": "gmn-gh24" },
+  "types": "./types/index.d.ts",
+  "repository": "https://github.com/gmn-gh24/agent-relay"
+}

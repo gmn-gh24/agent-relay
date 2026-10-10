@@ -1,0 +1,72 @@
+{
+  "claude-code": {
+    "label": "Claude Code, interactive session",
+    "wake": "background",
+    "wait_minutes": 0,
+    "park_after": 6,
+    "shell": { "windows": "powershell", "linux": "sh" },
+    "draft": "",
+    "prompt_extra": "When a NEXT line tells you to wait, start that command as a background command and end your turn: its exit is what wakes you. Do not run it in the foreground and do not poll its output.",
+    "status": "profile checked by the test suite; worked a live room on Windows as coordinator and as three remote agents (2026-10-10)"
+  },
+  "claude-code-headless": {
+    "label": "Claude Code, headless (claude -p)",
+    "wake": "loop",
+    "wait_minutes": 9,
+    "park_after": 3,
+    "shell": { "windows": "powershell", "linux": "sh" },
+    "draft": "",
+    "prompt_extra": "Run the wait command in the foreground with a command time limit of 10 minutes (timeout 600000). When it says nothing arrived, run it again.",
+    "status": "profile checked by the test suite; has not worked a room yet"
+  },
+  "codex": {
+    "label": "Codex CLI",
+    "wake": "loop",
+    "wait_minutes": 4,
+    "park_after": 4,
+    "shell": { "windows": "powershell", "linux": "sh" },
+    "draft": "relay-draft-{name}.md",
+    "prompt_extra": "The wait command runs for up to 4 minutes. Start it, then keep waiting on that same running command until it exits; do not start a second one. When it says nothing arrived, run it again.",
+    "status": "worked a live room on Windows as one remote agent (2026-10-10): needs full-access mode for a room on a share, reports exit code 1 for a wait that timed out, parks after four idle waits"
+  },
+  "gemini": {
+    "label": "Gemini CLI",
+    "wake": "loop",
+    "wait_minutes": 1,
+    "park_after": 10,
+    "shell": { "windows": "powershell", "linux": "sh" },
+    "draft": "",
+    "prompt_extra": "The wait command returns within one minute. When it says nothing arrived, run it again.",
+    "status": "untested: generic profile"
+  },
+  "cursor": {
+    "label": "Cursor agent",
+    "wake": "loop",
+    "wait_minutes": 1,
+    "park_after": 10,
+    "shell": { "windows": "powershell", "linux": "sh" },
+    "draft": "",
+    "prompt_extra": "The wait command returns within one minute. When it says nothing arrived, run it again.",
+    "status": "untested: generic profile"
+  },
+  "copilot": {
+    "label": "GitHub Copilot agent",
+    "wake": "loop",
+    "wait_minutes": 1,
+    "park_after": 10,
+    "shell": { "windows": "powershell", "linux": "sh" },
+    "draft": "",
+    "prompt_extra": "The wait command returns within one minute. When it says nothing arrived, run it again.",
+    "status": "untested: generic profile"
+  },
+  "generic": {
+    "label": "Any other coding agent",
+    "wake": "loop",
+    "wait_minutes": 1,
+    "park_after": 10,
+    "shell": { "windows": "powershell", "linux": "sh" },
+    "draft": "",
+    "prompt_extra": "The wait command returns within one minute. When it says nothing arrived, run it again.",
+    "status": "generic profile"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "note": "How strong a model is, read off the name an agent gives in its introduction. It is a guide for handing out work, not a ranking of vendors: the first list that holds a word of the name decides. A word matches where it starts a part of the name, so mini matches gpt-6-mini and not gemini. Put a new model family where it belongs.",
+  "tiers": [
+    { "tier": "light", "words": [ "haiku", "mini", "nano", "flash", "lite", "small", "instant" ] },
+    { "tier": "strong", "words": [ "opus", "fable", "pro", "ultra", "gpt-5", "gpt-6", "o3", "o4" ] },
+    { "tier": "standard", "words": [ "sonnet", "gpt-4", "gemini", "codex", "medium" ] }
+  ]
+}

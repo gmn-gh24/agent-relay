@@ -1,0 +1,13 @@
+@echo off
+rem agent-relay: join room {{ROOM_ID}}. Gives the session that runs it a free seat and a name, then introduces it.
+rem Written on the coordinator's PC. Do not edit it.
+setlocal
+set "RELAY_NAME="
+set "RELAY_GEN="
+set "RELAY_WRAPPER="
+set "RELAY_ROOM_ID={{ROOM_ID}}"
+rem Called from PowerShell 7, the module path it hands down breaks the built-in cmdlets of Windows PowerShell:
+rem without the variable, Windows PowerShell builds its own.
+set "PSModulePath="
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\relay.ps1" join %*
+exit /b %ERRORLEVEL%

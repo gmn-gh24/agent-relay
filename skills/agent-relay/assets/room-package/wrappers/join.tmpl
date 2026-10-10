@@ -1,0 +1,10 @@
+#!/bin/sh
+# agent-relay: join room {{ROOM_ID}}. Gives the session that runs it a free seat and a name, then introduces it.
+# Written on the coordinator's PC. Do not edit it.
+RELAY_NAME=''
+RELAY_GEN=''
+RELAY_WRAPPER=''
+RELAY_ROOM_ID='{{ROOM_ID}}'
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+export RELAY_NAME RELAY_GEN RELAY_WRAPPER RELAY_ROOM_ID
+exec sh "$here/tools/relay.sh" join "$@"
