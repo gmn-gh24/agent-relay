@@ -477,6 +477,9 @@ function Test-RelayTamper {
             if (-not $path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
             $relative = ($path.Substring($prefix.Length) -replace '\\', '/')
             if ($known.ContainsKey($relative.ToLowerInvariant())) { continue }
+            # The list is as old as this check: a file this PC has written since (the canonical copy first, as
+            # always) belongs here, and is compared with its copy in the next round
+            if (Test-Path -LiteralPath (Join-Path $Room.Canon $relative) -PathType Leaf) { continue }
             try {
                 if ($Repair) {
                     $keep = Join-Path $quarantine ('{0}-{1}' -f [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ'), ($relative -replace '[\\/]', '_'))
@@ -864,12 +867,16 @@ function Read-RelayPlan {
 
 function Get-RelayAgentState {
     # One row per agent: who it is, where it runs, what it is doing and whether somebody must look at it
-    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][DateTime]$Now, [AllowEmptyCollection()][object[]]$Open = @(), $Plan = $null)
+    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][DateTime]$Now, [AllowEmptyCollection()][object[]]$Open = @(), $Plan = $null, [AllowEmptyCollection()][object[]]$Messages = @())
     $now = $Now
     $open = @($Open)
     $staleMinutes = 5
     $parsed = 0
     if ([int]::TryParse((Get-RelayValue $Room.Info 'stale_minutes' '5'), [ref]$parsed)) { $staleMinutes = $parsed }
+    # How long a message may lie in an inbox before somebody must look at that agent: a session that ended while
+    # it worked says nothing, and its state stays "working" for ever
+    $pickupMinutes = 30
+    if ([int]::TryParse((Get-RelayValue $Room.Info 'pickup_minutes' '30'), [ref]$parsed) -and $parsed -gt 0) { $pickupMinutes = $parsed }
 
     $agents = New-Object System.Collections.Generic.List[object]
     foreach ($name in @(Get-RelayRoster $Room -IncludeRetired)) {
@@ -883,7 +890,7 @@ function Get-RelayAgentState {
         $alive = Get-RelayFileTimeUtc (Join-Path $dir 'alive')
         $silent = -1
         if ($alive -ne [DateTime]::MinValue) { $silent = [int][Math]::Max(0, ($now - $alive).TotalMinutes) }
-        $isRetired = Test-Path -LiteralPath (Join-Path $dir 'retired')
+        $isRetired = Test-Path -LiteralPath (Join-Path $canonDir 'retired') -PathType Leaf
         $isStale = ($state -eq 'listening' -and $silent -ge $staleMinutes)
         # A seat nobody is named for: free until an agent given the join prompt takes it
         $isOpen = ((Get-RelayValue $seat 'open' '') -eq 'yes')
@@ -899,6 +906,16 @@ function Get-RelayAgentState {
         elseif ($state -eq 'not started' -and $isOpen) { $attention = 'took a seat but has not introduced itself: owner must look at that session' }
         elseif ($state -eq 'not started') { $attention = 'not started: owner must paste the start prompt' }
         elseif ($control -ne 'run') { $attention = "control: $control" }
+        elseif ($name -ne $Room.Coordinator) {
+            # What was sent to it and its own tool has not shown it yet
+            $shown = @{}
+            foreach ($line in ((Read-RelayText (Join-Path $dir 'delivered')) -split "`n")) { $word = ($line -split ' ')[0]; if ($word) { $shown[$word] = $true } }
+            $lying = @($Messages | Where-Object { $_.To -eq $name -and -not $shown.ContainsKey([string]$_.Id) })
+            if ($lying.Count -gt 0) {
+                $oldest = [int][Math]::Max(0, ($now - @($lying | Sort-Object Time)[0].Time).TotalMinutes)
+                if ($oldest -ge $pickupMinutes) { $attention = "has not picked up $($lying.Count) message(s) for $oldest min: its session may have ended, owner must look at it" }
+            }
+        }
         $owes = @($open | Where-Object { $_.To -eq $name })
         # Where it says it stands (the verb progress): the last record, cut at the first separator
         $progress = ''
@@ -1016,7 +1033,8 @@ function Get-RelayBoard {
     param([Parameter(Mandatory)]$Room)
     $now = Get-RelayRoomNow $Room
     $messages = @(Get-RelayMessage $Room)
-    $open = @(Get-RelayOpenRequest $messages)
+    # Nothing is open with a retired agent: it owes nothing
+    $open = @(Get-RelayOpenRequest $messages | Where-Object { -not (Test-Path -LiteralPath (Join-Path (Join-Path (Join-Path $Room.Canon 'agents') ([string]$_.To)) 'retired') -PathType Leaf) })
     $plan = Read-RelayPlan $Room
     if ($null -ne $plan) {
         # The room's PLAN against this PC's copy, byte for byte: no copy, or another one, is a difference
@@ -1024,7 +1042,7 @@ function Get-RelayBoard {
         $differs = (-not $copy) -or ($copy -ne (Get-RelayFileHash (Join-Path $Room.Path 'PLAN')))
         $plan | Add-Member -NotePropertyName differs -NotePropertyValue ([bool]$differs)
     }
-    $agents = @(Get-RelayAgentState -Room $Room -Now $now -Open $open -Plan $plan)
+    $agents = @(Get-RelayAgentState -Room $Room -Now $now -Open $open -Plan $plan -Messages $messages)
 
     $openRows = New-Object System.Collections.Generic.List[object]
     foreach ($message in $open) {
@@ -1598,8 +1616,14 @@ function Add-RelayAgentSeat {
         NEVER               = (ConvertTo-RelayBulletList $Spec['never'] '- Push, publish, deploy or send anything outside this room.
 - Read, print or pass on a password, key, token or code.
 - Change another agent''s files, or anything in the room folder except your draft and attach folder.')
+        FILE_NOTE           = ''
     }
-    if ($isOpen) { foreach ($key in 'CALL', 'DRAFT', 'ATTACH', 'WAIT_LINE', 'ROOM_PATH') { $values[$key] = '{{' + $key + '}}' } }
+    # A seat nobody is named for: how its agent calls the tool is known only when it does, so the tool fills these
+    # in when it prints the text. An agent that opens the file itself is told so.
+    if ($isOpen) {
+        foreach ($key in 'CALL', 'DRAFT', 'ATTACH', 'WAIT_LINE', 'ROOM_PATH') { $values[$key] = '{{' + $key + '}}' }
+        $values['FILE_NOTE'] = ' (In the file itself some commands and paths stand in double braces: your command fills them in when it prints this text, so read it with `start`.)'
+    }
     $startTemplate = 'START-HERE.md.tmpl'
     $assignmentTemplate = 'ASSIGNMENT.md.tmpl'
     if ($IsCoordinator) { $startTemplate = 'COORDINATOR.md.tmpl'; $assignmentTemplate = '' }

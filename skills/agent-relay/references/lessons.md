@@ -279,3 +279,81 @@ to the last part: about forty minutes.
 - **A dead feed must be loud.** The pane kept showing the room after its feed had ended, and with the feed
   the tamper check and the coordinator's heartbeat had stopped. Whatever also carries a safety job restarts
   itself and tells the owner when it cannot.
+
+## 2026-10-10: a rehearsal with stand-in agents (three headless sessions, two products, only the start prompt)
+
+A room on the coordinator's PC, a toy script in three copies, one task each: two failing checks in the
+assigned folder, a third failing check with a one-letter fix in a folder that was not theirs, and a setting
+the task could not be finished without, in a file the assignment listed under "ask first". The agents had
+no plugin, no instructions of the owner and nothing but the prompt: Claude Code headless on a light and on a
+standard model at low effort, and Codex CLI. 21 messages in under seven minutes.
+
+- **The prompt and the tool's NEXT lines are enough.** All three introduced themselves with the right facts,
+  waited, took the task, asked before touching the setting (two with `ask`, one in its report), left the
+  one-letter fix alone and reported it under findings, sent the output of the check as evidence, and said
+  bye when told. Nobody was asked twice, nothing was delivered twice, no tamper alarm.
+- **Codex CLI must be started with full access.** In its workspace-write sandbox on Windows it could not
+  start one command, for a room on the same disk too (`helper_unknown_error: setup refresh had errors`). It
+  did the right thing: reported the refusal and changed nothing. Started with full access it worked the room
+  like the others. The owner decides that for the machine; the skill says it when a prompt is handed over,
+  and the start prompt of a Codex seat says what the agent is to do when its commands are refused.
+- **A seat can change its product.** The Codex seat that could not start was given a new generation as a
+  headless Claude Code seat (`Add-RelayAgent.ps1 -Replace <name> -Kind ...`) and a third seat was added for
+  Codex with full access: both without touching the others.
+- **What three agents ask for, a rule answers once.** The same approval was given three times before it was
+  recorded as a standing rule; the third agent was shown the rule with its answer. Better: a task whose
+  "done when" needs an ask-first change carries the approval, or the rule is recorded before the tasks go
+  out. It is in the coordinating reference now.
+- **The self-audit reads harsher than it is.** "1 OUTSIDE the assigned paths" was the approved change in all
+  three reports, and one agent said it reads like a violation. The audit cannot know what was approved: the
+  coordinator reads it against its own approvals.
+- **Sending uses the draft up.** One agent looked for its draft after `ask` to write its report into it and
+  found it gone. The instructions said where the draft is, not that each message needs a new one.
+- **A headless session does not know what it is called.** Asked for its product "as exactly as you know it",
+  one wrote the SDK it is built on, the other the CLI; neither knew its effort setting and both wrote
+  `unknown`, as the prompt allows. For a named seat the kind comes from the answers, so nothing depends on it.
+
+## 2026-10-10: the close of the first team room (three byes, and what the close itself showed)
+
+The owner ended the work with one line typed into the chat window. The three agents that were still there
+said bye within a minute; the room closed with 404 messages. What they said slowed them down, and what the
+last hour showed:
+
+- **A session that ends while it works says nothing.** One agent's session had ended an hour and a half
+  before anybody knew: its state stayed `working`, four messages lay in its inbox, and its part was waited for. The
+  owner saw it first, on the machine. The board now marks an agent that has not picked up a message for 30
+  minutes (`pickup_minutes`), and the coordinating reference says what to do then.
+- **An agent passed on the owner's word.** "The owner says: retire the others" came from an agent, in a note.
+  It was true, and it was still only what an agent said: the coordinator asked the owner in its own session
+  before it retired anybody. The agent had done the right thing by not acting itself. Both are in the
+  coordinating reference now.
+- **Two of three agents lost a session and did not know what to do next.** `start` prints everything again,
+  and the instructions said so in a table row nobody read. They have a paragraph of their own now: after a
+  restart, `start`, then one `wait`; a wait that is refused as the second one is the old session's.
+- **Pester does not run from a network folder.** Two agents found it out by themselves, each at the cost of a
+  round. The instructions now tell every agent to work on its own disk, and the tasks say where to copy from.
+- **An agent that cannot run an engine cannot check its work on it.** Tests written for three engines went to
+  an agent whose machine had two. Every result for the third came from the coordinator, one round trip each.
+  Hand out the checks with the work, or say in the task who runs them.
+- **A long run is lost with the session.** The analyzer and four suites on two editions in one command: the
+  session ended, and nobody knew how it had come out. Ask for runs in pieces, each with its output in a file.
+  `tests/Invoke-AllTests.ps1` says in its help how to run one file on one engine.
+- **A part the owner had not asked for by name cost three rounds.** It was in the plan from the first day,
+  was built by two agents and read four times, and was stopped by the owner when it was to be tried. Ask
+  before a team starts a large part whether it is wanted now.
+- **The file of a seat is not what its agent is shown.** An agent opened `START-HERE.md` in its folder and
+  found `{{DRAFT}}` where a path should be: for a seat taken with the join prompt the tool fills these in
+  when it prints the text. The file of such a seat now says so.
+- **The close raced with the room's own writers.** The zip of the room failed because a wait removed its
+  lease while the zip was made, and a feed moved the transcript out as a stranger because its list of this
+  PC's files was a moment older than the transcript. The archive is now made beside its place, tried three
+  times and moved there whole; an empty or cut file at its name is no archive (the folder of a room is
+  removed on that word); and the tamper check asks this PC's copy again before it calls a file a stranger.
+- **A test found a fault its author had just made.** Handing the feed's list of messages on as `@($list)`
+  ended the feed with "Argument types do not match", in a test that had been written for something else:
+  the pane would have shown a dead feed. Run the suite that covers a script after every change to it, also
+  a change of one line.
+- **A note to all also lies in every free seat's inbox.** Whoever takes that seat later is shown notes from
+  before its time. Not changed yet: it may be what a late joiner needs, or it may confuse it.
+- **Names in tests.** Pester expands `<name>` in the title of a test, and two agents whose names begin with
+  the same letter are easy to take for each other in a test's output: both cost one agent reruns.

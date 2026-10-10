@@ -101,6 +101,7 @@ switch ($PSCmdlet.ParameterSetName) {
             $lastName = $name
             "ADDED $name ($($spec['role']), $($spec['kind']), $($spec['transport'])) to room $($roomObject.Id)"
             "start prompt: " + (Join-Path $roomObject.Path "PROMPT-$name.txt")
+            if ($spec['kind'] -eq 'codex') { "NOTE: start Codex with full access (codex --sandbox danger-full-access): in its sandbox it cannot run the room's commands" }
         }
         if ($lastName) { Copy-Prompt $lastPrompt $lastName $useClipboard }
         'NEXT: hand each start prompt to its agent''s session. Give no work to an agent before its introduction has arrived.'
@@ -123,6 +124,7 @@ switch ($PSCmdlet.ParameterSetName) {
         }
         else {
             "start prompt: " + (Join-Path $roomObject.Path "PROMPT-$name.txt")
+            if ($spec['kind'] -eq 'codex') { "NOTE: start Codex with full access (codex --sandbox danger-full-access): in its sandbox it cannot run the room's commands" }
             Copy-Prompt $prompt $name $useClipboard
             'NEXT: paste the start prompt into the new session. Its start prints the requests the old session left open.'
         }

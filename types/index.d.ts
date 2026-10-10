@@ -66,6 +66,7 @@ export type RelayView = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'agent-relay': { room: string | null; view: RelayView | null }
+    // scroll: the first row the pane's window shows; null while it follows the end
+    'agent-relay': { room: string | null; view: RelayView | null; scroll: number | null }
   }
 }

@@ -92,8 +92,10 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
         if ($board.plan.differs) { $planMark += '   [DIFFERS FROM THE COPY ON THIS PC: the feed puts it back]' }
         "PLAN $($board.plan.revision), $($board.plan.updatedUtc): $($board.plan.goal)$planMark"
         $done = @($board.plan.parts | Where-Object { $_.status -ceq 'done' } | ForEach-Object { $_.id })
+        $idWidth = 12
+        foreach ($part in @($board.plan.parts)) { $idWidth = [Math]::Max($idWidth, ([string]$part.id).Length) }
         foreach ($part in @($board.plan.parts)) {
-            '  {0,-12}  {1,-8}  {2,-9}  {3}' -f $part.id, $part.status, $part.owner, $part.title
+            "  {0,-$idWidth}  {1,-8}  {2,-9}  {3}" -f $part.id, $part.status, $part.owner, $part.title
             $waits = @($part.depends | Where-Object { $done -cnotcontains $_ })
             if ($part.status -cne 'done' -and $waits.Count -gt 0) { "      waits for: $($waits -join ', ')" }
             if ($part.reviewer -cne '-') { "      reviewer: $($part.reviewer)" }

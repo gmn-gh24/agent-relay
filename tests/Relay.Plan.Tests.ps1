@@ -176,6 +176,18 @@ Describe 'Set-RelayPlan: the whole plan' -Tag 'Plan' {
         $output.Count | Should -Be 7
     }
 
+    It 'makes the id column as wide as the longest id of the plan, and keeps 12 for a short one' {
+        $plan = [ordered]@{ goal = 'Long ids'; parts = @(
+                [ordered]@{ id = 'short'; owner = 'emma'; status = 'doing'; title = 'Short' },
+                [ordered]@{ id = 'tool-verbs-of-the-ps1'; owner = 'jack'; status = 'todo'; title = 'Long' }) }
+        $output = @(& $setPlan -Room $id -PlanFile (Save-TestPlan $root $plan 'wide.json'))
+        $output[1] | Should -Be ('  ' + 'short'.PadRight(21) + '  ' + 'doing'.PadRight(8) + '  ' + 'emma'.PadRight(9) + '  ' + 'Short')
+        $output[2] | Should -Be ('  ' + 'tool-verbs-of-the-ps1' + '  ' + 'todo'.PadRight(8) + '  ' + 'jack'.PadRight(9) + '  ' + 'Long')
+        $null = Remove-Item -LiteralPath (Join-Path $room 'PLAN') -Force
+        $small = @(& $setPlan -Room $id -PlanFile (Save-TestPlan $root (Get-TestPlan) 'small.json'))
+        $small[1] | Should -Be ('  ' + 'tool-ps'.PadRight(12) + '  ' + 'doing'.PadRight(8) + '  ' + 'emma'.PadRight(9) + '  ' + 'The verbs in relay.ps1')
+    }
+
     It 'does not cut a value that is longer than its column and prints a nobody owner as it is written' {
         $plan = Get-TestPlan
         $plan.parts = @([ordered]@{ id = 'a-very-long-part-id-24'; status = 'blocked'; title = 'Long' })
@@ -1077,6 +1089,26 @@ Describe 'Set-RelayPlan: what the board, the feed and the tamper check make of t
         @($feedLines | Where-Object { $_ -match '^  PLAN 3' }).Count | Should -Be 1
         @($feedLines | Where-Object { $_ -match '[ \t]$' }).Count | Should -Be 0
         $feedLines | Should -Contain '    a             todo      emma'
+    }
+
+    It 'keeps the status of every row in one column on the board and in the feed when an id is longer than 12, and keeps 12 for short ids' {
+        $feedArguments = @('-Room', $id, '-Follow', '-Once', '-NoHeartbeat', '-NoTamperCheck')
+        Write-RelayGuardedText $object 'PLAN' ($header + "part: a | emma | todo | - | - | Short`npart: a-rather-long-id | jack | doing | - | - | Long`nend: 3`n")
+        $text = @(& $boardScript -Room $id)
+        $text | Should -Contain ('  ' + 'a'.PadRight(16) + '  todo      emma       Short')
+        $text | Should -Contain ('  ' + 'a-rather-long-id'.PadRight(16) + '  doing     jack       Long')
+        $feed = Invoke-RelayTestScript -Script 'Watch-RelayFeed.ps1' -Arguments $feedArguments
+        $feed.ExitCode | Should -Be 0 -Because $feed.Error
+        $feedLines = @($feed.Output -split "`n")
+        $feedLines | Should -Contain ('    ' + 'a'.PadRight(16) + '  todo      emma       Short')
+        $feedLines | Should -Contain ('    ' + 'a-rather-long-id'.PadRight(16) + '  doing     jack       Long')
+        # Short ids only: as before, 12 columns
+        Write-RelayGuardedText $object 'PLAN' ($header + "part: a | emma | todo | - | - | Short`npart: twelve-chars | jack | doing | - | - | Twelve`nend: 3`n")
+        $text = @(& $boardScript -Room $id)
+        $text | Should -Contain '  a             todo      emma       Short'
+        $text | Should -Contain '  twelve-chars  doing     jack       Twelve'
+        $feed = Invoke-RelayTestScript -Script 'Watch-RelayFeed.ps1' -Arguments $feedArguments
+        @($feed.Output -split "`n") | Should -Contain '    a             todo      emma       Short'
     }
 
     It 'marks a plan caught half written on the board with the new text' {

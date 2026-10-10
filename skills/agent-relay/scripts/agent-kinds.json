@@ -17,7 +17,7 @@
     "shell": { "windows": "powershell", "linux": "sh" },
     "draft": "",
     "prompt_extra": "Run the wait command in the foreground with a command time limit of 10 minutes (timeout 600000). When it says nothing arrived, run it again.",
-    "status": "profile checked by the test suite; has not worked a room yet"
+    "status": "worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10)"
   },
   "codex": {
     "label": "Codex CLI",
@@ -26,8 +26,8 @@
     "park_after": 4,
     "shell": { "windows": "powershell", "linux": "sh" },
     "draft": "relay-draft-{name}.md",
-    "prompt_extra": "The wait command runs for up to 4 minutes. Start it, then keep waiting on that same running command until it exits; do not start a second one. When it says nothing arrived, run it again.",
-    "status": "worked a live room on Windows as one remote agent (2026-10-10): needs full-access mode for a room on a share, reports exit code 1 for a wait that timed out, parks after four idle waits"
+    "prompt_extra": "The wait command runs for up to 4 minutes. Start it, then keep waiting on that same running command until it exits; do not start a second one. When it says nothing arrived, run it again. You need full access for this job: if the command above is refused or cannot start, change nothing, stop, and tell your user to start you again with full access.",
+    "status": "worked a live room on Windows as one remote agent (2026-10-10): must be started with full access, reports exit code 1 for a wait that timed out, parks after four idle waits"
   },
   "gemini": {
     "label": "Gemini CLI",

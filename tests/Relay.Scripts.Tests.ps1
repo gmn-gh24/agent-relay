@@ -173,6 +173,8 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         (Read-RelayKeyValue (Join-Path $created.Path 'agents\emma\seat'))['wake'] | Should -Be 'background'
         $codex = [string]$created.Prompts['jack']
         $codex | Should -Match 'keep waiting on that same running command'
+        # In its sandbox Codex CLI cannot run the room's commands: its prompt says what to do when they are refused
+        $codex | Should -Match 'tell your user to start you again with full access'
         $seat = Read-RelayKeyValue (Join-Path $created.Path 'agents\jack\seat')
         $seat['wake'] | Should -Be 'loop'
         $seat['wait_minutes'] | Should -Be '4'
@@ -621,6 +623,34 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         @($board.agents | Where-Object { $_.name -eq 'emma' })[0].attention | Should -Be 'parked: owner must nudge'
     }
 
+    It 'marks an agent that has not picked up a message for a long time: its session may have ended' {
+        # Jack was given a task and has not been shown it. A moment ago: nothing to say
+        @(Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' } | ForEach-Object { $_.attention | Should -Be '' }
+        # 45 minutes ago, and its state still says that it works
+        $task = @(Get-ChildItem -LiteralPath (Join-Path $room 'agents\jack\inbox') -Filter 'olivia-*.md')[0]
+        $task.LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-45)
+        $board = Get-RelayBoard $object
+        $jack = @($board.agents | Where-Object { $_.name -eq 'jack' })[0]
+        $jack.attention | Should -Match '^has not picked up 1 message\(s\) for 4[45] min: its session may have ended, owner must look at it$'
+        ((& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow') -join "`n") | Should -Match 'ATTENTION: has not picked up 1 message'
+        # The feed says the same of it
+        $feed = Invoke-RelayTestScript -Script 'Watch-RelayFeed.ps1' -Arguments @('-Room', 'flow', '-Json', '-Once', '-NoHeartbeat', '-NoTamperCheck') -Environment $local
+        $feed.ExitCode | Should -Be 0 -Because $feed.Error
+        $snapshot = ConvertFrom-Json -InputObject (@($feed.Output -split "`n" | Where-Object { $_.Trim() })[0])
+        @($snapshot.agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Match 'has not picked up 1 message'        # A room can set its own limit
+        (Read-RelayKeyValue (Join-Path $object.Canon 'ROOM'))['pickup_minutes'] | Should -Be '30'
+        $roomFile = [System.IO.File]::ReadAllText((Join-Path $object.Canon 'ROOM'))
+        Write-RelayGuardedText $object 'ROOM' ($roomFile -replace '(?m)^pickup_minutes: .*$', 'pickup_minutes: 60')
+        @((Get-RelayBoard (Resolve-RelayRoom 'flow')).agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Be ''
+        Write-RelayGuardedText $object 'ROOM' $roomFile
+        @((Get-RelayBoard (Resolve-RelayRoom 'flow')).agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Match 'has not picked up 1 message'
+        # Once its tool has shown it the message, nothing is said
+        $null = Invoke-RelayTool -Room $room -Agent 'jack' -Engine $engine -Words @('check')
+        @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Be ''
+        # The coordinator's own inbox is the coordinator's business
+        @($board.agents | Where-Object { $_.name -eq 'olivia' })[0].attention | Should -Be ''
+    }
+
     It 'shows the team plan, who owns which part, what a part waits for and where each agent says it stands' {
         $plan = @(
             'plan: 4', 'updated_utc: 2026-10-10T08:15:00Z', 'goal: A team view for every agent',
@@ -790,6 +820,36 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         { & (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -Confirm:$false } | Should -Throw '*no archive*'
         Test-Path -LiteralPath $room | Should -BeTrue
     }
+
+    It 'leaves no half-made archive behind, takes an empty file for no archive, and makes the archive when asked again' {
+        $archive = Join-Path $root 'local\archive\flow.zip'
+        # A file of the room that cannot be read fails the zip: the room is closed, and nothing stands at the archive's name
+        $work = Join-Path $room 'work'
+        if (-not (Test-Path -LiteralPath $work)) { $null = New-Item -ItemType Directory -Path $work -Force }
+        [System.IO.File]::WriteAllText((Join-Path $work 'held.txt'), 'x')
+        $held = [System.IO.File]::Open((Join-Path $work 'held.txt'), [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+        try { $closed = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force) -join "`n" }
+        finally { $held.Dispose() }
+        $closed | Should -Match 'CLOSED room flow'
+        $closed | Should -Match 'ARCHIVE FAILED'
+        @(Get-ChildItem -LiteralPath (Join-Path $root 'local\archive') -File -ErrorAction SilentlyContinue).Count | Should -Be 0
+        ((Get-Content -LiteralPath (Join-Path $object.Local 'alarms.log')) -join "`n") | Should -Match 'ARCHIVE failed: '
+        ((& (Join-Path $scripts 'Close-RelayRoom.ps1') -ListClosed) -join "`n") | Should -Match 'flow  closed \S+  archive: NO'
+
+        # An empty file at the archive's name is no archive: the folder is not removed on its word
+        [System.IO.File]::WriteAllBytes($archive, (New-Object byte[] 0))
+        ((& (Join-Path $scripts 'Close-RelayRoom.ps1') -ListClosed) -join "`n") | Should -Match 'flow  closed \S+  archive: NO'
+        { & (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -Confirm:$false } | Should -Throw '*no archive*'
+        Test-Path -LiteralPath $room | Should -BeTrue
+
+        # Asked again, the closed room gets its archive
+        $again = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow') -join "`n"
+        $again | Should -Match 'its archive was missing and is made now'
+        (Get-Item -LiteralPath $archive).Length | Should -BeGreaterThan 0
+        @(Get-ChildItem -LiteralPath (Join-Path $root 'local\archive') -File).Count | Should -Be 1
+        ((& (Join-Path $scripts 'Close-RelayRoom.ps1') -ListClosed) -join "`n") | Should -Match 'flow  closed \S+  archive: yes'
+        ((& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow') -join "`n") | Should -Match 'already closed'
+    }
 }
 
 Describe 'Open seats' -Tag 'Scripts' {
@@ -813,6 +873,18 @@ Describe 'Open seats' -Tag 'Scripts' {
         $seat['order'] | Should -Be '1'
         $seat['wake'] | Should -Be 'auto'
         (Read-RelayKeyValue (Join-Path $room "agents\$($open[1])\seat"))['order'] | Should -Be '2'
+        # The file of a seat nobody is named for keeps what only its agent's call can fill in, and says so; the
+        # file of a named seat has nothing left to fill in and says nothing of it
+        $openStart = [System.IO.File]::ReadAllText((Join-Path $room "agents\$($open[0])\START-HERE.md"))
+        @([regex]::Matches($openStart, '\{\{[A-Z_]+\}\}') | ForEach-Object { $_.Value } | Sort-Object -Unique) | Should -Be @('{{ATTACH}}', '{{CALL}}', '{{DRAFT}}', '{{ROOM_PATH}}', '{{WAIT_LINE}}')
+        $openStart | Should -Match 'your command fills them in when it prints this text, so read it with `start`'
+        $namedStart = [System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\START-HERE.md'))
+        $namedStart | Should -Not -Match '\{\{'
+        $namedStart | Should -Not -Match 'double braces'
+        foreach ($text in $openStart, $namedStart) {
+            $text | Should -Match '\*\*After a restart\.\*\* When your session was started again, or you have lost your context: run `start`\.'
+            $text | Should -Match '\*\*Work on your own disk\.\*\* Unless your assignment names another place'
+        }
 
         $cmd = [System.IO.File]::ReadAllText((Join-Path $room 'join.cmd'))
         $cmd | Should -Match "`r`n"
@@ -826,6 +898,7 @@ Describe 'Open seats' -Tag 'Scripts' {
         $kinds['claude-code.wake'] | Should -Be 'background'
         $kinds['codex.wait_minutes'] | Should -Be '4'
         $kinds['codex.draft'] | Should -Be 'relay-draft-{name}.md'
+        $kinds['codex.hint'] | Should -Match 'You need full access for this job'
         $kinds['generic.wake'] | Should -Be 'loop'
         $kinds['generic.hint'] | Should -Match 'run it again'
 

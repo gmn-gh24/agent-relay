@@ -72,3 +72,5 @@ machine joins by mounting the share and running `sh '<mount point>/<room id>/joi
 | JSON read by PowerShell 7 | text that looks like a time becomes a date | `ConvertFrom-RelayJson` keeps it as text |
 | Git's `sh.exe` or `dash.exe` started outside Git Bash | no `cat`, `ls`, `awk` on the path | put Git's `usr\bin` on `PATH` first |
 | An absolute Windows path handed to `relay.sh` | treated as relative | recognised as absolute |
+| An agent works in a folder on the share | it is slow, and some tools do not run there: Pester 6 fails when its working folder is a network path | every agent's instructions say to copy what it needs and work on its own disk |
+| A typed list handed on as `@($list)` in a PowerShell script | "Argument types do not match", and the script ends | the scripts hand on `$list.ToArray()` |

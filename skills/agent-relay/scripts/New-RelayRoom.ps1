@@ -124,6 +124,7 @@ $roomInfo = [ordered]@{
     authority      = $authority
     created_utc    = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     stale_minutes  = [int](Get-RelayProperty $answers 'stale_minutes' 5)
+    pickup_minutes = [int](Get-RelayProperty $answers 'pickup_minutes' 30)
     silent_minutes = [int](Get-RelayProperty $answers 'silent_minutes' 10)
     park_after     = [int](Get-RelayProperty $answers 'park_after' 6)
     proposal_limit = [int](Get-RelayProperty $answers 'proposal_limit' 3)
@@ -231,6 +232,7 @@ foreach ($seat in $seats) { '{0,-10} {1,-22} {2,-18} {3,-22} {4,-8} {5}' -f $sea
 ''
 "coordinator command: $coordinatorCall <verb>"
 foreach ($name in $prompts.Keys) { "start prompt for ${name}: " + (Join-Path $roomPath "PROMPT-$name.txt") }
+foreach ($seat in $seats) { if ($seat.kind -eq 'codex') { "NOTE: start Codex with full access (codex --sandbox danger-full-access): in its sandbox it cannot run the room's commands" } }
 if ($joinPrompt) { "join prompt, for any agent ($openSeats free seat(s)): " + (Join-Path $roomPath 'PROMPT-JOIN.txt') }
 if ($isCopied) { "on the clipboard: $copyLabel" }
 "NEXT: run your own start ($coordinatorCall start <product> <model> <effort>), hand the prompts to the agents' sessions, then wait. Give no work to an agent before its introduction has arrived."
