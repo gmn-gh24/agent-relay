@@ -309,7 +309,7 @@ function Read-KeyValue {
     param([string]$Path)
     $map = [ordered]@{}
     foreach ($line in ((Read-Text $Path) -split "`n")) {
-        $at = $line.IndexOf(':')
+        $at = $line.IndexOf([char]':')
         if ($at -lt 1) { continue }
         $map[$line.Substring(0, $at).Trim()] = $line.Substring($at + 1).Trim()
     }
@@ -407,7 +407,7 @@ function Read-Message {
     if ($end -lt 0) { return $null }
     $header = @{}
     foreach ($line in ($text.Substring(4, $end - 3) -split "`n")) {
-        $at = $line.IndexOf(':')
+        $at = $line.IndexOf([char]':')
         if ($at -lt 1) { continue }
         $header[$line.Substring(0, $at).Trim()] = $line.Substring($at + 1).Trim()
     }
@@ -1177,7 +1177,7 @@ function Get-Scope {
     $roots = New-Object System.Collections.Generic.List[object]
     $current = $null
     foreach ($line in ((Read-Text (Join-Path $script:MyDir 'scope')) -split "`n")) {
-        $at = $line.IndexOf(':')
+        $at = $line.IndexOf([char]':')
         if ($at -lt 1) { continue }
         $key = $line.Substring(0, $at).Trim()
         $value = $line.Substring($at + 1).Trim()

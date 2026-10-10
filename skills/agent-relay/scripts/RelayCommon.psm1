@@ -234,8 +234,8 @@ function Split-RelayFrontMatter {
     # and the body after it. $null when the text has no such header.
     param([string]$Text)
     $whole = $Text + "`n"
-    if (-not $whole.StartsWith("---`n")) { return $null }
-    $end = $whole.IndexOf("`n---`n", 3)
+    if (-not $whole.StartsWith("---`n", [System.StringComparison]::Ordinal)) { return $null }
+    $end = $whole.IndexOf("`n---`n", 3, [System.StringComparison]::Ordinal)
     if ($end -lt 0) { return $null }
     return [pscustomobject]@{ Header = (Read-RelayKeyValueText ($whole.Substring(4, $end - 3))); Body = $whole.Substring($end + 5).TrimEnd() }
 }
@@ -988,7 +988,7 @@ function Read-RelayKeyValueText {
     param([string]$Text)
     $map = [ordered]@{}
     foreach ($line in ($Text -split "`n")) {
-        $at = $line.IndexOf(':')
+        $at = $line.IndexOf([char]':')
         if ($at -lt 1) { continue }
         $map[$line.Substring(0, $at).Trim()] = $line.Substring($at + 1).Trim()
     }
@@ -1126,7 +1126,7 @@ function Read-RelayPlan {
     foreach ($line in ($text -split "`n")) {
         # A line counts only when it starts with a known key and its colon: nothing before the key, nothing
         # between the key and the colon, lower case
-        $at = $line.IndexOf(':')
+        $at = $line.IndexOf([char]':')
         if ($at -lt 1) { continue }
         $key = $line.Substring(0, $at)
         # Cut at the separators first and trim each field afterwards: a line that ends in a separator has an
@@ -1234,7 +1234,7 @@ function Get-RelayAgentState {
         $records = @(((Read-RelayText (Join-Path $dir 'progress')) -split "`n") | Where-Object { $_.Contains(' | ') })
         if ($records.Count -gt 0) {
             $record = $records[$records.Count - 1]
-            $cut = $record.IndexOf(' | ')
+            $cut = $record.IndexOf(' | ', [System.StringComparison]::Ordinal)
             $progressUtc = $record.Substring(0, $cut)
             $progress = $record.Substring($cut + 3)
         }
@@ -1880,7 +1880,7 @@ function Add-RelayAgentSeat {
     if ($IsCoordinator) { $draftText = Join-Path $Room.Local 'draft.md' }
     # The machine of an open seat has no name until the agent on it has introduced itself
     $machineLabel = "``$($Spec['machine'])``"
-    if (([string]$Spec['machine']).StartsWith('(')) { $machineLabel = 'the machine you run on' }
+    if (([string]$Spec['machine']).StartsWith('(', [System.StringComparison]::Ordinal)) { $machineLabel = 'the machine you run on' }
     $machineCare = "**" + $machineLabel.Substring(0, 1).ToUpperInvariant() + $machineLabel.Substring(1) + " is a machine in use. It is not a test machine.** Treat everything on it that your task does not name as somebody's working state. Without the owner's approval (ask first) you do not: restart it or shut it down; install, update or remove software; change system settings, services, features, drivers, scheduled tasks, firewall or network settings; stop processes you did not start; delete or move files outside your assigned paths."
     if ($Spec['machine_care'] -eq 'disposable') {
         $machineCare = "**The owner has declared $machineLabel disposable for this job, and for this job only.** You may change it as the task needs. This says nothing about any other machine or any later job. Before a restart, say what you are about to do, so that no other agent working on it is cut off."
@@ -2036,7 +2036,7 @@ function Get-RelayJoinPrompt {
     Assert-RelayPastePath $base 'The room folder'
     $forward = $base -replace '\\', '/'
     $shellFolder = $forward
-    if ($base.StartsWith('\\') -or $base -match '^[A-Za-z]:') { $shellFolder = '<this folder as your machine reaches it>' }
+    if ($base.StartsWith('\\', [System.StringComparison]::Ordinal) -or $base -match '^[A-Za-z]:') { $shellFolder = '<this folder as your machine reaches it>' }
     $lines = @(
         'You are asked to join a work room: a shared folder through which several coding agents work on one job for the same owner. Another agent, the coordinator, hands out the tasks and answers questions.'
         ''
@@ -2074,7 +2074,7 @@ function Add-RelayOpenSeat {
         if ([int]::TryParse((Get-RelayValue $seat 'order' '0'), [ref]$existing) -and $existing -gt $order) { $order = $existing }
     }
     $transport = 'same-pc'
-    if ($Room.Path.StartsWith('\\')) { $transport = 'share' }
+    if ($Room.Path.StartsWith('\\', [System.StringComparison]::Ordinal)) { $transport = 'share' }
     $names = New-Object System.Collections.Generic.List[string]
     for ($added = 0; $added -lt $Count; $added++) {
         $order++
