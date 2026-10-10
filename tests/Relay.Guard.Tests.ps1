@@ -280,6 +280,20 @@ Describe 'Test-RelayTamper: one file that cannot be restored does not stop the c
         $findings[0].Reason | Should -BeNullOrEmpty
         Test-Path -LiteralPath $assignment -PathType Container | Should -BeTrue
     }
+
+    It 'leaves a file alone that this PC wrote after the check had listed what this PC holds' {
+        # The close of a room writes its transcript while a feed checks the room: the list the check goes by
+        # is a moment older than the file
+        Mock -ModuleName RelayCommon Get-RelayGuardedFile { return @('PROTOCOL.md', 'ROOM') }
+        Write-RelayGuardedText $object 'TRANSCRIPT.md' "# Transcript`n"
+        $findings = @(Test-RelayTamper $object -Repair)
+        @($findings | Where-Object { $_.Kind -eq 'extra' }).Count | Should -Be 0
+        Test-Path -LiteralPath (Join-Path $room 'TRANSCRIPT.md') -PathType Leaf | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $room 'tools\relay.ps1') -PathType Leaf | Should -BeTrue
+        # A file nobody on this PC wrote is still moved out
+        [System.IO.File]::WriteAllText((Join-Path $room 'tools\planted.txt'), 'x')
+        @(Test-RelayTamper $object -Repair | Where-Object { $_.Kind -eq 'extra' } | ForEach-Object { $_.Relative }) | Should -Be @('tools/planted.txt')
+    }
 }
 
 Describe 'The coordinator runs its launcher (G4)' -Tag 'Guard' {
@@ -562,6 +576,46 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
         @(Get-RelayOwnerCard $object -OpenOnly).Count | Should -Be 0
         $null = Add-RelayOwnerCard -Room $object -Subject 'A real card' -Body 'Text'
         @(Get-RelayOwnerCard $object).Count | Should -Be 1
+    }
+
+    It 'shows a retired agent as owing nothing, and no request is open with it' {
+        $inbox = Join-Path $room 'agents\emma\inbox'
+        $task = Add-RelayMessageFile -Inbox $inbox -From 'olivia' -To 'emma' -Type 'task' -Subject 'Do it' -Body 'Now'
+        $before = Get-RelayBoard (Resolve-RelayRoom $id)
+        @($before.open | Where-Object { $_.to -eq 'emma' }).Count | Should -Be 1
+        @(@($before.agents | Where-Object { $_.name -eq 'emma' })[0].owes) | Should -Be @(1)
+        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Retire 'emma'
+        $after = Get-RelayBoard (Resolve-RelayRoom $id)
+        @($after.open | Where-Object { $_.to -eq 'emma' }).Count | Should -Be 0
+        @($after.agents | Where-Object { $_.name -eq 'emma' })[0].owes | Should -Be 0
+        @($after.agents | Where-Object { $_.name -eq 'emma' })[0].state | Should -Be 'retired'
+        $text = (& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room $id) -join "`n"
+        $text | Should -Not -Match 'owes 1 reply'
+        $text | Should -Not -Match ([regex]::Escape($task))
+    }
+
+    It 'says in START-HERE that sending uses the draft file up' {
+        (Get-Content -LiteralPath (Join-Path $room 'agents\emma\START-HERE.md') -Raw) | Should -Match 'Sending uses the file up: write a new one\s+for every message\.'
+    }
+
+    It 'prints a note for a seat of kind codex when an agent is added or replaced, and for no other kind' {
+        $line = 'NOTE: start Codex with full access (codex --sandbox danger-full-access): in its sandbox it cannot run the room''s commands'
+        $answers = Join-Path $root 'codex.json'
+        [System.IO.File]::WriteAllText($answers, (ConvertTo-Json -Depth 6 @{ agents = @([ordered]@{ name = 'gina'; role = 'builder'; kind = 'codex' }, [ordered]@{ name = 'lena'; role = 'writer' }) }))
+        $added = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $answers -NoClipboard)
+        @($added | Where-Object { $_ -eq $line }).Count | Should -Be 1
+        $replaced = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'gina' -NoClipboard)
+        @($replaced | Where-Object { $_ -eq $line }).Count | Should -Be 1
+        $other = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'lena' -NoClipboard)
+        @($other | Where-Object { $_ -eq $line }).Count | Should -Be 0
+    }
+
+    It 'prints the note for a codex seat when a room is made' {
+        $line = 'NOTE: start Codex with full access (codex --sandbox danger-full-access): in its sandbox it cannot run the room''s commands'
+        $answers = Join-Path $root 'codex-room.json'
+        [System.IO.File]::WriteAllText($answers, (ConvertTo-Json -Depth 6 @{ job = 'Codex room'; room_id = "cx-$case"; rooms_root = (Join-Path $root 'cxrooms'); agents = @([ordered]@{ name = 'cora'; role = 'builder'; kind = 'codex' }, [ordered]@{ name = 'dana'; role = 'writer' }) }))
+        $made = @(& (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $answers -NoClipboard)
+        @($made | Where-Object { $_ -eq $line }).Count | Should -Be 1
     }
 
     It 'says in the help of Update-RelayRoom.ps1 what it writes again' {

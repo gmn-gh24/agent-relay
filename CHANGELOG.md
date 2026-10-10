@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.1.1 (2026-10-10)
+
+The room pane, after the owner's first look at a live room:
+
+- Every text is wrapped at the pane's width instead of cut at its edge: the job, what an agent is and where
+  it stands, the plan, an alarm, a card, the subject of a message.
+- A message shows the beginning of its text under its subject (what the feed gives of it: 400 characters).
+- The pane holds every message the feed gave it and shows a window of them, with a scroll bar at its right
+  edge. The window follows the newest until the owner scrolls (the mouse wheel, or PgUp and PgDn while the
+  pane has the keyboard) and follows it again once it is back at the end. What waits on the owner stands at
+  the end, and a new card brings the window there.
+- The input, and what the feed says about itself, stand still at the foot of the pane.
+- A `/relay <room>` that was interrupted while it looked at the room says so, and that it can be asked again.
+
+From a rehearsal with stand-in agents that had nothing but their start prompt (Claude Code headless on two
+models, Codex CLI):
+
+- Codex CLI must be started with full access to work in a room: in its sandbox it could not start one
+  command. The agent kinds, the skill and the start prompt of a Codex seat say so.
+- The headless Claude Code profile has worked a room.
+- A task whose "done when" needs a change the assignment lists under "ask first" carries the approval, or a
+  standing rule is recorded before the tasks go out (the coordinating reference).
+- `New-RelayRoom.ps1` and `Add-RelayAgent.ps1` print a note for every Codex seat: start it with full access.
+- `START-HERE.md` says that sending uses the draft file up: a new one for every message.
+
+From the close of the first team room, and from what its agents said slowed them down:
+
+- The board, the feed and the pane mark an agent that has not picked up a message for 30 minutes
+  (`pickup_minutes` of the room): a session that ends while it works says nothing, and its state stays
+  `working`.
+- Every agent's instructions say what to do after a restart (`start`, then one `wait`) and to work on its
+  own disk, not in a folder on the share. The file of a seat taken with the join prompt says that its
+  commands and paths are filled in when the tool prints it.
+- The archive of a closed room is made beside its place, tried three times and moved there whole. An empty or
+  cut file at its name is no archive: `Close-RelayRoom.ps1` makes it again, lists the room as not archived
+  and does not remove the room's folder on its word.
+- The tamper check no longer moves out a file this PC wrote while the check was running (the transcript of a
+  room that was closing).
+- The coordinating reference: what an agent passes on as the owner's word is confirmed with the owner before
+  it is acted on; checks go to an agent whose machine has the engine; long runs are asked for in pieces, with
+  their output in a file; a large part is confirmed with the owner before a team starts it.
+- `tests/Invoke-AllTests.ps1` says in its help how to run one test file on one engine.
+- The README is rewritten: installation, a quick start, the pane, a reference of scripts, verbs and settings,
+  the security model and troubleshooting.
+
+Small fixes:
+
+- A retired agent owes nothing, and no request is open with it on the board. Whether an agent is retired is
+  read from this PC's copy of the room, not from the room folder.
+- The plan table has an id column as wide as the longest id, wherever it is printed: by `Set-RelayPlan.ps1`,
+  on the board and in the readable feed.
+- The static checks of the test gate leave what an eval run writes into the repository folder alone.
+
 ## 0.1.0 (2026-10-10)
 
 First version.

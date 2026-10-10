@@ -15,6 +15,15 @@
     two side by side (they are slow on Windows, slow everything next to them, and each holds a few hundred
     megabytes for as long as it runs). Exit code: 0 when everything passed.
 
+    The whole gate takes the better part of an hour. One file on one engine is a run of a few minutes, and
+    what it prints can be kept in a file, so that a session that ends does not take the result with it:
+    tests\Invoke-Suite.ps1 -Path <test file> -Engines ps7|ps5|sh -Label <any word>. Start it with the host that
+    is to run the tests (pwsh for ps7 and sh, powershell.exe for ps5). The script files (Scripts, Plan, Guard,
+    Owner) take no -Engines.
+
+    Start the tests from a folder on a local disk: Pester 6 does not run when the working folder is a network
+    path.
+
 .PARAMETER StaticOnly
     Only the static checks.
 
@@ -30,6 +39,11 @@
 
 .EXAMPLE
     pwsh -File tests\Invoke-AllTests.ps1
+
+.EXAMPLE
+    pwsh -File tests\Invoke-Suite.ps1 -Path tests\Relay.Faults.Tests.ps1 -Engines sh -Label 'Faults sh' > faults-sh.txt
+
+    One file on one engine, its result kept in a file.
 
 .NOTES
     Windows PowerShell 5.1 syntax, ASCII only.
@@ -52,7 +66,7 @@ $problems = New-Object System.Collections.Generic.List[string]
 $started = Get-Date
 
 # Static checks
-$skip = '\\(\.git|\.local|history|node_modules)\\|\\\.claude-plugin\\types\\'
+$skip = '\\(\.git|\.local|history|node_modules)\\|\\\.claude-plugin\\types\\|\\evals\\results\\'
 $files = @(Get-ChildItem -LiteralPath $repo -Recurse -File -Force | Where-Object { $_.FullName -notmatch $skip })
 $powershellFiles = @($files | Where-Object { $_.Extension -in '.ps1', '.psm1' })
 $findings = 0

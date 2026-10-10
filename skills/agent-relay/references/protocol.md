@@ -8,7 +8,8 @@ which files this PC writes, how the pieces fit, and where state lives.
 ```
 <rooms root>/<room id>/
   ROOM                      key: value: room, protocol, package, job, coordinator, authority, created_utc,
-                            stale_minutes, silent_minutes, park_after, proposal_limit
+                            stale_minutes, pickup_minutes (the board's limit for a message nobody picked
+                            up), silent_minutes, park_after, proposal_limit
   DECISIONS.md              standing rules and owner decisions (Add-RelayDecision.ps1 only)
   PLAN                      the team plan: parts, owners, status (Set-RelayPlan.ps1 only); see "The team plan"
   PROTOCOL.md               agents' reference

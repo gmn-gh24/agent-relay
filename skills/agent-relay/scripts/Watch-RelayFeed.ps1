@@ -112,7 +112,9 @@ function Write-PlanText {
     $mark = ''
     if (-not $Plan.isComplete) { $mark = '   [INCOMPLETE]' }
     Write-Line "  PLAN $($Plan.revision): $($Plan.goal)$mark"
-    foreach ($part in @($Plan.parts)) { Write-Line ('    {0,-12}  {1,-8}  {2,-9}  {3}' -f $part.id, $part.status, $part.owner, $part.title) }
+    $idWidth = 12
+    foreach ($part in @($Plan.parts)) { $idWidth = [Math]::Max($idWidth, ([string]$part.id).Length) }
+    foreach ($part in @($Plan.parts)) { Write-Line ("    {0,-$idWidth}  {1,-8}  {2,-9}  {3}" -f $part.id, $part.status, $part.owner, $part.title) }
 }
 
 function Write-Feed {
@@ -287,7 +289,7 @@ try {
             }
             $waiting = Get-WaitingState
             $plan = Read-RelayPlan $roomObject
-            $agents = @(Get-RelayAgentState -Room $roomObject -Now (Get-RelayRoomNow $roomObject) -Open $waiting.Open -Plan $plan)
+            $agents = @(Get-RelayAgentState -Room $roomObject -Now (Get-RelayRoomNow $roomObject) -Open $waiting.Open -Plan $plan -Messages $script:messages.ToArray())
             $newAgentSignature = (@($agents | ForEach-Object { "$($_.name)|$($_.state)|$($_.detail)|$($_.gen)|$($_.control)|$($_.attention)|$($_.isIntroduced)|$($_.owes)|$($_.progressUtc)|$(@($_.parts) -join ',')" }) -join ';')
             $newPlanSignature = ''
             if ($null -ne $plan) { $newPlanSignature = "$($plan.revision)|$($plan.isComplete)" }

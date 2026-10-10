@@ -57,13 +57,27 @@ Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 
 $archiveRoot = Join-Path (Get-RelayLocalRoot) 'archive'
 
+function Test-RoomArchive {
+    # An archive is a zip that opens and holds a file. An empty or half-written file at its name is none: the
+    # folder of a room is removed on the word of this check
+    param([string]$Archive)
+    if (-not (Test-Path -LiteralPath $Archive -PathType Leaf)) { return $false }
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($Archive)
+        try { return ($zip.Entries.Count -gt 0) }
+        finally { $zip.Dispose() }
+    }
+    catch { return $false }
+}
+
 if ($ListClosed) {
     $found = 0
     foreach ($entry in @(Get-RelayRoomIndex)) {
         if (-not (Get-RelayProperty $entry 'closed_utc' '')) { continue }
         if (-not (Test-Path -LiteralPath $entry.path)) { continue }
         $found++
-        $hasArchive = Test-Path -LiteralPath (Join-Path $archiveRoot "$($entry.id).zip")
+        $hasArchive = Test-RoomArchive (Join-Path $archiveRoot "$($entry.id).zip")
         '{0}  closed {1}  archive: {2}  {3}' -f $entry.id, $entry.closed_utc, $(if ($hasArchive) { 'yes' } else { 'NO' }), $entry.path
     }
     if ($found -eq 0) { 'No closed room has a folder left.' }
@@ -76,7 +90,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Remove') {
     if ($entry.Count -eq 0) { throw "No room '$Remove' in the room index" }
     if (-not (Get-RelayProperty $entry[0] 'closed_utc' '')) { throw "The room '$Remove' is not closed" }
     $archive = Join-Path $archiveRoot "$Remove.zip"
-    if (-not (Test-Path -LiteralPath $archive)) { throw "The room '$Remove' has no archive at ${archive}: its folder is the only copy and is not removed" }
+    if (-not (Test-RoomArchive $archive)) { throw "The room '$Remove' has no archive at ${archive}: its folder is the only copy and is not removed" }
     $path = [string]$entry[0].path
     if (-not (Test-Path -LiteralPath (Join-Path $path 'CLOSED'))) { throw "The folder $path has no CLOSED marker: not removed" }
     if ($PSCmdlet.ShouldProcess($path, 'Delete the folder of the closed room (its archive stays)')) {
@@ -87,18 +101,32 @@ if ($PSCmdlet.ParameterSetName -eq 'Remove') {
 }
 
 function Save-RoomArchive {
-    # The zip of the whole room under the machine state folder; $false (and an alarm) when it could not be made
+    # The zip of the whole room under the machine state folder; $false (and an alarm) when it could not be made.
+    # It is made beside its place and moved there only when it is whole, so a file at the archive's name is
+    # always a whole archive. A room that is closing still has a writer or two (a wait that sees the marker and
+    # removes its lease, a feed that puts a file back): a file that went away while the zip was made fails the
+    # zip, so it is tried three times.
     param($RoomObject, [string]$Archive)
-    try {
-        if (-not (Test-Path -LiteralPath $archiveRoot)) { $null = New-Item -ItemType Directory -Path $archiveRoot -Force }
-        if (Test-Path -LiteralPath $Archive) { Remove-Item -LiteralPath $Archive -Force }
-        Compress-Archive -Path (Join-Path $RoomObject.Path '*') -DestinationPath $Archive -Force
-        return $true
+    $building = Join-Path $archiveRoot "$($RoomObject.Id).building.zip"
+    $reason = ''
+    foreach ($try in 1..3) {
+        try {
+            if (-not (Test-Path -LiteralPath $archiveRoot)) { $null = New-Item -ItemType Directory -Path $archiveRoot -Force }
+            if (Test-Path -LiteralPath $building) { Remove-Item -LiteralPath $building -Force }
+            Compress-Archive -Path (Join-Path $RoomObject.Path '*') -DestinationPath $building -Force -ErrorAction Stop
+            if (-not (Test-RoomArchive $building)) { throw 'the zip that was made does not open or is empty' }
+            if (Test-Path -LiteralPath $Archive) { Remove-Item -LiteralPath $Archive -Force }
+            Move-Item -LiteralPath $building -Destination $Archive -Force
+            return $true
+        }
+        catch {
+            $reason = $_.Exception.Message
+            if ($try -lt 3) { Start-Sleep -Seconds 2 }
+        }
     }
-    catch {
-        Add-RelayAlarm $RoomObject "ARCHIVE failed: $($_.Exception.Message)"
-        return $false
-    }
+    try { if (Test-Path -LiteralPath $building) { Remove-Item -LiteralPath $building -Force } } catch { $null = $_ }
+    Add-RelayAlarm $RoomObject "ARCHIVE failed: $reason"
+    return $false
 }
 
 $roomObject = Resolve-RelayRoom $Room
@@ -112,7 +140,7 @@ foreach ($finding in @(Test-RelayTamper $roomObject -Repair)) {
 # Closed is what this PC says: the canonical CLOSED marker
 if (Test-Path -LiteralPath (Join-Path $roomObject.Canon 'CLOSED')) {
     $closedArchive = Join-Path $archiveRoot "$($roomObject.Id).zip"
-    if (Test-Path -LiteralPath $closedArchive) { "The room $($roomObject.Id) is already closed."; return }
+    if (Test-RoomArchive $closedArchive) { "The room $($roomObject.Id) is already closed."; return }
     # Closed, but the archive of an earlier call failed: make it now
     if (-not (Test-Path -LiteralPath $roomObject.Path)) { throw "The room $($roomObject.Id) is closed and has no archive, and its folder is gone: $($roomObject.Path)" }
     if (Save-RoomArchive $roomObject $closedArchive) {

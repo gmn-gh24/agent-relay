@@ -362,7 +362,9 @@ try {
         $opened.Add("LINE open between $($pair[0]) and $($pair[1])")
     }
     ConvertTo-RelayPrintedLine "PLAN $revision for room $($roomObject.Id): $(@($parts).Count) part(s)"
-    foreach ($item in $parts) { ConvertTo-RelayPrintedLine ('  ' + (Format-PlanColumn $item.Id 12) + '  ' + (Format-PlanColumn $item.Status 8) + '  ' + (Format-PlanColumn $item.Owner 9) + '  ' + $item.Title) }
+    $idWidth = 12
+    foreach ($item in $parts) { $idWidth = [Math]::Max($idWidth, (Get-PlanLength $item.Id)) }
+    foreach ($item in $parts) { ConvertTo-RelayPrintedLine ('  ' + (Format-PlanColumn $item.Id $idWidth) + '  ' + (Format-PlanColumn $item.Status 8) + '  ' + (Format-PlanColumn $item.Owner 9) + '  ' + $item.Title) }
     foreach ($line in $opened) { ConvertTo-RelayPrintedLine $line }
     'NEXT: the agents are shown the new plan with the next message they receive, or at once with the verb team.'
 }

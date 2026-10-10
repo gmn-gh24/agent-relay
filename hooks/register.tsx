@@ -1,9 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { RelayAgent, RelayView } from '../types'
-import { applyFeedLine, clockOf, emptyView, isCutText, reasonOf, splitOwnerText, statusOf, takeLines, textRows } from './feed'
-import type { FeedEvent } from './feed'
+import { applyFeedLine, emptyView, paneRegions, paneRows, reasonOf, scrollBar, scrolledTo, splitOwnerText, statusOf, takeLines, windowTop, wrapText } from './feed'
+import type { FeedEvent, PaneSpan } from './feed'
 
 // The chat window of a room. It is thin on purpose: everything that knows a room lives in the scripts, and
 // this module only starts the feed (which is also the room's tamper check and the coordinator's heartbeat),
@@ -14,9 +13,20 @@ const BIND_TOOL = 'mcp__agent-relay__relay_bind'
 
 const room = atom({ plugin: 'agent-relay', key: 'room' } as const, null)
 const view = atom({ plugin: 'agent-relay', key: 'view' } as const, null)
+// The first row the pane's window shows of the room; null while it follows the end, where the newest is
+const scroll = atom({ plugin: 'agent-relay', key: 'scroll' } as const, null)
 
 // Which feed loop is the current one: binding another room, or none, ends the loop before it
 let feedRun = 0
+
+// What the terminal's pane held and showed when it was drawn last: a move of its window is counted in these
+let heldRows = 0
+let shownRows = 0
+
+// A width no text reaches: a surface that is no terminal wraps by itself. It also scrolls by itself, and gets
+// the newest rows only: the engine draws no tree beyond a size.
+const UNWRAPPED = 100000
+const ROWS_ELSEWHERE = 240
 
 // The feed is also the room's tamper check and the coordinator's heartbeat: one that ends by itself is started
 // again after these waits, and the owner is told when they are used up. A feed that ran this long before it
@@ -44,6 +54,8 @@ const shellOf = (script: string, args: readonly string[]): string[] => [
 const tell = async ($: EngineInterface, id: string, events: readonly FeedEvent[]): Promise<void> => {
   for (const event of events) {
     if (event.kind === 'card') {
+      // A card stands at the end of what the pane shows: the window goes there
+      await update($, scroll, () => null)
       const text = `${id}: your decision is needed: ${event.subject}`
       const sent = await $.ui.notify(text, { title: 'agent-relay' })
       if (!sent.isSent) $.ui.toast(text)
@@ -162,7 +174,11 @@ const firstLook = async ($: EngineInterface, wanted: string): Promise<{ lines: s
 
     return { lines: takeLines(`${looked.stdout}\n`).lines, reason: '' }
   } catch (error) {
-    return { lines: [], reason: reasonOf(error instanceof Error ? error.message : String(error)) || 'the feed could not be started' }
+    const reason = reasonOf(error instanceof Error ? error.message : String(error))
+    // The engine ends a call whose command was interrupted while it ran: said in words the owner can act on
+    if (/\baborted$/.test(reason)) return { lines: [], reason: 'the look at the room was interrupted before it answered: ask for it again' }
+
+    return { lines: [], reason: reason || 'the feed could not be started' }
   }
 }
 
@@ -181,6 +197,7 @@ const bind = async ($: EngineInterface, wanted: string): Promise<{ id: string; r
   if (!isUp) return { id: '', reason: seen.note || 'the feed printed no snapshot of that room' }
   const id = seen.room
   await update($, room, () => id)
+  await update($, scroll, () => null)
   startFeed($, id, look.lines)
   // A pane that cannot be opened (a surface without one) takes nothing from the binding: the feed runs
   void $.ui.open({ id: PANE, title: `relay ${id}`, columns: 64, rows: 18 }).catch(() => undefined)
@@ -192,6 +209,7 @@ const unbind = async ($: EngineInterface): Promise<void> => {
   feedRun += 1
   await update($, room, () => null)
   await update($, view, () => null)
+  await update($, scroll, () => null)
   $.ui.status(undefined)
 }
 
@@ -211,35 +229,14 @@ const sendAsOwner = async ($: EngineInterface, id: string, args: readonly string
   }
 }
 
-const stateColor = (agent: RelayAgent): string | undefined => {
-  if (agent.attention !== '') return 'yellow'
-  if (agent.state === 'listening' || agent.state === 'working') return 'green'
+// The style of one piece of a row, as the props of the element that draws it
+const styleOf = (span: PaneSpan): { bold?: true; dimColor?: true; color?: string } => {
+  const style: { bold?: true; dimColor?: true; color?: string } = {}
+  if (span.bold) style.bold = true
+  if (span.dim) style.dimColor = true
+  if (span.color !== undefined) style.color = span.color
 
-  return undefined
-}
-
-const partColor = (status: string): string | undefined => {
-  if (status === 'done') return 'green'
-  if (status === 'blocked') return 'red'
-  if (status === 'doing' || status === 'review') return 'yellow'
-
-  return undefined
-}
-
-const agentLine = (agent: RelayAgent): string => {
-  const marks: string[] = []
-  if (agent.isCoordinator) marks.push('coordinator')
-  else if (agent.role !== '' && agent.role !== 'agent') marks.push(agent.role)
-  if (agent.isIntroduced && !agent.isCoordinator) {
-    if (agent.model !== '') marks.push(agent.tier !== '' && agent.tier !== 'unknown' ? `${agent.model} (${agent.tier})` : agent.model)
-    if (agent.rights === 'elevated') marks.push('ELEVATED')
-    if (agent.rights === 'can-elevate') marks.push('not elevated')
-    if (agent.rights === 'none') marks.push('no admin rights')
-  }
-  if (agent.owes > 0) marks.push(`owes ${agent.owes}`)
-  if (agent.parts.length > 0) marks.push(`parts: ${agent.parts.join(', ')}`)
-
-  return marks.join(', ')
+  return style
 }
 
 export const register: Register = on => {
@@ -305,11 +302,19 @@ export const register: Register = on => {
     return { result: `Bound to room ${done.id}. The chat window shows it; its feed is the room's tamper check and your heartbeat.` }
   }).catch(() => ({ deny: 'relay_bind failed. Run Watch-RelayFeed.ps1 for the room yourself; /relay <room> binds the pane by hand.' }))
 
+  // The pane draws a window of its own over the rows of the room, so that its input stands still under it:
+  // a move the owner asks for (the wheel, a page key) moves that window, and the engine's own stays where it is
+  on('ui.scroll', { requestId: PANE }, async ($, e) => {
+    await update($, scroll, at => scrolledTo(heldRows, shownRows, at, e.by))
+
+    return {}
+  }).catch(() => ({}))
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const bound = await read($, room)
     const current = await read($, view)
+    const at = await read($, scroll)
     const columns = Math.max(30, e.props.bodyColumns)
-    const rows = Math.max(10, e.viewport?.rows ?? 30)
 
     if (e.surface === 'mobile') {
       const { Box, Text } = $.ui.resolve(e)
@@ -330,130 +335,102 @@ export const register: Register = on => {
       )
     }
 
-    const agents = current.agents.filter(agent => !agent.isFree)
-    const free = current.agents.filter(agent => agent.isFree).length
-    const plan = current.plan
-    const working = agents.filter(agent => agent.progress !== '').length
-    // What is left for the conversation once the fixed parts have their rows; each message takes two
-    const planRows = plan === null ? 0 : 2 + plan.parts.length
-    const width = columns - 2
-    // A card is shown whole, as the feed gives it: the owner decides on what it says. Its rows: the margin, the
-    // border, the subject and the buttons, then the text, then the line that says the feed cut it.
-    const cardRows = current.cards.reduce((sum, card) => sum + 5 + textRows(card.text, width - 4) + (isCutText(card.text) ? 2 : 0), 0)
-    const fixed = 6 + agents.length + working + planRows + cardRows + Math.min(2, current.alarms.length)
-    const shown = Math.max(3, Math.floor((rows - fixed) / 2))
-    const messages = current.messages.slice(-shown)
+    // Only the terminal draws in rows that can be counted here. There every text is wrapped by this module,
+    // the pane shows a window of the rows with a scroll bar in its last two columns (a blank and the bar), and
+    // what the feed says, the input and how to scroll stand still at its foot. Another surface wraps and
+    // scrolls by itself.
+    const isTerminal = e.surface === 'terminal'
+    const width = isTerminal ? columns - 2 : UNWRAPPED
+    const all = paneRows(current, width)
+    const note = current.note === '' ? [] : isTerminal ? wrapText(current.note, width) : [current.note]
+    let rows = all.slice(-ROWS_ELSEWHERE)
+    let bar: ReturnType<typeof scrollBar> = null
+    let hint: string[] = []
+    if (isTerminal) {
+      const foot = note.length + (current.isClosed ? 0 : 1)
+      const regions = paneRegions(all.length, Math.max(8, e.props.scroll.bodyRows), foot === 0 ? 0 : foot + 1, width)
+      const top = windowTop(all.length, regions.shown, at)
+      rows = all.slice(top, top + regions.shown)
+      bar = scrollBar(all.length, top, regions.shown)
+      hint = regions.hint
+      heldRows = all.length
+      shownRows = regions.shown
+    }
 
     return (
       <Box flexDirection="column" width={columns}>
-        <Text bold wrap="truncate-end">
-          {current.room}
-        </Text>
-        {current.job !== '' && (
-          <Text dimColor wrap="truncate-end">
-            {current.job}
-          </Text>
-        )}
-        {current.note !== '' && <Text color="yellow">{current.note}</Text>}
+        <Box flexDirection="row">
+          <Box flexDirection="column" width={isTerminal ? width : columns}>
+            {rows.map(row => {
+              const card = row.card
+              if (card !== undefined) {
+                return (
+                  <Box flexDirection="row" gap={2}>
+                    <Button
+                      key={`approve-${card}`}
+                      label="Approve"
+                      variant="primary"
+                      onPress={() => {
+                        void sendAsOwner($, bound, ['-Approve', card], '').then(answer => $.ui.toast(answer))
+                      }}
+                    />
+                    <Button
+                      key={`deny-${card}`}
+                      label="Deny"
+                      onPress={() => {
+                        void sendAsOwner($, bound, ['-Deny', card], '').then(answer => $.ui.toast(answer))
+                      }}
+                    />
+                  </Box>
+                )
+              }
+              // An empty row is drawn as a blank: a row without text takes no row
+              if (row.spans.length === 0) return <Text> </Text>
 
-        <Box flexDirection="column" marginTop={1}>
-          {agents.map(agent => (
-            <Box flexDirection="column">
-              <Text wrap="truncate-end">
-                <Text bold color={stateColor(agent)}>
-                  {agent.display.padEnd(8)}
-                </Text>{' '}
-                {agent.state.padEnd(11)} <Text dimColor>{agentLine(agent)}</Text>
-                {agent.attention !== '' && <Text color="yellow"> ! {agent.attention}</Text>}
-              </Text>
-              {agent.progress !== '' && (
-                <Text dimColor wrap="truncate-end">
-                  {`         ${agent.progress}`}
+              return (
+                <Text wrap={isTerminal ? 'truncate-end' : 'wrap'}>
+                  {row.spans.map(span => (
+                    <Text {...styleOf(span)}>{span.text}</Text>
+                  ))}
                 </Text>
-              )}
+              )
+            })}
+          </Box>
+          {bar !== null && (
+            <Box flexDirection="column" width={1} marginLeft={1} flexShrink={0}>
+              {bar.above !== '' && <Text dimColor>{bar.above}</Text>}
+              <Text>{bar.thumb}</Text>
+              {bar.below !== '' && <Text dimColor>{bar.below}</Text>}
             </Box>
-          ))}
-          {free > 0 && <Text dimColor>{`${free} free seat(s)`}</Text>}
+          )}
         </Box>
 
-        {plan !== null && (
+        {(note.length > 0 || !current.isClosed) && (
           <Box flexDirection="column" marginTop={1}>
-            <Text bold wrap="truncate-end">
-              {`Plan ${plan.revision}: ${plan.goal}${plan.isComplete ? '' : '  (incomplete)'}`}
-            </Text>
-            {plan.parts.map(part => (
-              <Text wrap="truncate-end">
-                <Text color={partColor(part.status)}>{part.status.padEnd(8)}</Text> {part.id.padEnd(12)}{' '}
-                <Text dimColor>{`${part.owner === '-' ? 'nobody' : part.owner}  ${part.title}`}</Text>
-              </Text>
-            ))}
-          </Box>
-        )}
-
-        {current.cards.map(card => (
-          <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="yellow" paddingX={1}>
-            <Text bold wrap="truncate-end">
-              {`Your decision: ${card.subject}`}
-            </Text>
-            <Text wrap="wrap">{card.text}</Text>
-            {isCutText(card.text) && (
+            {note.length > 0 && (
               <Text color="yellow" wrap="wrap">
-                This card is longer than what is shown here. Ask the coordinator for all of it before you decide.
+                {note.join('\n')}
               </Text>
             )}
-            <Box flexDirection="row" gap={2}>
-              <Button
-                key={`approve-${card.id}`}
-                label="Approve"
-                variant="primary"
-                onPress={() => {
-                  void sendAsOwner($, bound, ['-Approve', card.id], '').then(answer => $.ui.toast(answer))
+            {!current.isClosed && (
+              <Input
+                key="say"
+                placeholder="Say something as the owner (@name for one agent)"
+                submitLabel="send"
+                onSubmit={typed => {
+                  const said = splitOwnerText(typed)
+                  if (said.text === '') return
+                  const args = said.to === '' ? [] : ['-For', said.to]
+                  void sendAsOwner($, bound, args, said.text).then(answer => $.ui.toast(answer))
                 }}
               />
-              <Button
-                key={`deny-${card.id}`}
-                label="Deny"
-                onPress={() => {
-                  void sendAsOwner($, bound, ['-Deny', card.id], '').then(answer => $.ui.toast(answer))
-                }}
-              />
-            </Box>
+            )}
           </Box>
-        ))}
-
-        {current.alarms.slice(-2).map(alarm => (
-          <Text color="red" wrap="truncate-end">
-            {`ALARM: ${alarm}`}
+        )}
+        {hint.length > 0 && (
+          <Text dimColor wrap="wrap">
+            {hint.join('\n')}
           </Text>
-        ))}
-
-        <Box flexDirection="column" marginTop={1}>
-          {messages.length === 0 && <Text dimColor>No messages yet.</Text>}
-          {messages.map(message => (
-            <Box flexDirection="column">
-              <Text wrap="truncate-end">
-                <Text dimColor>{clockOf(message.time)}</Text> <Text bold>{message.from}</Text>
-                <Text dimColor>{` > ${message.to}  ${message.type}`}</Text>
-              </Text>
-              <Text wrap="truncate-end">{`  ${message.subject}`}</Text>
-            </Box>
-          ))}
-        </Box>
-
-        {!current.isClosed && (
-          <Box marginTop={1}>
-            <Input
-              key="say"
-              placeholder="Say something as the owner (@name for one agent)"
-              submitLabel="send"
-              onSubmit={typed => {
-                const said = splitOwnerText(typed)
-                if (said.text === '') return
-                const args = said.to === '' ? [] : ['-For', said.to]
-                void sendAsOwner($, bound, args, said.text).then(answer => $.ui.toast(answer))
-              }}
-            />
-          </Box>
         )}
       </Box>
     )

@@ -46,7 +46,9 @@ Four rules hold in every workflow:
    seat, and a start prompt for each agent named in advance. One prompt goes on the clipboard.
 4. Introduce yourself: `<your command> start claude-code <model> <effort>`.
 5. Give the owner the prompts and say which one is on the clipboard. The join prompt is pasted into as many
-   agents as there are free seats; add seats with `scripts/Add-RelayAgent.ps1 -OpenSeats <n>`.
+   agents as there are free seats; add seats with `scripts/Add-RelayAgent.ps1 -OpenSeats <n>`. Say with it
+   what a product needs to run the room's commands: Codex CLI must be started with full access
+   (`references/agent-kinds.md`).
 6. Show the room: bind the chat window if the `relay_bind` tool exists, otherwise tell the owner to run
    `scripts/Watch-RelayFeed.ps1 -Room <id> -Follow` in a terminal. One of the two must run: it is also the
    tamper check and your heartbeat.
@@ -114,7 +116,8 @@ changes the team plan (who builds which part) and opens the lines the plan impli
 2. Wait for the byes. `scripts/Close-RelayRoom.ps1 -Room <id>` refuses while one is missing; `-Force` is for
    agents that cannot answer any more.
 3. Closing writes `TRANSCRIPT.md`, sets the `CLOSED` marker, archives the room on this PC and saves the
-   statistics. The room folder stays.
+   statistics. The room folder stays. When it says `ARCHIVE FAILED`, run it again on the closed room: until
+   it names an archive, the folder is the only copy.
 4. `scripts/Close-RelayRoom.ps1 -ListClosed` shows old rooms. Remove one (`-Remove <id>`) only when the owner
    says so.
 5. Go to workflow 7.

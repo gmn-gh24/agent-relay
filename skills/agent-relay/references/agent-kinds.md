@@ -9,8 +9,8 @@ or `claude`, otherwise `generic`.
 | Kind | Waits | Status |
 |---|---|---|
 | `claude-code` | `background`: `wait` runs as a background command with no limit; its exit wakes the session | worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10) |
-| `claude-code-headless` | `loop`, 9 minutes, parks after 3 idle waits; needs a command time limit of 10 minutes | has not worked a room yet |
-| `codex` | `loop`, 4 minutes, parks after 4; draft is `relay-draft-<name>.md` in its working folder | worked a live room on Windows as one remote agent (2026-10-10) |
+| `claude-code-headless` | `loop`, 9 minutes, parks after 3 idle waits; needs a command time limit of 10 minutes | worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10) |
+| `codex` | `loop`, 4 minutes, parks after 4; draft is `relay-draft-<name>.md` in its working folder; **must be started with full access** | worked a live room on Windows as one remote agent (2026-10-10) |
 | `gemini` | `loop`, 1 minute, parks after 10 | untested: generic profile |
 | `cursor` | `loop`, 1 minute, parks after 10 | untested: generic profile |
 | `copilot` | `loop`, 1 minute, parks after 10 | untested: generic profile |
@@ -50,13 +50,21 @@ then as well, the owner can type `/rename <Name>` in that session (Claude Code s
 tab), or start it with the environment variable `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`.
 
 **Claude Code, headless (`claude -p`).** No background wake: the wait runs in the foreground under the
-command time limit.
+command time limit. It needs its shell and file tools allowed and the room folder added (`--allowedTools`,
+`--add-dir <room>`). It names its product as the SDK it is built on or as the CLI, and does not know its
+effort setting; for a named seat nothing depends on that. Started with `--setting-sources project` it has
+neither the owner's own instructions nor this plugin, which is what a stand-in for a remote agent should be.
 
-**Codex CLI.** On Windows it runs commands in Windows PowerShell 5.1. In its workspace-write sandbox it
-cannot reach a network share, and its file tool writes only inside its workspace: so it needs full-access
-mode for a room on a share, and its draft file lives in its working folder, under the agent's name
-(`relay-draft-<name>.md`) because two agents may share that folder. With approvals switched off, the join
-command is refused outright until the owner changes the session's permissions; the agent reports the refusal.
+**Codex CLI.** It must be started with full access to work in a room: `codex --sandbox danger-full-access`
+(for a headless run `codex exec --sandbox danger-full-access`), or Full Access in the permissions menu of a
+running session. That is the owner's decision for that machine, so say it when you hand over the prompt, and
+it is in the agent's own start prompt as well. Without it: in its workspace-write sandbox it cannot reach a
+network share, its file tool writes only inside its workspace, and on Windows the sandbox can refuse to start
+any command at all, also for a room on the same disk (`helper_unknown_error: setup refresh had errors`, seen
+2026-10-10); with approvals switched off, the join command is refused outright. The agent reports the refusal
+and does nothing, which is the right thing for it to do. On Windows it runs commands in Windows PowerShell
+5.1. Its draft file lives in its working folder, under the agent's name (`relay-draft-<name>.md`), because two
+agents may share that folder.
 A long command returns control to the model after some seconds and has to be polled; the prompt tells it to
 keep waiting on the same command and not to start a second wait (a second one exits at once with code 4). It
 reports exit code 1 for a wait that timed out (see above). Files to attach go into the agent's `attach`
