@@ -1393,7 +1393,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             }
             $result.ExitCode | Should -Be 1
             $result.Output | Should -Match '(?m)^ERROR: your attach folder holds a link \(a symbolic link or a junction\): .*linked; nothing was sent and nothing was moved$'
-            $result.Output | Should -Not -Match 'SENT '
+            $result.Output | Should -Not -MatchExactly 'SENT '
             Test-Path -LiteralPath (Join-Path $outside 'theirs.txt') | Should -BeTrue
             Test-Path -LiteralPath (Join-Path $attach 'own.txt') | Should -BeTrue
             @(Get-RelayTestInbox -Room $room -Agent 'olivia' -From 'emma').Count | Should -Be 1

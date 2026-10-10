@@ -208,10 +208,10 @@ function Read-RelayTestMessage {
     param([Parameter(Mandatory)][string]$Path)
     $text = (New-Object System.Text.UTF8Encoding($false)).GetString([System.IO.File]::ReadAllBytes($Path))
     $text = $text -replace "`r", ''
-    $end = $text.IndexOf("`n---`n", 3)
+    $end = $text.IndexOf("`n---`n", 3, [System.StringComparison]::Ordinal)
     $header = @{}
     foreach ($line in ($text.Substring(4, $end - 3) -split "`n")) {
-        $at = $line.IndexOf(':')
+        $at = $line.IndexOf([char]':')
         if ($at -gt 0) { $header[$line.Substring(0, $at).Trim()] = $line.Substring($at + 1).Trim() }
     }
     $header['Body'] = $text.Substring($end + 5).TrimEnd()

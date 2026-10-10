@@ -80,7 +80,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $map = @{}
             if (-not (Test-Path -LiteralPath $Path)) { return $map }
             foreach ($line in ([System.IO.File]::ReadAllText($Path) -replace "`r", '') -split "`n") {
-                $at = $line.IndexOf(':')
+                $at = $line.IndexOf([char]':')
                 if ($at -gt 0) { $map[$line.Substring(0, $at).Trim()] = $line.Substring($at + 1).Trim() }
             }
             return $map

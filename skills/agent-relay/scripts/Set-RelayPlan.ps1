@@ -189,11 +189,11 @@ function Read-PlanFile {
     $wellFormed = $true
     foreach ($line in ($Text -split "`n")) {
         # Of two equal keys the first line counts, whatever it holds
-        if ($line.StartsWith('plan:')) { if (-not $seenPlan) { $seenPlan = $true; $revisionText = $line.Substring(5).Trim(' ', "`t") }; continue }
-        if ($line.StartsWith('end:')) { if (-not $seenEnd) { $seenEnd = $true; $endText = $line.Substring(4).Trim(' ', "`t") }; continue }
-        if ($line.StartsWith('goal:')) { if (-not $seenGoal) { $seenGoal = $true; $plan.Goal = $line.Substring(5).Trim(' ', "`t") }; continue }
+        if ($line.StartsWith('plan:', [System.StringComparison]::Ordinal)) { if (-not $seenPlan) { $seenPlan = $true; $revisionText = $line.Substring(5).Trim(' ', "`t") }; continue }
+        if ($line.StartsWith('end:', [System.StringComparison]::Ordinal)) { if (-not $seenEnd) { $seenEnd = $true; $endText = $line.Substring(4).Trim(' ', "`t") }; continue }
+        if ($line.StartsWith('goal:', [System.StringComparison]::Ordinal)) { if (-not $seenGoal) { $seenGoal = $true; $plan.Goal = $line.Substring(5).Trim(' ', "`t") }; continue }
         $fields = @($line -split ' \| ')
-        if ($line.StartsWith('part:')) {
+        if ($line.StartsWith('part:', [System.StringComparison]::Ordinal)) {
             if ($fields.Count -lt 6) { $wellFormed = $false; continue }
             $first = ($fields[0] -replace '^part:', '').Trim(' ', "`t")
             if ($byId.ContainsKey($first)) { continue }
@@ -203,12 +203,12 @@ function Read-PlanFile {
             $list.Add($item)
             $byId[$first] = $item
         }
-        elseif ($line.StartsWith('files:') -or $line.StartsWith('note:')) {
+        elseif ($line.StartsWith('files:', [System.StringComparison]::Ordinal) -or $line.StartsWith('note:', [System.StringComparison]::Ordinal)) {
             if ($fields.Count -lt 2) { $wellFormed = $false; continue }
             $first = ($fields[0] -replace '^(files|note):', '').Trim(' ', "`t")
             if (-not $byId.ContainsKey($first)) { $wellFormed = $false; continue }
             $value = (($fields[1..($fields.Count - 1)] -join ' | ').Trim(' ', "`t"))
-            if ($line.StartsWith('files:')) { $byId[$first].Files += $value } else { $byId[$first].Notes += $value }
+            if ($line.StartsWith('files:', [System.StringComparison]::Ordinal)) { $byId[$first].Files += $value } else { $byId[$first].Notes += $value }
         }
     }
     # The counter as written, whatever its length: nine digits that are 999999999 or more mean it is used up. Only
