@@ -14,6 +14,12 @@ $script:PackageRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..
 $script:NamePattern = '^[a-z][a-z0-9]{1,15}$'
 $script:HasDateKind = $null
 $script:Invariant = [System.Globalization.CultureInfo]::InvariantCulture
+$script:JsonTables = @{}
+# The characters PowerShell takes for a single quote: the apostrophe and U+2018 to U+201B
+$script:PowerShellQuotes = '[''' + [char]0x2018 + [char]0x2019 + [char]0x201A + [char]0x201B + ']'
+# What a line printed for reading must not carry: C0 and C1 with DEL, the invisible marks U+200B to U+200F, the
+# line and paragraph separators, the marks that turn the direction of text, and the byte order mark
+$script:PrintedControl = '[\x00-\x1f\x7f-\x9f' + [char]0x200B + '-' + [char]0x200F + [char]0x2028 + [char]0x2029 + [char]0x202A + '-' + [char]0x202E + [char]0x2066 + '-' + [char]0x2069 + [char]0xFEFF + ']'
 
 #region Text and files
 
@@ -218,14 +224,44 @@ function ConvertTo-RelayRoomSlug {
 }
 
 function Read-RelayKeyValue {
+    # A file of key: value lines, as Read-RelayKeyValueText reads its text
     param([string]$Path)
-    $map = [ordered]@{}
-    foreach ($line in ((Read-RelayText $Path) -split "`n")) {
-        $at = $line.IndexOf(':')
-        if ($at -lt 1) { continue }
-        $map[$line.Substring(0, $at).Trim()] = $line.Substring($at + 1).Trim()
+    return (Read-RelayKeyValueText (Read-RelayText $Path))
+}
+
+function Split-RelayFrontMatter {
+    # A text that starts with a header between two --- lines (a message, a card): the header as key: value pairs
+    # and the body after it. $null when the text has no such header.
+    param([string]$Text)
+    $whole = $Text + "`n"
+    if (-not $whole.StartsWith("---`n")) { return $null }
+    $end = $whole.IndexOf("`n---`n", 3)
+    if ($end -lt 0) { return $null }
+    return [pscustomobject]@{ Header = (Read-RelayKeyValueText ($whole.Substring(4, $end - 3))); Body = $whole.Substring($end + 5).TrimEnd() }
+}
+
+function Read-RelayTemplate {
+    # A template of the room package by its path in the package. One that is missing or empty is an error: it
+    # would write an empty file into the room, an empty START-HERE.md or a wrapper that does nothing.
+    param([Parameter(Mandatory)][string]$Name)
+    $path = Join-Path (Get-RelayPackageRoot) $Name
+    $text = Read-RelayTextStrict $path
+    if (-not $text.Trim()) { throw "The room package has no template ${Name}: $path is missing or empty" }
+    return $text
+}
+
+function Get-RelayJsonTable {
+    # One of the tables next to these scripts (agent-kinds.json, model-tiers.json, work-kinds.json,
+    # relay-names.json), read once and kept: the feed asks for the model tiers of every agent on every round. A
+    # table that is missing or cannot be read is an error.
+    param([Parameter(Mandatory)][string]$Name)
+    if (-not $script:JsonTables.ContainsKey($Name)) {
+        $path = Join-Path $PSScriptRoot $Name
+        $text = Read-RelayTextStrict $path
+        if (-not $text.Trim()) { throw "The table $Name is missing or empty: $path" }
+        $script:JsonTables[$Name] = ConvertFrom-RelayJson $text
     }
-    return $map
+    return $script:JsonTables[$Name]
 }
 
 function ConvertTo-RelayKeyValueText {
@@ -252,10 +288,25 @@ function Get-RelayProperty {
 }
 
 function ConvertTo-RelayPrintedLine {
-    # A line as it is printed for reading: each control character (U+0000 to U+001F, U+007F) from a room file is
-    # replaced by a blank, and no line ends in a blank. JSON output does not pass here: it escapes.
+    # A line as it is printed for reading: each control character from a room file is replaced by a blank, and no
+    # line ends in a blank. Control characters are those of C0 and C1 with DEL (U+0000 to U+001F, U+007F to
+    # U+009F: U+009B starts an escape sequence like ESC [ does), the marks that turn the direction of text
+    # (U+202A to U+202E, U+2066 to U+2069), the invisible ones (U+200B to U+200F, U+FEFF) and the line and
+    # paragraph separators (U+2028, U+2029). JSON output does not pass here: it escapes.
     param([string]$Text)
-    return ([regex]::Replace($Text, '[\x00-\x1f\x7f]', ' ')).TrimEnd(' ')
+    return ([regex]::Replace($Text, $script:PrintedControl, ' ')).TrimEnd(' ')
+}
+
+function Get-RelayTextLength {
+    # Characters, not UTF-16 units: a surrogate pair counts once
+    param([string]$Text)
+    return ($Text.Length - [regex]::Matches($Text, '[\uD800-\uDBFF][\uDC00-\uDFFF]').Count)
+}
+
+function Format-RelayColumn {
+    # A value padded on the right with spaces up to its width in characters; a longer value is not cut
+    param([string]$Text, [int]$Width)
+    return ($Text + (' ' * [Math]::Max(0, $Width - (Get-RelayTextLength $Text))))
 }
 
 function ConvertTo-RelayAsciiLower {
@@ -286,8 +337,9 @@ function Get-RelayFileHash {
 }
 
 function Get-RelayFileTimeUtc {
+    # -Force: on Linux and macOS a file whose name starts with a dot is hidden, and Get-Item does not see it without
     param([string]$Path)
-    try { return (Get-Item -LiteralPath $Path -ErrorAction Stop).LastWriteTimeUtc }
+    try { return (Get-Item -LiteralPath $Path -Force -ErrorAction Stop).LastWriteTimeUtc }
     catch { return [DateTime]::MinValue }
 }
 
@@ -383,9 +435,16 @@ function Assert-RelayPastePath {
 }
 
 function ConvertTo-RelayPowerShellLiteral {
-    # Text as a PowerShell string in single quotes: a single quote is doubled
+    # Text as a PowerShell string in single quotes: a single quote is doubled. PowerShell ends such a string at
+    # U+2018, U+2019, U+201A and U+201B as well, so each of them is doubled too.
     param([Parameter(Mandatory)][string]$Text)
-    return ("'" + $Text.Replace("'", "''") + "'")
+    return ("'" + [regex]::Replace($Text, $script:PowerShellQuotes, { param($match) $match.Value + $match.Value }) + "'")
+}
+
+function Test-RelayPowerShellQuote {
+    # True when the text holds a character PowerShell takes for a single quote
+    param([string]$Text)
+    return ([regex]::IsMatch([string]$Text, $script:PowerShellQuotes))
 }
 
 function ConvertTo-RelayShellLiteral {
@@ -487,13 +546,17 @@ function Get-RelayCanonicalGeneration {
     return $generation
 }
 function Get-RelayRoster {
+    # The agents of a room, from this PC's canonical copy: every agent this PC made a seat for has its gen or seat
+    # file there, and a retired one its retired marker. The room's agents folder says nothing: any agent can make
+    # a folder there, or put a retired marker into another agent's folder.
     param([Parameter(Mandatory)]$Room, [switch]$IncludeRetired)
     $names = New-Object System.Collections.Generic.List[string]
-    $agents = Join-Path $Room.Path 'agents'
-    if (Test-Path -LiteralPath $agents) {
-        foreach ($folder in @(Get-ChildItem -LiteralPath $agents -Directory)) {
-            if ($folder.Name -notmatch $script:NamePattern) { continue }
-            if (-not $IncludeRetired -and (Test-Path -LiteralPath (Join-Path $folder.FullName 'retired'))) { continue }
+    $agents = Join-Path $Room.Canon 'agents'
+    if (Test-Path -LiteralPath $agents -PathType Container) {
+        foreach ($folder in @(Get-ChildItem -LiteralPath $agents -Directory -Force)) {
+            if ($folder.Name -cnotmatch $script:NamePattern) { continue }
+            if (-not (Test-Path -LiteralPath (Join-Path $folder.FullName 'gen') -PathType Leaf) -and -not (Test-Path -LiteralPath (Join-Path $folder.FullName 'seat') -PathType Leaf)) { continue }
+            if (-not $IncludeRetired -and (Test-Path -LiteralPath (Join-Path $folder.FullName 'retired') -PathType Leaf)) { continue }
             $names.Add($folder.Name)
         }
     }
@@ -504,16 +567,43 @@ function Get-RelayRoster {
 
 #region Guarded files and the tamper check
 
+function Get-RelayLinkInPath {
+    # The outermost link (a symbolic link or a junction) on the way from the root down to the path, the path itself
+    # included and the root not; '' when there is none
+    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Path)
+    $top = Get-RelayNormalPath $Root
+    $current = Get-RelayNormalPath $Path
+    $found = ''
+    while ($current.Length -gt $top.Length -and $current.StartsWith($top, [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-RelayLink $current) { $found = $current }
+        $current = [System.IO.Path]::GetDirectoryName($current)
+        if (-not $current) { break }
+    }
+    return $found
+}
+
+function Assert-RelayRoomTarget {
+    # What this PC writes into the room never goes through a link that an agent put there: the folder behind it
+    # is not the room's, it may be the owner's
+    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Path)
+    if (Test-RelayLinkedPath -Root $Room.Path -Path $Path) { throw "Refused to write ${Path}: the way to it goes through a link in the room (a symbolic link or a junction), and what lies behind a link is not the room's. Remove the link, then run this again." }
+}
+
 function Write-RelayGuardedText {
-    # The canonical copy on this PC is written first, the room second: the tamper check restores from the first
+    # The canonical copy on this PC is written first, the room second: the tamper check restores from the first.
+    # Nothing is written when the room's file lies behind a link.
     param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Relative, [string]$Text, [switch]$Crlf)
+    $roomTarget = Join-Path $Room.Path $Relative
+    Assert-RelayRoomTarget $Room $roomTarget
     Write-RelayText (Join-Path $Room.Canon $Relative) $Text -Crlf:$Crlf
-    Write-RelayText (Join-Path $Room.Path $Relative) $Text -Crlf:$Crlf
+    Write-RelayText $roomTarget $Text -Crlf:$Crlf
 }
 
 function Copy-RelayGuardedFile {
     param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Relative, [Parameter(Mandatory)][string]$Source)
-    foreach ($target in (Join-Path $Room.Canon $Relative), (Join-Path $Room.Path $Relative)) {
+    $roomTarget = Join-Path $Room.Path $Relative
+    Assert-RelayRoomTarget $Room $roomTarget
+    foreach ($target in (Join-Path $Room.Canon $Relative), $roomTarget) {
         $folder = Split-Path -Parent $target
         if (-not (Test-Path -LiteralPath $folder)) { $null = New-Item -ItemType Directory -Path $folder -Force }
         [System.IO.File]::WriteAllBytes($target, [System.IO.File]::ReadAllBytes($Source))
@@ -535,17 +625,31 @@ function Get-RelayGuardedFile {
 
 function Add-RelayAlarm {
     param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Text)
-    Add-RelayLine (Join-Path $Room.Local 'alarms.log') ('{0} {1}' -f [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'), (ConvertTo-RelayHeaderText $Text))
+    Add-RelayLine (Join-Path $Room.Local 'alarms.log') ('{0} {1}' -f (Format-RelayUtc), (ConvertTo-RelayHeaderText $Text))
+}
+
+function Format-RelayTamperFinding {
+    # One finding of Test-RelayTamper as a sentence for people: what the feed and the close of a room print
+    param([Parameter(Mandatory)]$Finding)
+    if ($Finding.Kind -eq 'link') { return "$($Finding.Relative) is a link in the room (a symbolic link or a junction): nothing behind it was read, restored or moved; the owner must remove the link" }
+    $done = 'restored from the copy on this PC'
+    if ($Finding.Kind -eq 'extra') { $done = 'it does not belong there and was moved out' }
+    if (-not $Finding.Repaired) { $done = 'it could not be put right' }
+    return "$($Finding.Relative) was $($Finding.Kind): $done"
 }
 
 function Test-RelayTamper {
     # Compares the guarded files in the room with the canonical copies. With -Repair a changed or missing file is
     # restored and a file that does not belong is moved out to this PC. Returns one finding per file. Each file is
     # dealt with by itself: one that cannot be restored or moved out is a finding with Repaired = $false and its
-    # reason, and the check goes on with the next.
+    # reason, and the check goes on with the next. A file that is there and cannot be read is 'unreadable', one
+    # that is not there 'missing'. A link in the room (a symbolic link or a junction, which any agent can make) is
+    # never followed: nothing behind it is read, restored or moved, and the link is one finding of kind 'link',
+    # never repaired, with its alarm.
     param([Parameter(Mandatory)]$Room, [switch]$Repair)
     $findings = New-Object System.Collections.Generic.List[object]
     $known = @{}
+    $links = @{}
     $guarded = @()
     $isListed = $true
     try { $guarded = @(Get-RelayGuardedFile $Room) }
@@ -555,12 +659,25 @@ function Test-RelayTamper {
         Add-RelayAlarm $Room ("TAMPER check could not list the canonical copy: {0}" -f $_.Exception.Message)
     }
     $quarantine = Join-Path $Room.Local 'quarantine'
+    $base = $Room.Path
+    try { $base = Get-RelayNormalPath $Room.Path } catch { $null = $_ }
+    # One finding per link, by its name in the room
+    $addLink = {
+        param([string]$Link)
+        $linkName = $Link
+        if ($Link.Length -gt $base.Length -and $Link.StartsWith($base, [System.StringComparison]::OrdinalIgnoreCase)) { $linkName = ($Link.Substring($base.Length).TrimStart('\', '/') -replace '\\', '/') }
+        if ($links.ContainsKey($linkName)) { return }
+        $links[$linkName] = $true
+        $findings.Add([pscustomobject]@{ Relative = $linkName; Kind = 'link'; Repaired = $false; Reason = 'a link in the room is not followed' })
+    }
     foreach ($relative in $guarded) {
         $known[$relative.ToLowerInvariant()] = $true
         $kind = 'changed'
         try {
             $canonPath = Join-Path $Room.Canon $relative
             $roomPath = Join-Path $Room.Path $relative
+            $link = Get-RelayLinkInPath -Root $Room.Path -Path $roomPath
+            if ($link) { & $addLink $link; continue }
             $expected = Get-RelayFileHash $canonPath
             $actual = Get-RelayFileHash $roomPath
             if ($expected -eq $actual) { continue }
@@ -568,12 +685,15 @@ function Test-RelayTamper {
             Start-Sleep -Milliseconds 300
             $actual = Get-RelayFileHash $roomPath
             if ($expected -eq $actual) { continue }
-            if (-not $actual) { $kind = 'missing' }
+            if (-not $actual) {
+                $kind = 'missing'
+                if ([System.IO.File]::Exists($roomPath)) { $kind = 'unreadable' }
+            }
             if ($Repair) {
                 $folder = Split-Path -Parent $roomPath
                 if (-not (Test-Path -LiteralPath $folder)) { $null = New-Item -ItemType Directory -Path $folder -Force }
                 if ($actual) {
-                    $keep = Join-Path $quarantine ('{0}-{1}' -f [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ'), ($relative -replace '[\\/]', '_'))
+                    $keep = Join-Path $quarantine ('{0}-{1}' -f (Format-RelayUtc -Format 'yyyyMMddTHHmmssZ'), ($relative -replace '[\\/]', '_'))
                     if (-not (Test-Path -LiteralPath $quarantine)) { $null = New-Item -ItemType Directory -Path $quarantine -Force }
                     try { [System.IO.File]::WriteAllBytes($keep, [System.IO.File]::ReadAllBytes($roomPath)) } catch { $null = $_ }
                 }
@@ -584,25 +704,41 @@ function Test-RelayTamper {
         catch { $findings.Add([pscustomobject]@{ Relative = $relative; Kind = $kind; Repaired = $false; Reason = $_.Exception.Message }) }
     }
 
-    # Files that do not belong where only this PC writes: the tools, the wrappers, the markers
+    # Files that do not belong where only this PC writes: the tools, the wrappers, the markers, the prompts
     if ($isListed) {
         $candidates = New-Object System.Collections.Generic.List[string]
-        # A PLAN, a CLOSED marker or a TRANSCRIPT.md that this PC did not write has no canonical copy and so is not known
-        foreach ($name in 'PLAN', 'CLOSED', 'TRANSCRIPT.md') {
-            $path = Join-Path $Room.Path $name
-            if (Test-Path -LiteralPath $path -PathType Leaf) { $candidates.Add($path) }
+        # At the top of the room: a PLAN, a CLOSED marker, a TRANSCRIPT.md, a prompt or a join command that this PC
+        # did not write has no canonical copy and so is not known
+        try {
+            foreach ($file in @((New-Object System.IO.DirectoryInfo $Room.Path).GetFiles())) {
+                if (@('PLAN', 'CLOSED', 'TRANSCRIPT.md', 'join', 'join.cmd', 'join.ps1') -contains $file.Name -or $file.Name -match '^PROMPT-.*\.txt$') { $candidates.Add($file.FullName) }
+            }
         }
+        catch { Add-RelayAlarm $Room ("TAMPER check could not list the room folder: {0}" -f $_.Exception.Message) }
         $tools = Join-Path $Room.Path 'tools'
-        try { if (Test-Path -LiteralPath $tools) { foreach ($file in @(Get-ChildItem -LiteralPath $tools -File -Recurse -Force)) { $candidates.Add($file.FullName) } } }
+        try {
+            if (Test-RelayLink $tools) { & $addLink (Get-RelayNormalPath $tools) }
+            elseif (Test-Path -LiteralPath $tools -PathType Container) {
+                # A link inside the tools folder is listed, never entered
+                $tree = Get-RelayFileTree $tools
+                foreach ($file in @($tree.Files)) { $candidates.Add($file.FullName) }
+                foreach ($link in @($tree.Links)) { & $addLink $link }
+            }
+        }
         catch { Add-RelayAlarm $Room ("TAMPER check could not list tools: {0}" -f $_.Exception.Message) }
         foreach ($agent in @(Get-RelayRoster $Room -IncludeRetired)) {
             $agentDir = Join-Path (Join-Path $Room.Path 'agents') $agent
             try {
+                $link = Get-RelayLinkInPath -Root $Room.Path -Path $agentDir
+                if ($link) { & $addLink $link; continue }
+                if (-not (Test-Path -LiteralPath $agentDir -PathType Container)) { continue }
                 foreach ($name in 'retired', 'lines', 'scope', 'seat', 'control', 'gen') {
                     $path = Join-Path $agentDir $name
                     if (Test-Path -LiteralPath $path) { $candidates.Add($path) }
                 }
-                foreach ($generation in @(Get-ChildItem -LiteralPath $agentDir -Directory -Filter 'g*' | Where-Object { $_.Name -match '^g[0-9]+$' })) {
+                # -Force: a folder that is hidden (over SMB a name with a leading dot can be) is still listed
+                foreach ($generation in @(Get-ChildItem -LiteralPath $agentDir -Directory -Force -Filter 'g*' | Where-Object { $_.Name -match '^g[0-9]+$' })) {
+                    if (Test-RelayLink $generation.FullName) { & $addLink $generation.FullName; continue }
                     foreach ($file in @(Get-ChildItem -LiteralPath $generation.FullName -File -Force)) { $candidates.Add($file.FullName) }
                 }
             }
@@ -618,8 +754,11 @@ function Test-RelayTamper {
             # always) belongs here, and is compared with its copy in the next round
             if (Test-Path -LiteralPath (Join-Path $Room.Canon $relative) -PathType Leaf) { continue }
             try {
+                # A link is moved nowhere: it is a finding of its own
+                $link = Get-RelayLinkInPath -Root $Room.Path -Path $path
+                if ($link) { & $addLink $link; continue }
                 if ($Repair) {
-                    $keep = Join-Path $quarantine ('{0}-{1}' -f [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ'), ($relative -replace '[\\/]', '_'))
+                    $keep = Join-Path $quarantine ('{0}-{1}' -f (Format-RelayUtc -Format 'yyyyMMddTHHmmssZ'), ($relative -replace '[\\/]', '_'))
                     if (-not (Test-Path -LiteralPath $quarantine)) { $null = New-Item -ItemType Directory -Path $quarantine -Force }
                     Move-Item -LiteralPath $path -Destination $keep -Force -ErrorAction Stop
                 }
@@ -629,6 +768,7 @@ function Test-RelayTamper {
         }
     }
     foreach ($finding in $findings) {
+        if ($finding.Kind -eq 'link') { Add-RelayAlarm $Room ("TAMPER link in the room, not followed: {0}" -f $finding.Relative); continue }
         $action = 'found'
         if ($finding.Repaired) { $action = 'restored' }
         if ($finding.Repaired -and $finding.Kind -eq 'extra') { $action = 'moved out' }
@@ -644,16 +784,9 @@ function Test-RelayTamper {
 function Read-RelayMessage {
     # Sender, receiver and number come from where the file is; the header gives the rest
     param([Parameter(Mandatory)][string]$Path)
-    $text = (Read-RelayText $Path) + "`n"
-    if (-not $text.StartsWith("---`n")) { return $null }
-    $end = $text.IndexOf("`n---`n", 3)
-    if ($end -lt 0) { return $null }
-    $header = @{}
-    foreach ($line in ($text.Substring(4, $end - 3) -split "`n")) {
-        $at = $line.IndexOf(':')
-        if ($at -lt 1) { continue }
-        $header[$line.Substring(0, $at).Trim()] = $line.Substring($at + 1).Trim()
-    }
+    $parts = Split-RelayFrontMatter (Read-RelayText $Path)
+    if ($null -eq $parts) { return $null }
+    $header = $parts.Header
     $fileName = [System.IO.Path]::GetFileNameWithoutExtension($Path)
     $to = Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent $Path))
     $from = ''
@@ -662,7 +795,7 @@ function Read-RelayMessage {
     $fields = @{}
     foreach ($key in 'id', 'from', 'to', 'type', 're', 'subject', 'sent_utc', 'expects') {
         $fields[$key] = ''
-        if ($header.ContainsKey($key)) { $fields[$key] = [string]$header[$key] }
+        if ($header.Contains($key)) { $fields[$key] = [string]$header[$key] }
     }
     $id = "$from-$to-$number"
     return [pscustomobject]@{
@@ -674,7 +807,7 @@ function Read-RelayMessage {
         Subject  = $fields['subject']
         SentUtc  = $fields['sent_utc']
         Expects  = $fields['expects']
-        Body     = $text.Substring($end + 5).TrimEnd()
+        Body     = $parts.Body
         Path     = $Path
         Time     = (Get-RelayFileTimeUtc $Path)
         Mismatch = ($fields['id'] -ne $id -or $fields['from'] -ne $from -or $fields['to'] -ne $to)
@@ -683,10 +816,9 @@ function Read-RelayMessage {
 
 function Get-RelayMessage {
     # Every message in the room, oldest first (by the file server's time). Owner cards are separate.
-    param([Parameter(Mandatory)]$Room, [string]$To = '')
+    param([Parameter(Mandatory)]$Room)
     $messages = New-Object System.Collections.Generic.List[object]
     foreach ($agent in @(Get-RelayRoster $Room -IncludeRetired)) {
-        if ($To -and $agent -ne $To) { continue }
         $inbox = Join-Path (Join-Path (Join-Path $Room.Path 'agents') $agent) 'inbox'
         if (-not (Test-Path -LiteralPath $inbox)) { continue }
         foreach ($file in @(Get-ChildItem -LiteralPath $inbox -Filter '*.md' -File)) {
@@ -701,8 +833,10 @@ function Get-RelayMessage {
 function Add-RelayMessageFile {
     # Writes one message into an inbox the way the room tool does: a free number, an exclusive move into place.
     # With -LogPath (the owner's log) the number comes from that log, never from what lies in the inbox, and the
-    # log line (with the hash of the file's bytes) is written before the file is. A number a file already has, or
-    # the receiver's delivered list already names, is skipped; past 999999 there is no number.
+    # log line (with the hash of the file's bytes) is written before the file is moved into place. That hash is
+    # taken of the bytes in memory, never read back from the inbox, where any agent can swap the temporary file:
+    # a temporary file that no longer holds those bytes is deleted and nothing is sent. A number a file already
+    # has, or the receiver's delivered list already names, is skipped; past 999999 there is no number.
     param(
         [Parameter(Mandatory)][string]$Inbox, [Parameter(Mandatory)][string]$From, [Parameter(Mandatory)][string]$To,
         [Parameter(Mandatory)][string]$Type, [string]$Re = '', [string]$Subject = '', [string]$Body = '', [string]$Expects = 'none',
@@ -712,7 +846,8 @@ function Add-RelayMessageFile {
     $highest = 0
     $idPattern = '^' + [regex]::Escape("$From-$To-") + '([0-9]{4,6})$'
     if ($LogPath) {
-        foreach ($line in ((Read-RelayText $LogPath) -split "`n")) {
+        # A log that cannot be read gives no number: it would start again at 1
+        foreach ($line in ((Read-RelayTextStrict $LogPath) -split "`n")) {
             $parts = @($line -split "`t")
             if ($parts.Count -ge 2 -and $parts[1] -cmatch $idPattern) { $seen = [int]$Matches[1]; if ($seen -gt $highest) { $highest = $seen } }
         }
@@ -738,15 +873,22 @@ function Add-RelayMessageFile {
             "type: $Type"
             "re: $Re"
             "subject: $(ConvertTo-RelayHeaderText $Subject)"
-            "sent_utc: $([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
+            "sent_utc: $(Format-RelayUtc)"
             "expects: $Expects"
             '---'
         ) -join "`n"
+        # The text as Write-RelayText writes it: LF line ends, UTF-8 without BOM
+        $text = (($header + "`n" + $Body.TrimEnd() + "`n") -replace "`r`n", "`n") -replace "`r", "`n"
+        $hash = Get-RelayBytesHash ($script:Utf8.GetBytes($text))
         $temporary = Join-Path $Inbox ('.{0}-{1}.tmp' -f $From, [guid]::NewGuid().ToString('N'))
-        Write-RelayText $temporary ($header + "`n" + $Body.TrimEnd() + "`n")
+        Write-RelayText $temporary $text
         if ($LogPath) {
+            if ((Get-RelayFileHash $temporary) -ne $hash) {
+                try { [System.IO.File]::Delete($temporary) } catch { $null = $_ }
+                throw "The message file in $Inbox was changed between writing it and logging it: nothing was sent"
+            }
             # A log that cannot be written means no message: the temporary file goes
-            try { Add-RelayLine $LogPath ("{0}`t{1}`t{2}`t{3}`t{4}" -f [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'), $id, (Get-RelayFileHash $temporary), $Via, $Re) }
+            try { Add-RelayLine $LogPath ("{0}`t{1}`t{2}`t{3}`t{4}" -f (Format-RelayUtc), $id, $hash, $Via, $Re) }
             catch { [System.IO.File]::Delete($temporary); throw }
         }
         $moved = $false
@@ -819,11 +961,9 @@ function Get-RelayOwnerCard {
     $folder = Join-Path $Room.Owner 'cards'
     if (Test-Path -LiteralPath $folder) {
         foreach ($file in @(Get-ChildItem -LiteralPath $folder -Filter '*.md' -File | Sort-Object Name)) {
-            $text = (Read-RelayText $file.FullName) + "`n"
-            if (-not $text.StartsWith("---`n")) { continue }
-            $end = $text.IndexOf("`n---`n", 3)
-            if ($end -lt 0) { continue }
-            $header = Read-RelayKeyValueText ($text.Substring(4, $end - 3))
+            $parts = Split-RelayFrontMatter (Read-RelayText $file.FullName)
+            if ($null -eq $parts) { continue }
+            $header = $parts.Header
             $answerPath = [System.IO.Path]::ChangeExtension($file.FullName, '.answer')
             $answer = Read-RelayKeyValue $answerPath
             $isOpen = ($answer.Count -eq 0)
@@ -833,7 +973,7 @@ function Get-RelayOwnerCard {
                     Re       = (Get-RelayValue $header 're' '')
                     Subject  = (Get-RelayValue $header 'subject' '')
                     SentUtc  = (Get-RelayValue $header 'sent_utc' '')
-                    Body     = $text.Substring($end + 5).TrimEnd()
+                    Body     = $parts.Body
                     IsOpen   = $isOpen
                     Decision = (Get-RelayValue $answer 'decision' '')
                     Via      = (Get-RelayValue $answer 'via' '')
@@ -870,7 +1010,7 @@ function Add-RelayOwnerCard {
         'type: question'
         "re: $Re"
         "subject: $(ConvertTo-RelayHeaderText $Subject)"
-        "sent_utc: $([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
+        "sent_utc: $(Format-RelayUtc)"
         'expects: reply'
         '---'
     ) -join "`n"
@@ -887,9 +1027,9 @@ function Complete-RelayOwnerCard {
     )
     $card = @(Get-RelayOwnerCard $Room | Where-Object { $_.Id -eq $CardId })
     if ($card.Count -eq 0) { throw "No card '$CardId' in room $($Room.Id)" }
-    $answer = [ordered]@{ decision = $Decision; via = $Via; at_utc = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'); message = $MessageId }
+    $answer = [ordered]@{ decision = $Decision; via = $Via; at_utc = (Format-RelayUtc); message = $MessageId }
     Write-RelayText ([System.IO.Path]::ChangeExtension($card[0].Path, '.answer')) (ConvertTo-RelayKeyValueText $answer)
-    Add-RelayLine (Join-Path $Room.Owner 'log') ("{0}`t{1}`t{2}`t{3}`t{4}" -f [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'), $CardId, $Decision, $Via, $MessageId)
+    Add-RelayLine (Join-Path $Room.Owner 'log') ("{0}`t{1}`t{2}`t{3}`t{4}" -f (Format-RelayUtc), $CardId, $Decision, $Via, $MessageId)
 }
 
 #endregion
@@ -897,13 +1037,20 @@ function Complete-RelayOwnerCard {
 #region Board
 
 function Get-RelayRoomNow {
-    # "Now" on the clock of wherever the room lives: the time the file server gives a file written this moment
+    # "Now" on the clock of wherever the room lives: the time the file server gives a file written this moment.
+    # The probe has a new name every time and is only made where nothing is yet, then deleted: a folder or a link
+    # of that name that an agent put into the room can neither stop it for good nor turn the write elsewhere.
+    # Without a probe it is the clock of this PC.
     param([Parameter(Mandatory)]$Room)
-    $probe = Join-Path $Room.Path '.dev-clock'
+    $probe = Join-Path $Room.Path ('.dev-clock-' + [guid]::NewGuid().ToString('N'))
     try {
-        [System.IO.File]::WriteAllText($probe, [DateTime]::UtcNow.ToString('o'))
-        $time = Get-RelayFileTimeUtc $probe
-        if ($time -ne [DateTime]::MinValue) { return $time }
+        $stream = New-Object System.IO.FileStream($probe, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write)
+        try { $stream.WriteByte(10) } finally { $stream.Dispose() }
+        try {
+            $time = Get-RelayFileTimeUtc $probe
+            if ($time -ne [DateTime]::MinValue) { return $time }
+        }
+        finally { try { [System.IO.File]::Delete($probe) } catch { $null = $_ } }
     }
     catch { $null = $_ }
     return [DateTime]::UtcNow
@@ -911,9 +1058,9 @@ function Get-RelayRoomNow {
 
 function ConvertTo-RelayMessageRow {
     # A message as the chat window and the board show it: header fields and the start of the text
-    param([Parameter(Mandatory)]$Message, [int]$PreviewLength = 400)
+    param([Parameter(Mandatory)]$Message)
     $preview = $Message.Body
-    if ($preview.Length -gt $PreviewLength) { $preview = $preview.Substring(0, $PreviewLength) + ' ...' }
+    if ($preview.Length -gt 400) { $preview = $preview.Substring(0, 400) + ' ...' }
     return [pscustomobject]@{
         id       = $Message.Id
         from     = $Message.From
@@ -923,11 +1070,38 @@ function ConvertTo-RelayMessageRow {
         subject  = $Message.Subject
         expects  = $Message.Expects
         sentUtc  = $Message.SentUtc
-        time     = $Message.Time.ToString('yyyy-MM-ddTHH:mm:ssZ')
+        time     = (Format-RelayUtc $Message.Time)
         preview  = $preview
         length   = $Message.Body.Length
         mismatch = [bool]$Message.Mismatch
     }
+}
+
+function ConvertTo-RelayCardRow {
+    # An open card as the board and the chat window show it: its header and the start of its text
+    param([Parameter(Mandatory)]$Card)
+    $preview = $Card.Body
+    if ($preview.Length -gt 600) { $preview = $preview.Substring(0, 600) + ' ...' }
+    return [pscustomobject]@{ id = $Card.Id; re = $Card.Re; subject = $Card.Subject; sentUtc = $Card.SentUtc; text = $preview }
+}
+
+function Test-RelayPlanDifference {
+    # True when the room's PLAN is not byte for byte this PC's copy, or this PC has no copy
+    param([Parameter(Mandatory)]$Room)
+    $copy = Get-RelayFileHash (Join-Path $Room.Canon 'PLAN')
+    return ((-not $copy) -or ($copy -ne (Get-RelayFileHash (Join-Path $Room.Path 'PLAN'))))
+}
+
+function Format-RelayPlanTable {
+    # One line per part of a plan, in the order of the parts: id, status, owner and title in columns, -Indent in
+    # front. The id column is as wide as the longest id and 12 at least; widths are counted in characters (a
+    # surrogate pair counts once), and a value longer than its column is not cut.
+    param([AllowEmptyCollection()][object[]]$Parts = @(), [string]$Indent = '  ')
+    $idWidth = 12
+    foreach ($part in @($Parts)) { $idWidth = [Math]::Max($idWidth, (Get-RelayTextLength ([string]$part.id))) }
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($part in @($Parts)) { $lines.Add($Indent + (Format-RelayColumn ([string]$part.id) $idWidth) + '  ' + (Format-RelayColumn ([string]$part.status) 8) + '  ' + (Format-RelayColumn ([string]$part.owner) 9) + '  ' + [string]$part.title) }
+    return @($lines.ToArray())
 }
 
 function ConvertTo-RelayPlanRevision {
@@ -1128,7 +1302,7 @@ function Get-RelayModelTier {
     param([string]$Model)
     $name = ([string]$Model).Trim().ToLowerInvariant()
     if (-not $name -or $name -eq 'unknown') { return 'unknown' }
-    $table = ConvertFrom-RelayJson (Read-RelayText (Join-Path $PSScriptRoot 'model-tiers.json'))
+    $table = Get-RelayJsonTable 'model-tiers.json'
     foreach ($entry in @($table.tiers)) {
         foreach ($word in @($entry.words)) {
             # A word counts where it starts a part of the name: mini in gpt-6-mini, not in gemini
@@ -1175,9 +1349,7 @@ function Get-RelayBoard {
     $plan = Read-RelayPlan $Room
     if ($null -ne $plan) {
         # The room's PLAN against this PC's copy, byte for byte: no copy, or another one, is a difference
-        $copy = Get-RelayFileHash (Join-Path $Room.Canon 'PLAN')
-        $differs = (-not $copy) -or ($copy -ne (Get-RelayFileHash (Join-Path $Room.Path 'PLAN')))
-        $plan | Add-Member -NotePropertyName differs -NotePropertyValue ([bool]$differs)
+        $plan | Add-Member -NotePropertyName differs -NotePropertyValue ([bool](Test-RelayPlanDifference $Room))
     }
     $agents = @(Get-RelayAgentState -Room $Room -Now $now -Open $open -Plan $plan -Messages $messages)
 
@@ -1191,14 +1363,12 @@ function Get-RelayBoard {
                 subject    = $message.Subject
                 expects    = $message.Expects
                 ageMinutes = [int][Math]::Max(0, ($now - $message.Time).TotalMinutes)
+                # The header names another sender, receiver or number than the file's place does
+                mismatch   = [bool]$message.Mismatch
             })
     }
     $cards = New-Object System.Collections.Generic.List[object]
-    foreach ($card in @(Get-RelayOwnerCard $Room -OpenOnly)) {
-        $preview = $card.Body
-        if ($preview.Length -gt 600) { $preview = $preview.Substring(0, 600) + ' ...' }
-        $cards.Add([pscustomobject]@{ id = $card.Id; re = $card.Re; subject = $card.Subject; sentUtc = $card.SentUtc; text = $preview })
-    }
+    foreach ($card in @(Get-RelayOwnerCard $Room -OpenOnly)) { $cards.Add((ConvertTo-RelayCardRow $card)) }
     $ownerMessages = New-Object System.Collections.Generic.List[object]
     foreach ($message in @($messages | Where-Object { $_.From -eq 'owner' })) {
         $ownerMessages.Add([pscustomobject]@{ id = $message.Id; to = $message.To; subject = $message.Subject; isVerified = ($message.To -eq $Room.Coordinator -and (Test-RelayOwnerMessage $Room $message)) })
@@ -1386,7 +1556,7 @@ function Get-RelayStatistic {
 function Get-RelayAgentKind {
     # The profile of one agent kind from agent-kinds.json; unknown kinds get the generic profile
     param([string]$Kind = 'generic')
-    $all = ConvertFrom-RelayJson (Read-RelayText (Join-Path $PSScriptRoot 'agent-kinds.json'))
+    $all = Get-RelayJsonTable 'agent-kinds.json'
     $kindProfile = $all.PSObject.Properties[$Kind]
     if ($null -eq $kindProfile) { $kindProfile = $all.PSObject.Properties['generic'] }
     return $kindProfile.Value
@@ -1395,7 +1565,7 @@ function Get-RelayAgentKind {
 function Get-RelayWorkKind {
     # The method lines and report shape for one kind of work from work-kinds.json
     param([string]$Work = 'other')
-    $all = ConvertFrom-RelayJson (Read-RelayText (Join-Path $PSScriptRoot 'work-kinds.json'))
+    $all = Get-RelayJsonTable 'work-kinds.json'
     $entry = $all.PSObject.Properties[$Work]
     if ($null -eq $entry) { throw ("The kind of work '$Work' is not one of " + ((@($all.PSObject.Properties | ForEach-Object { $_.Name })) -join ', ')) }
     return $entry.Value
@@ -1403,13 +1573,19 @@ function Get-RelayWorkKind {
 
 function Select-RelayName {
     # A name for one seat. The same machine and role keeps its name across jobs; in one room every name starts
-    # with a different letter.
+    # with a different letter. The registry of names (names.json) is written back whole, so one that exists and
+    # cannot be read or parsed is an error, never an empty registry.
     param([Parameter(Mandatory)][string]$Machine, [Parameter(Mandatory)][string]$Role, [string[]]$Taken = @(), [string]$Wanted = '')
-    $pool = ConvertFrom-RelayJson (Read-RelayText (Join-Path $PSScriptRoot 'relay-names.json'))
+    $pool = Get-RelayJsonTable 'relay-names.json'
     $registryPath = Join-Path (Get-RelayLocalRoot) 'names.json'
     $registry = @{}
-    $registryText = Read-RelayText $registryPath
-    if ($registryText.Trim()) { foreach ($property in (ConvertFrom-RelayJson $registryText).PSObject.Properties) { $registry[$property.Name] = [string]$property.Value } }
+    $registryText = Read-RelayTextStrict $registryPath
+    if ($registryText.Trim()) {
+        $parsed = $null
+        try { $parsed = ConvertFrom-RelayJson $registryText }
+        catch { throw "The name registry of this PC cannot be parsed, it is not written over: $registryPath ($($_.Exception.Message))" }
+        foreach ($property in $parsed.PSObject.Properties) { $registry[$property.Name] = [string]$property.Value }
+    }
     $key = ('{0}|{1}' -f $Machine.Trim().ToLowerInvariant(), $Role.Trim().ToLowerInvariant())
     $usedLetters = @{}
     foreach ($name in @($Taken)) { if ($name) { $usedLetters[$name.Substring(0, 1).ToLowerInvariant()] = $true } }
@@ -1458,7 +1634,7 @@ function Select-RelayName {
     $registry[$key] = $choice
     $ordered = [ordered]@{}
     foreach ($entry in ($registry.Keys | Sort-Object)) { $ordered[$entry] = $registry[$entry] }
-    Write-RelayText $registryPath ((ConvertTo-Json -InputObject $ordered -Depth 3) + "`n")
+    Write-RelayTextAtomic $registryPath ((ConvertTo-Json -InputObject $ordered -Depth 3) + "`n")
     return $choice
 }
 
@@ -1495,10 +1671,18 @@ function Get-RelayCallLine {
 #region Seats
 
 function Expand-RelayTemplate {
+    # Every {{KEY}} of the template replaced by its value, all in one pass: a value that holds {{ANOTHER}} (text
+    # that came from the room, for example) stays as it is. A key the values do not name stays in the text; keys
+    # are compared with regard to case.
     param([Parameter(Mandatory)][string]$Text, [Parameter(Mandatory)][System.Collections.IDictionary]$Values)
-    $result = $Text
-    foreach ($key in $Values.Keys) { $result = $result.Replace('{{' + [string]$key + '}}', [string]$Values[$key]) }
-    return $result
+    $map = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([System.StringComparer]::Ordinal)
+    foreach ($key in $Values.Keys) { $map[[string]$key] = [string]$Values[$key] }
+    return [regex]::Replace($Text, '\{\{([A-Za-z0-9_]+)\}\}', {
+            param($match)
+            $name = $match.Groups[1].Value
+            if ($map.ContainsKey($name)) { return $map[$name] }
+            return $match.Value
+        })
 }
 
 function ConvertTo-RelayBulletList {
@@ -1597,10 +1781,11 @@ function Get-RelayStartPrompt {
     # What the owner pastes into the agent's session: who it is and the one command to run. The coordinator's call
     # is its launcher on this PC (-Launcher: the folder that holds it).
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][System.Collections.IDictionary]$Spec, [int]$Generation = 1, [string]$Launcher = '')
-    $display = $Name.Substring(0, 1).ToUpperInvariant() + $Name.Substring(1)
-    # For PowerShell the path is written with forward slashes: the same line then works in Git Bash too
+    $display = ConvertTo-RelayDisplayName $Name
+    # For PowerShell the path is written with forward slashes: the same line then works in Git Bash too. Not for
+    # a path with a character PowerShell takes for a single quote: quoted for sh, it would end the string there.
     $shell = [string]$Spec['shell']
-    $isDual = ($shell -eq 'powershell' -and -not ([string]$Spec['room_path']).Contains("'") -and -not $Launcher)
+    $isDual = ($shell -eq 'powershell' -and -not (Test-RelayPowerShellQuote ([string]$Spec['room_path'])) -and -not $Launcher)
     if ($isDual) { $shell = 'bash' }
     $call = Get-RelayCallLine -RoomPath $Spec['room_path'] -Name $Name -Generation ([string]$Generation) -Shell $shell -Launcher $Launcher
     $lines = New-Object System.Collections.Generic.List[string]
@@ -1627,11 +1812,9 @@ function Add-RelayAgentSeat {
         # The same session gets a new assignment: its generation, its pause or stop state and its prompt stay
         [switch]$Reassign
     )
-    $package = Get-RelayPackageRoot
-    $display = $Name.Substring(0, 1).ToUpperInvariant() + $Name.Substring(1)
+    $display = ConvertTo-RelayDisplayName $Name
     $base = "agents/$Name"
-    $coordinator = $Room.Coordinator
-    $coordinatorDisplay = $coordinator.Substring(0, 1).ToUpperInvariant() + $coordinator.Substring(1)
+    $coordinatorDisplay = ConvertTo-RelayDisplayName $Room.Coordinator
     $launcher = ''
     if ($IsCoordinator) { $launcher = $Room.Local }
     $call = Get-RelayCallLine -RoomPath $Spec['room_path'] -Name $Name -Generation ([string]$Generation) -Shell $Spec['shell'] -Launcher $launcher
@@ -1764,11 +1947,9 @@ function Add-RelayAgentSeat {
     $startTemplate = 'START-HERE.md.tmpl'
     $assignmentTemplate = 'ASSIGNMENT.md.tmpl'
     if ($IsCoordinator) { $startTemplate = 'COORDINATOR.md.tmpl'; $assignmentTemplate = '' }
-    Write-RelayGuardedText $Room "$base/START-HERE.md" (Expand-RelayTemplate (Read-RelayText (Join-Path $package $startTemplate)) $values)
-    if ($assignmentTemplate) { Write-RelayGuardedText $Room "$base/ASSIGNMENT.md" (Expand-RelayTemplate (Read-RelayText (Join-Path $package $assignmentTemplate)) $values) }
-    Write-RelayGuardedText $Room "$base/g$Generation/relay.cmd" (Expand-RelayTemplate (Read-RelayText (Join-Path $package 'wrappers\relay.cmd.tmpl')) $values) -Crlf
-    Write-RelayGuardedText $Room "$base/g$Generation/relay.ps1" (Expand-RelayTemplate (Read-RelayText (Join-Path $package 'wrappers\relay.ps1.tmpl')) $values)
-    Write-RelayGuardedText $Room "$base/g$Generation/relay" (Expand-RelayTemplate (Read-RelayText (Join-Path $package 'wrappers\relay.tmpl')) $values)
+    Write-RelayGuardedText $Room "$base/START-HERE.md" (Expand-RelayTemplate (Read-RelayTemplate $startTemplate) $values)
+    if ($assignmentTemplate) { Write-RelayGuardedText $Room "$base/ASSIGNMENT.md" (Expand-RelayTemplate (Read-RelayTemplate $assignmentTemplate) $values) }
+    Write-RelaySeatWrapper -Room $Room -Name $Name -Generation ([string]$Generation)
     foreach ($folder in 'inbox', 'attach') {
         $path = Join-Path (Join-Path (Join-Path $Room.Path 'agents') $Name) $folder
         if (-not (Test-Path -LiteralPath $path)) { $null = New-Item -ItemType Directory -Path $path -Force }
@@ -1791,26 +1972,29 @@ function Add-RelayAgentSeat {
 
 function Write-RelayLauncher {
     # The coordinator's launcher pair, relay.ps1 and relay.cmd, in this PC's own folder of the room: it runs the
-    # tool of the canonical copy, not the one in the room, where every agent can write
+    # tool of the canonical copy, not the one in the room, where every agent can write. Only relay.ps1 names the
+    # room folder, and it is written with a BOM: Windows PowerShell 5.1 reads a script without one in the ANSI
+    # code page, which garbles a folder with a letter outside ASCII. relay.cmd holds no path at all (cmd reads a
+    # batch file in the OEM code page) and hands over to relay.ps1 next to it.
     param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Generation)
     Assert-RelayPastePath $Room.Path 'The room folder'
-    $package = Get-RelayPackageRoot
+    $quoted = ConvertTo-RelayPowerShellLiteral $Room.Path
     $values = @{
-        DISPLAY       = ($Name.Substring(0, 1).ToUpperInvariant() + $Name.Substring(1))
-        NAME          = $Name
-        GEN           = $Generation
-        ROOM_ID       = $Room.Id
-        ROOM_PATH_PS  = $Room.Path.Replace("'", "''")
-        ROOM_PATH_CMD = $Room.Path.Replace('%', '%%')
+        DISPLAY      = (ConvertTo-RelayDisplayName $Name)
+        NAME         = $Name
+        GEN          = $Generation
+        ROOM_ID      = $Room.Id
+        # The room folder inside single quotes: every quote of it doubled
+        ROOM_PATH_PS = $quoted.Substring(1, $quoted.Length - 2)
     }
-    Write-RelayText (Join-Path $Room.Local 'relay.cmd') (Expand-RelayTemplate (Read-RelayText (Join-Path $package 'wrappers\coordinator.cmd.tmpl')) $values) -Crlf
-    Write-RelayText (Join-Path $Room.Local 'relay.ps1') (Expand-RelayTemplate (Read-RelayText (Join-Path $package 'wrappers\coordinator.ps1.tmpl')) $values)
+    Write-RelayText (Join-Path $Room.Local 'relay.cmd') (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\coordinator.cmd.tmpl') $values) -Crlf
+    Write-RelayText (Join-Path $Room.Local 'relay.ps1') (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\coordinator.ps1.tmpl') $values) -Bom
 }
 function Write-RelayKindTable {
     # tools/kinds in the room: how each agent kind waits, as key: value lines the room tools read. The agent on
     # a seat taken with join names its product only when it arrives.
     param([Parameter(Mandatory)]$Room)
-    $all = ConvertFrom-RelayJson (Read-RelayText (Join-Path $PSScriptRoot 'agent-kinds.json'))
+    $all = Get-RelayJsonTable 'agent-kinds.json'
     $lines = New-Object System.Collections.Generic.List[string]
     foreach ($kind in $all.PSObject.Properties) {
         $lines.Add("$($kind.Name).wake: $($kind.Value.wake)")
@@ -1825,23 +2009,23 @@ function Write-RelayKindTable {
 function Write-RelayJoinWrapper {
     # The room's join commands, one per way of calling: join.ps1 (powershell -File), join.cmd, join (sh)
     param([Parameter(Mandatory)]$Room)
-    $package = Get-RelayPackageRoot
     $values = @{ ROOM_ID = $Room.Id }
-    Write-RelayGuardedText $Room 'join.cmd' (Expand-RelayTemplate (Read-RelayText (Join-Path $package 'wrappers\join.cmd.tmpl')) $values) -Crlf
-    Write-RelayGuardedText $Room 'join.ps1' (Expand-RelayTemplate (Read-RelayText (Join-Path $package 'wrappers\join.ps1.tmpl')) $values)
-    Write-RelayGuardedText $Room 'join' (Expand-RelayTemplate (Read-RelayText (Join-Path $package 'wrappers\join.tmpl')) $values)
+    Write-RelayGuardedText $Room 'join.cmd' (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\join.cmd.tmpl') $values) -Crlf
+    Write-RelayGuardedText $Room 'join.ps1' (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\join.ps1.tmpl') $values)
+    Write-RelayGuardedText $Room 'join' (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\join.tmpl') $values)
 }
 
 function Write-RelaySeatWrapper {
-    # The wrappers of one agent's current generation, written again from the package's templates
-    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Name)
-    $package = Get-RelayPackageRoot
-    $generation = (Read-RelayText (Join-Path $Room.Canon "agents/$Name/gen")).Trim()
-    if ($generation -notmatch '^[0-9]+$') { return }
-    $values = @{ DISPLAY = ($Name.Substring(0, 1).ToUpperInvariant() + $Name.Substring(1)); NAME = $Name; GEN = $generation; ROOM_ID = $Room.Id }
-    Write-RelayGuardedText $Room "agents/$Name/g$generation/relay.cmd" (Expand-RelayTemplate (Read-RelayText (Join-Path $package 'wrappers\relay.cmd.tmpl')) $values) -Crlf
-    Write-RelayGuardedText $Room "agents/$Name/g$generation/relay.ps1" (Expand-RelayTemplate (Read-RelayText (Join-Path $package 'wrappers\relay.ps1.tmpl')) $values)
-    Write-RelayGuardedText $Room "agents/$Name/g$generation/relay" (Expand-RelayTemplate (Read-RelayText (Join-Path $package 'wrappers\relay.tmpl')) $values)
+    # The wrappers of one generation of one agent, from the package's templates: -Generation, or the current one
+    # of this PC's copy when it is left out
+    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Name, [string]$Generation = '')
+    $number = $Generation
+    if (-not $number) { $number = (Read-RelayText (Join-Path $Room.Canon "agents/$Name/gen")).Trim() }
+    if ($number -notmatch '^[0-9]+$') { return }
+    $values = @{ DISPLAY = (ConvertTo-RelayDisplayName $Name); NAME = $Name; GEN = $number; ROOM_ID = $Room.Id }
+    Write-RelayGuardedText $Room "agents/$Name/g$number/relay.cmd" (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\relay.cmd.tmpl') $values) -Crlf
+    Write-RelayGuardedText $Room "agents/$Name/g$number/relay.ps1" (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\relay.ps1.tmpl') $values)
+    Write-RelayGuardedText $Room "agents/$Name/g$number/relay" (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\relay.tmpl') $values)
 }
 
 function Get-RelayJoinPrompt {
@@ -1884,7 +2068,8 @@ function Add-RelayOpenSeat {
     $order = 0
     foreach ($name in @(Get-RelayRoster $Room -IncludeRetired)) {
         $taken.Add($name)
-        $seat = Read-RelayKeyValue (Join-Path (Join-Path (Join-Path $Room.Path 'agents') $name) 'seat')
+        # The order of a seat from this PC's copy: the room's seat file is the agents' to write
+        $seat = Read-RelayKeyValue (Join-Path (Join-Path (Join-Path $Room.Canon 'agents') $name) 'seat')
         $existing = 0
         if ([int]::TryParse((Get-RelayValue $seat 'order' '0'), [ref]$existing) -and $existing -gt $order) { $order = $existing }
     }
@@ -1997,8 +2182,11 @@ function Update-RelayRoomPackage {
     }
     if ($hasJoin) {
         $prompt = Get-RelayJoinPrompt $Room
-        $promptPath = Join-Path $Room.Path 'PROMPT-JOIN.txt'
-        if ((Read-RelayText $promptPath).TrimEnd() -ne $prompt.TrimEnd() -and $PSCmdlet.ShouldProcess("$($Room.Id): PROMPT-JOIN.txt", 'Write again from the plugin package')) {
+        # This PC's copy says whether the prompt is old: the room's file is the agents' to write. A room file that
+        # is not that copy is written again with it, as the tamper check would.
+        $canonPrompt = Join-Path $Room.Canon 'PROMPT-JOIN.txt'
+        $isCurrent = ((Read-RelayText $canonPrompt).TrimEnd() -eq $prompt.TrimEnd()) -and ((Get-RelayFileHash $canonPrompt) -eq (Get-RelayFileHash (Join-Path $Room.Path 'PROMPT-JOIN.txt')))
+        if (-not $isCurrent -and $PSCmdlet.ShouldProcess("$($Room.Id): PROMPT-JOIN.txt", 'Write again from the plugin package')) {
             Write-RelayGuardedText $Room 'PROMPT-JOIN.txt' $prompt
             Write-RelayText (Join-Path (Join-Path $Room.Local 'prompts') 'PROMPT-JOIN.txt') $prompt
             $changed.Add('PROMPT-JOIN.txt')

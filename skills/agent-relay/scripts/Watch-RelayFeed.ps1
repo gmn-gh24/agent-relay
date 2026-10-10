@@ -13,6 +13,9 @@
       an alarm is raised. A file that claims to come from the owner but is not in the owner's log raises one too.
     - the coordinator's heartbeat: remote agents see that the coordinator is alive even while it is busy.
 
+    When the room folder cannot be reached (a share that is down, a folder that was moved), the feed says so in
+    one alarm, checks and writes nothing in the room, and says so again when the folder is back.
+
     -Json prints one JSON object per line, ASCII only: first a "snapshot", then "message", "agents", "waiting",
     "alarm", "tick" and finally "closed". Without -Json the same is printed for reading. It ends when the room
     is closed (this PC says so: the CLOSED marker of the canonical copy; a CLOSED that anybody else puts into the room
@@ -81,7 +84,7 @@ function Get-Display {
     param([string]$Name)
     if (-not $Name) { return '?' }
     if ($Name -eq 'owner') { return 'OWNER' }
-    return ($Name.Substring(0, 1).ToUpperInvariant() + $Name.Substring(1))
+    return (ConvertTo-RelayDisplayName $Name)
 }
 
 function Write-Line {
@@ -96,7 +99,14 @@ function Write-MessageText {
     param($Row, [int]$Lines = 6)
     $re = ''
     if ($Row.re) { $re = " re $($Row.re)" }
-    Write-Line ('{0}  {1} -> {2}  [{3}]{4}  {5}' -f ([DateTime]::Parse($Row.time, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal).ToLocalTime().ToString('HH:mm:ss')), (Get-Display $Row.from), (Get-Display $Row.to), $Row.type, $re, $Row.subject)
+    # The time on this PC's clock; a time that cannot be read is shown as it was written, it ends nothing
+    $time = [string]$Row.time
+    $parsed = ConvertFrom-RelayUtc $time
+    if ($null -ne $parsed) { $time = $parsed.ToLocalTime().ToString('HH:mm:ss') }
+    # A header that names another sender, receiver or number than the place of its file
+    $mark = ''
+    if ($Row.mismatch) { $mark = '   [HEADER DOES NOT MATCH ITS FILE]' }
+    Write-Line ('{0}  {1} -> {2}  [{3}]{4}  {5}{6}' -f $time, (Get-Display $Row.from), (Get-Display $Row.to), $Row.type, $re, $Row.subject, $mark)
     $shown = 0
     foreach ($line in ($Row.preview -split "`n")) {
         if (-not $line.Trim()) { continue }
@@ -111,10 +121,10 @@ function Write-PlanText {
     param($Plan)
     $mark = ''
     if (-not $Plan.isComplete) { $mark = '   [INCOMPLETE]' }
+    # Set in the text feed only: the JSON lines keep the fields the chat window knows
+    if ($null -ne $Plan.PSObject.Properties['differs'] -and $Plan.differs) { $mark += '   [DIFFERS FROM THE COPY ON THIS PC: the feed puts it back]' }
     Write-Line "  PLAN $($Plan.revision): $($Plan.goal)$mark"
-    $idWidth = 12
-    foreach ($part in @($Plan.parts)) { $idWidth = [Math]::Max($idWidth, ([string]$part.id).Length) }
-    foreach ($part in @($Plan.parts)) { Write-Line ("    {0,-$idWidth}  {1,-8}  {2,-9}  {3}" -f $part.id, $part.status, $part.owner, $part.title) }
+    foreach ($line in @(Format-RelayPlanTable -Parts @($Plan.parts) -Indent '    ')) { Write-Line $line }
 }
 
 function Write-Feed {
@@ -215,11 +225,7 @@ function Get-WaitingState {
         $forCoordinator.Add([pscustomobject]@{ id = $message.Id; from = $message.From; type = $message.Type; subject = $message.Subject })
     }
     $cards = New-Object System.Collections.Generic.List[object]
-    foreach ($card in @(Get-RelayOwnerCard $roomObject -OpenOnly)) {
-        $preview = $card.Body
-        if ($preview.Length -gt 600) { $preview = $preview.Substring(0, 600) + ' ...' }
-        $cards.Add([pscustomobject]@{ id = $card.Id; re = $card.Re; subject = $card.Subject; sentUtc = $card.SentUtc; text = $preview })
-    }
+    foreach ($card in @(Get-RelayOwnerCard $roomObject -OpenOnly)) { $cards.Add((ConvertTo-RelayCardRow $card)) }
     return [pscustomobject]@{ Open = $open; ForCoordinator = @($forCoordinator.ToArray()); Cards = @($cards.ToArray()) }
 }
 
@@ -235,6 +241,13 @@ function Test-OwnerMessage {
     }
     return @($found.ToArray())
 }
+
+function Test-RoomReachable {
+    # The room folder can be reached: a share that is down, or a folder that was moved away, is no room to check
+    # or repair. The folder is asked, not its ROOM file: any agent can delete a file, and a ROOM that is gone must
+    # not stop the tamper check that puts it back.
+    return [System.IO.Directory]::Exists($roomObject.Path)
+}
 $started = Get-Date
 $lastTamper = [DateTime]::MinValue
 $lastHeartbeat = [DateTime]::MinValue
@@ -243,6 +256,7 @@ $agentSignature = ''
 $planSignature = ''
 $waitingSignature = ''
 $isFirst = $true
+$isAway = $false
 $watcher = $null
 $source = "relayfeed.$PID"
 try {
@@ -258,75 +272,98 @@ try {
     }
     while ($true) {
         try {
+            # A room folder that cannot be reached is said once, and nothing in the room is checked, put back or read
+            # until it is back: a repair pass would only fail on every file, or build an empty room where the folder
+            # was. The CLOSED marker of the canonical copy is on this PC and still ends the feed.
+            $isReachable = Test-RoomReachable
+            if (-not $isReachable -and -not $isAway) {
+                $isAway = $true
+                $outage = "the room folder cannot be reached: $($roomObject.Path). Nothing in it is checked or put back until it can be reached again."
+                Write-Feed ([pscustomobject]@{ type = 'alarm'; text = $outage })
+                Add-RelayAlarm $roomObject $outage
+            }
+            elseif ($isReachable -and $isAway) {
+                $isAway = $false
+                $back = "the room folder can be reached again: $($roomObject.Path)"
+                Write-Feed ([pscustomobject]@{ type = 'alarm'; text = $back })
+                Add-RelayAlarm $roomObject $back
+                # Checked at once: anything may have happened to it meanwhile
+                $lastTamper = [DateTime]::MinValue
+            }
             # The tamper pass comes first, before the feed looks at anything else in a round (it runs in the first
             # round always, then every -TamperSeconds): a CLOSED, a tool or a rule that anybody but this PC wrote is
             # dealt with before the feed decides by it. The room is closed when this PC says so: canon\CLOSED.
-            if (-not $NoTamperCheck -and ((Get-Date) - $lastTamper).TotalSeconds -ge $TamperSeconds) {
+            if ($isReachable -and -not $NoTamperCheck -and ((Get-Date) - $lastTamper).TotalSeconds -ge $TamperSeconds) {
                 $lastTamper = Get-Date
-                foreach ($finding in @(Test-RelayTamper $roomObject -Repair)) {
-                    $done = 'restored from the copy on this PC'
-                    if ($finding.Kind -eq 'extra') { $done = 'it does not belong there and was moved out' }
-                    if (-not $finding.Repaired) { $done = 'it could not be put right' }
-                    $script:pendingAlarms.Add("$($finding.Relative) was $($finding.Kind): $done")
-                }
+                foreach ($finding in @(Test-RelayTamper $roomObject -Repair)) { $script:pendingAlarms.Add((Format-RelayTamperFinding $finding)) }
             }
             if (Test-Path -LiteralPath (Join-Path $roomObject.Canon 'CLOSED')) {
-                if ($isFirst) { $null = Get-NewMessage }
+                if ($isFirst -and $isReachable) { $null = Get-NewMessage }
                 foreach ($text in @($script:pendingAlarms.ToArray())) { Write-Feed ([pscustomobject]@{ type = 'alarm'; text = $text }); $null = $script:pendingAlarms.Remove($text) }
                 Write-Feed ([pscustomobject]@{ type = 'closed'; room = $roomObject.Id })
                 break
             }
-            if (-not $NoHeartbeat -and ((Get-Date) - $lastHeartbeat).TotalSeconds -ge 20) {
+            if ($isReachable -and -not $NoHeartbeat -and ((Get-Date) - $lastHeartbeat).TotalSeconds -ge 20) {
                 $lastHeartbeat = Get-Date
-                try { [System.IO.File]::WriteAllText((Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $roomObject.Coordinator) 'alive'), ([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ') + "`n")) } catch { $null = $_ }
+                # Never written through a link that an agent put in place of the file or of a folder above it
+                $alive = Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $roomObject.Coordinator) 'alive'
+                try { if (-not (Test-RelayLinkedPath -Root $roomObject.Path -Path $alive)) { [System.IO.File]::WriteAllText($alive, ((Format-RelayUtc) + "`n")) } } catch { $null = $_ }
             }
 
-            $new = @(Get-NewMessage)
-            foreach ($item in @(Test-OwnerMessage)) {
-                Add-RelayAlarm $roomObject $item.Text
-                $script:checkedOwner[$item.Id] = $true
-                $script:pendingAlarms.Add($item.Text)
-            }
-            $waiting = Get-WaitingState
-            $plan = Read-RelayPlan $roomObject
-            $agents = @(Get-RelayAgentState -Room $roomObject -Now (Get-RelayRoomNow $roomObject) -Open $waiting.Open -Plan $plan -Messages $script:messages.ToArray())
-            $newAgentSignature = (@($agents | ForEach-Object { "$($_.name)|$($_.state)|$($_.detail)|$($_.gen)|$($_.control)|$($_.attention)|$($_.isIntroduced)|$($_.owes)|$($_.progressUtc)|$(@($_.parts) -join ',')" }) -join ';')
-            $newPlanSignature = ''
-            if ($null -ne $plan) { $newPlanSignature = "$($plan.revision)|$($plan.isComplete)" }
-            $newWaitingSignature = ((@($waiting.Cards | ForEach-Object { $_.id }) -join ',') + '#' + (@($waiting.ForCoordinator | ForEach-Object { $_.id }) -join ','))
-
-            if ($isFirst) {
-                $recent = @($script:messages | Select-Object -Last 50 | ForEach-Object { ConvertTo-RelayMessageRow $_ })
-                Write-Feed ([pscustomobject]@{
-                        type                 = 'snapshot'
-                        room                 = $roomObject.Id
-                        job                  = (Get-RelayValue $roomObject.Info 'job' '')
-                        coordinator          = $roomObject.Coordinator
-                        authority            = (Get-RelayValue $roomObject.Info 'authority' 'within-task')
-                        path                 = $roomObject.Path
-                        agents               = $agents
-                        plan                 = $plan
-                        messages             = $recent
-                        messageCount         = $script:messages.Count
-                        waitingOnOwner       = $waiting.Cards
-                        waitingOnCoordinator = $waiting.ForCoordinator
-                    })
-                Register-MessageKnown $new
-                foreach ($agent in $agents) { $script:previousState[$agent.name] = "$($agent.state)|$($agent.attention)|$($agent.gen)|$($agent.isIntroduced)|$($agent.progressUtc)" }
-                $isFirst = $false
-            }
-            else {
-                foreach ($message in $new) {
-                    Write-Feed ([pscustomobject]@{ type = 'message'; message = (ConvertTo-RelayMessageRow $message) })
-                    Register-MessageKnown $message
+            if ($isReachable) {
+                $new = @(Get-NewMessage)
+                foreach ($item in @(Test-OwnerMessage)) {
+                    Add-RelayAlarm $roomObject $item.Text
+                    $script:checkedOwner[$item.Id] = $true
+                    $script:pendingAlarms.Add($item.Text)
                 }
-                if ($newPlanSignature -ne $planSignature) { Write-Feed ([pscustomobject]@{ type = 'plan'; plan = $plan }) }
-                if ($newAgentSignature -ne $agentSignature) { Write-Feed ([pscustomobject]@{ type = 'agents'; agents = $agents }) }
-                if ($newWaitingSignature -ne $waitingSignature) { Write-Feed ([pscustomobject]@{ type = 'waiting'; waitingOnOwner = $waiting.Cards; waitingOnCoordinator = $waiting.ForCoordinator }) }
+                $waiting = Get-WaitingState
+                $plan = Read-RelayPlan $roomObject
+                # The text feed marks a PLAN that is not this PC's copy, as the board does; the JSON lines keep the
+                # fields the chat window knows
+                if (-not $Json -and $null -ne $plan) { $plan | Add-Member -NotePropertyName differs -NotePropertyValue ([bool](Test-RelayPlanDifference $roomObject)) }
+                $agents = @(Get-RelayAgentState -Room $roomObject -Now (Get-RelayRoomNow $roomObject) -Open $waiting.Open -Plan $plan -Messages $script:messages.ToArray())
+                $newAgentSignature = (@($agents | ForEach-Object { "$($_.name)|$($_.state)|$($_.detail)|$($_.gen)|$($_.control)|$($_.attention)|$($_.isIntroduced)|$($_.owes)|$($_.progressUtc)|$(@($_.parts) -join ',')" }) -join ';')
+                $newPlanSignature = ''
+                if ($null -ne $plan) {
+                    $newPlanSignature = "$($plan.revision)|$($plan.isComplete)"
+                    if (-not $Json) { $newPlanSignature += "|$($plan.differs)" }
+                }
+                $newWaitingSignature = ((@($waiting.Cards | ForEach-Object { $_.id }) -join ',') + '#' + (@($waiting.ForCoordinator | ForEach-Object { $_.id }) -join ','))
+
+                if ($isFirst) {
+                    $recent = @($script:messages | Select-Object -Last 50 | ForEach-Object { ConvertTo-RelayMessageRow $_ })
+                    Write-Feed ([pscustomobject]@{
+                            type                 = 'snapshot'
+                            room                 = $roomObject.Id
+                            job                  = (Get-RelayValue $roomObject.Info 'job' '')
+                            coordinator          = $roomObject.Coordinator
+                            authority            = (Get-RelayValue $roomObject.Info 'authority' 'within-task')
+                            path                 = $roomObject.Path
+                            agents               = $agents
+                            plan                 = $plan
+                            messages             = $recent
+                            messageCount         = $script:messages.Count
+                            waitingOnOwner       = $waiting.Cards
+                            waitingOnCoordinator = $waiting.ForCoordinator
+                        })
+                    Register-MessageKnown $new
+                    foreach ($agent in $agents) { $script:previousState[$agent.name] = "$($agent.state)|$($agent.attention)|$($agent.gen)|$($agent.isIntroduced)|$($agent.progressUtc)" }
+                    $isFirst = $false
+                }
+                else {
+                    foreach ($message in $new) {
+                        Write-Feed ([pscustomobject]@{ type = 'message'; message = (ConvertTo-RelayMessageRow $message) })
+                        Register-MessageKnown $message
+                    }
+                    if ($newPlanSignature -ne $planSignature) { Write-Feed ([pscustomobject]@{ type = 'plan'; plan = $plan }) }
+                    if ($newAgentSignature -ne $agentSignature) { Write-Feed ([pscustomobject]@{ type = 'agents'; agents = $agents }) }
+                    if ($newWaitingSignature -ne $waitingSignature) { Write-Feed ([pscustomobject]@{ type = 'waiting'; waitingOnOwner = $waiting.Cards; waitingOnCoordinator = $waiting.ForCoordinator }) }
+                }
+                $agentSignature = $newAgentSignature
+                $planSignature = $newPlanSignature
+                $waitingSignature = $newWaitingSignature
             }
-            $agentSignature = $newAgentSignature
-            $planSignature = $newPlanSignature
-            $waitingSignature = $newWaitingSignature
             foreach ($text in @($script:pendingAlarms.ToArray())) {
                 Write-Feed ([pscustomobject]@{ type = 'alarm'; text = $text })
                 $null = $script:pendingAlarms.Remove($text)
@@ -340,7 +377,7 @@ try {
         if ($ParentProcessId -gt 0 -and $null -eq (Get-Process -Id $ParentProcessId -ErrorAction SilentlyContinue)) { break }
         if ($Json -and ((Get-Date) - $lastTick).TotalSeconds -ge 30) {
             $lastTick = Get-Date
-            Write-Feed ([pscustomobject]@{ type = 'tick'; utc = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'); messageCount = $script:messages.Count })
+            Write-Feed ([pscustomobject]@{ type = 'tick'; utc = (Format-RelayUtc); messageCount = $script:messages.Count })
         }
         if ($null -ne $watcher) {
             $null = Wait-Event -Timeout $IntervalSeconds

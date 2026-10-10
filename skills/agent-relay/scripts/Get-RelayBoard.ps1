@@ -92,25 +92,28 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
         if ($board.plan.differs) { $planMark += '   [DIFFERS FROM THE COPY ON THIS PC: the feed puts it back]' }
         "PLAN $($board.plan.revision), $($board.plan.updatedUtc): $($board.plan.goal)$planMark"
         $done = @($board.plan.parts | Where-Object { $_.status -ceq 'done' } | ForEach-Object { $_.id })
-        $idWidth = 12
-        foreach ($part in @($board.plan.parts)) { $idWidth = [Math]::Max($idWidth, ([string]$part.id).Length) }
+        $rows = @(Format-RelayPlanTable -Parts @($board.plan.parts) -Indent '  ')
+        $index = 0
         foreach ($part in @($board.plan.parts)) {
-            "  {0,-$idWidth}  {1,-8}  {2,-9}  {3}" -f $part.id, $part.status, $part.owner, $part.title
+            $rows[$index]
+            $index++
             $waits = @($part.depends | Where-Object { $done -cnotcontains $_ })
             if ($part.status -cne 'done' -and $waits.Count -gt 0) { "      waits for: $($waits -join ', ')" }
             if ($part.reviewer -cne '-') { "      reviewer: $($part.reviewer)" }
         }
     }
     ''
+    # A request whose header names another sender, receiver or number than the place of its file is marked
+    $headerMark = '   [HEADER DOES NOT MATCH ITS FILE]'
     "WAITING ON YOU, THE COORDINATOR ($(@($board.waitingOnCoordinator).Count))"
-    foreach ($request in @($board.waitingOnCoordinator)) { "  $($request.id)  $($request.type) from $($request.from), $($request.ageMinutes) min: $($request.subject)" }
+    foreach ($request in @($board.waitingOnCoordinator)) { "  $($request.id)  $($request.type) from $($request.from), $($request.ageMinutes) min: $($request.subject)" + $(if ($request.mismatch) { $headerMark } else { '' }) }
     ''
     "WAITING ON THE OWNER ($(@($board.waitingOnOwner).Count))"
     foreach ($card in @($board.waitingOnOwner)) { "  $($card.id)  re $($card.re): $($card.subject)" }
     ''
     $others = @($board.open | Where-Object { $_.to -ne $board.coordinator })
     "OPEN WITH THE AGENTS ($($others.Count))"
-    foreach ($request in $others) { "  $($request.id)  $($request.type) to $($request.to), $($request.ageMinutes) min: $($request.subject)" }
+    foreach ($request in $others) { "  $($request.id)  $($request.type) to $($request.to), $($request.ageMinutes) min: $($request.subject)" + $(if ($request.mismatch) { $headerMark } else { '' }) }
     if (@($board.ownerMessages).Count -gt 0) {
         ''
         'MESSAGES FROM THE OWNER'

@@ -1,16 +1,17 @@
 @echo off
 rem agent-relay launcher for {{DISPLAY}} ({{NAME}}), the coordinator of room {{ROOM_ID}}, generation {{GEN}}.
 rem Written on the coordinator's PC and kept there: the coordinator runs nothing that lies in the room, where
-rem every agent can write. The tool it starts is this PC's own copy, and its draft is on this PC too.
+rem every agent can write. It hands over to relay.ps1 next to it, which names the room and starts this PC's own
+rem copy of the tool. This file holds no path: cmd reads it in the OEM code page, which garbles a folder with a
+rem letter outside ASCII.
 setlocal
 set "RELAY_NAME={{NAME}}"
 set "RELAY_GEN={{GEN}}"
 set "RELAY_ROOM_ID={{ROOM_ID}}"
-set "RELAY_ROOM={{ROOM_PATH_CMD}}"
-set "RELAY_DRAFT=%~dp0draft.md"
-set "RELAY_WRAPPER=%~f0"
+rem relay.ps1 then names this file as the wrapper: the call lines the tool prints are for cmd
+set "RELAY_LAUNCHER=cmd"
 rem Called from PowerShell 7, the module path it hands down breaks the built-in cmdlets of Windows PowerShell:
 rem without the variable, Windows PowerShell builds its own.
 set "PSModulePath="
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0canon\tools\relay.ps1" %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0relay.ps1" %*
 exit /b %ERRORLEVEL%
