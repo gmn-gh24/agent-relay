@@ -27,6 +27,9 @@ function Get-RelayTestDash {
     }
     $fallback = 'C:\Program Files\Git\usr\bin\dash.exe'
     if (Test-Path -LiteralPath $fallback) { return $fallback }
+    # Linux and macOS: the system's dash
+    $system = Get-Command dash -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $system) { return $system.Source }
     return ''
 }
 
@@ -43,7 +46,8 @@ function Get-RelayTestEngine {
     # The engines this machine can run. RELAY_TEST_ENGINES (for example "sh" or "ps7,ps5") narrows the list.
     $engines = New-Object System.Collections.Generic.List[string]
     if (Get-RelayTestPwsh) { $engines.Add('ps7') }
-    $engines.Add('ps5')
+    # Windows PowerShell exists only on Windows
+    if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { $engines.Add('ps5') }
     if (Get-RelayTestDash) { $engines.Add('sh') }
     if ($env:RELAY_TEST_ENGINES) {
         $wanted = @(([string]$env:RELAY_TEST_ENGINES) -split '[,; ]+' | Where-Object { $_ })
@@ -134,7 +138,7 @@ function Start-RelayTool {
     # The suite runs in somebody's terminal: its tab keeps its title unless a test asks for the naming
     $variables['RELAY_NO_TITLE'] = '1'
     if ($Engine -eq 'ps5' -and $variables.ContainsKey('PSModulePath')) { $variables.Remove('PSModulePath') }
-    if ($Engine -eq 'sh') { $variables['PATH'] = (Split-Path -Parent (Get-RelayTestDash)) + ';' + $variables['PATH'] }
+    if ($Engine -eq 'sh') { $variables['PATH'] = (Split-Path -Parent (Get-RelayTestDash)) + [System.IO.Path]::PathSeparator + $variables['PATH'] }
     foreach ($key in $Environment.Keys) { $variables[[string]$key] = [string]$Environment[$key] }
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
