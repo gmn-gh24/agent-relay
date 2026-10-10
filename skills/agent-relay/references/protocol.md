@@ -16,7 +16,7 @@ which files this PC writes, how the pieces fit, and where state lives.
   join.cmd, join            only in rooms with open seats
   PROMPT-JOIN.txt           the join prompt; PROMPT-<name>.txt for each named agent
   tools/relay.ps1           Windows PowerShell 5.1 and PowerShell 7
-  tools/relay.sh            POSIX sh
+  tools/relay.sh            POSIX sh; deferred, see "Where the two tools differ"
   tools/kinds               how each agent kind waits (from agent-kinds.json)
   tools/VERSION
   agents/<name>/
@@ -26,7 +26,8 @@ which files this PC writes, how the pieces fit, and where state lives.
     claim                                             open seat only: who took it (written by the tool)
     card  status  alive  state  journal  delivered    written by the agent's tool
     proposals  progress  wait.lease  baseline/
-    wait.lease.lock  proposals.lock  inbox/.claim-*   short-lived: a critical section, a number being taken
+    wait.lease.lock  proposals.lock  state.lock       short-lived: a critical section
+    inbox/.claim-*                                    short-lived: a number being taken
     inbox/<from>-<NNNN>.md                            messages to this agent
     draft.md  attach/                                 written by the agent
   files/<message id>/       attachments
@@ -49,8 +50,11 @@ The coordinator is the one agent that does not run its wrapper in the room. Ever
 the coordinator's tool runs on the owner's PC: `New-RelayRoom.ps1` and `Update-RelayRoom.ps1` write a launcher
 into the machine state (`rooms/<room id>/relay.ps1` and `relay.cmd`) that sets the same four variables plus
 `RELAY_ROOM` (the room folder, from the room index) and `RELAY_DRAFT` (`draft.md` next to the launcher), and
-starts this PC's canonical copy of the tool. Both tools take the room folder from `RELAY_ROOM` when it names
-a folder that holds a `ROOM` file, and from their own place otherwise.
+starts this PC's canonical copy of the tool. `relay.ps1` takes the room folder from `RELAY_ROOM` whenever it
+is set: a room it cannot reach at that moment (a share that is briefly gone, a mangled path) is "not
+reachable" (exit code 2), as for every agent. It never works on its own place then, which for the launcher is
+this PC's canonical copy: the tamper check would later write that copy's stale files over the room's.
+`relay.sh` (deferred) still takes its own place when `RELAY_ROOM` names a folder without a `ROOM` file.
 
 An open seat has `open: yes` and `wake: auto` in its `seat`. `join` creates `claim` exclusively, so two
 sessions can never get the same seat, then carries on as that agent's `start`.
@@ -96,7 +100,14 @@ environment turns that off).
   file whose time cannot be read is young.
 - "Could not read" is not "empty". A `delivered` that has bytes and reads as nothing is read once more a second
   later, and while it stays so nothing is delivered: every message would look new. A `state` file in that
-  condition is not written, because one key would replace all the others.
+  condition is not written, because one key would replace all the others, and nothing is judged by it: a
+  pause or resume that could not be noted is not said (it would be said again in every wait), and an
+  assignment whose fingerprint or state cannot be read counts as unchanged, so its baseline stays. `relay.ps1`
+  reads and writes `state` inside `state.lock`, so that a wait in the background and a call in the foreground
+  never write an older copy back over each other's key; a call that cannot get the lock in three seconds
+  writes nothing.
+- An old baseline that cannot be taken away for a new assignment (somebody holds it open) is not taken for the
+  new one: the call stops with an error and the next one tries again.
 - Times in headers are for display. Staleness and a proposal's clock use the file times the room's file
   system gives, read by one machine.
 
@@ -182,6 +193,9 @@ that cannot be read at that moment, shown already or not: it may be the denial. 
 when the inbox holds no answer to it and the note could be set to `due`. The receipt time is noted all the
 same.
 
+Every span of time a wait measures (its limit, the heartbeat, the lease, the thirty minutes of an unreachable
+room) is taken on the UTC clock: local time jumps by an hour twice a year.
+
 Environment switches, for tests and odd machines: `RELAY_NO_EVENTS=1` (rescan only),
 `RELAY_POLL_SECONDS`, `RELAY_SETTLE_MS`, `RELAY_DRAFT` (another draft file), `RELAY_MINUTE_SECONDS` (how long a
 minute is), `RELAY_PAUSE_AT` with `RELAY_PAUSE_DIR` (the tool stops at a named point, writes
@@ -244,19 +258,31 @@ shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `pr
 
 ## Where the two tools differ
 
-`relay.ps1` and `relay.sh` print the same lines for the same room; the test files run the same cases on each.
-These differences are known and stay. An agent uses one tool for the life of its generation.
+`relay.sh` is deferred: from this version on it is not kept in step with `relay.ps1`, and the tests no longer
+hold it to the same behaviour. Until it is taken up again, the differences below are known, and so is everything `relay.ps1`
+does that this file does not ask of `relay.sh`: the draft, attach-folder and link checks, the UTF-16 and UTF-32
+drafts, the control characters left out of what is printed, `state.lock`, a git that cannot be read at report
+time, and `RELAY_ROOM` without a fallback. An agent uses one tool for the life of its generation.
 
 - The self-audit: each tool keeps its own baseline, and one never compares against the other's. `relay.sh`
   tells a changed file by its time alone, does not follow folder links and leaves hidden files of Windows
-  out; `relay.ps1` compares size and time, follows links and lists them.
+  out; `relay.ps1` compares size and time, follows links and lists them. Neither lists a file git ignores in
+  a git repository. A git that cannot read the repository makes the folder `NOT COMPARED` in `relay.ps1`, with
+  git's reason; `relay.ps1` also turns off `core.fsmonitor` for every git call, because a repository's own
+  config could otherwise run a command while git looks at the files.
+- The assigned paths (`may:` in `scope`) are matched without regard to case by `relay.ps1` and with regard to
+  case by `relay.sh`.
 - A wait of the other tool for the same agent on the same machine is taken over, not refused: each tool can
   only ask its own kind of process whether it is alive. The wait that was taken over ends with code 4.
 - A failed move of an attachment names the file in `relay.sh` and gives the system's message in `relay.ps1`.
-- The attach folder: `relay.sh` moves everything in it, empty folders too; `relay.ps1` moves the files, with
-  their folders, and leaves out what Windows marks as hidden.
+- The attach folder: `relay.sh` moves everything in it, empty folders and links too; `relay.ps1` moves the
+  files, hidden ones too, with their folders, and refuses the send when the folder holds a link.
+- A draft that is a link, or that still holds NUL characters once read, is refused by `relay.ps1`. It reads a
+  draft with a byte order mark of UTF-16 or UTF-32 in that encoding; `relay.sh` reads every draft as UTF-8.
 - In a draft, `relay.ps1` takes every Unicode blank for a blank; `relay.sh` a space, a tab and a line end.
 - An age exactly at its limit (two minutes, fifteen seconds) is already over it in `relay.sh`, which counts
   whole seconds, and not yet in `relay.ps1`.
-- The files of `show <id>` are listed in byte order by `relay.sh` and in the order the folder gives them by
-  `relay.ps1`; the keys in `state`, `card` and `status` come in another order.
+- The files of `show <id>` are listed in byte order by both tools; `relay.ps1` names a link there and does not
+  follow it. The keys in `state`, `card` and `status` come in another order.
+- `relay.ps1` compares names, types and ids exactly, as `relay.sh` does, and sorts agents and seats in byte
+  order whatever the culture of the machine; it writes its times with the invariant culture.
