@@ -107,7 +107,11 @@ $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\
 # speed (relay.sh starts a process for nearly everything it does, which is slow on Windows), and a run takes
 # its tests one after the other. The coordinator-side scripts are one run per edition.
 $toolFiles = @('Relay.Tool.Tests.ps1', 'Relay.Team.Tests.ps1', 'Relay.Faults.Tests.ps1', 'Relay.Parity.Tests.ps1')
-$scriptTests = (Join-Path $PSScriptRoot 'Relay.Scripts.Tests.ps1') + ';' + (Join-Path $PSScriptRoot 'Relay.Plan.Tests.ps1')
+$scriptFiles = @('Relay.Scripts.Tests.ps1', 'Relay.Plan.Tests.ps1', 'Relay.Guard.Tests.ps1', 'Relay.Owner.Tests.ps1')
+foreach ($file in $scriptFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $file))) { $problems.Add("the test file $file is missing") }
+}
+$scriptTests = (@($scriptFiles | ForEach-Object { Join-Path $PSScriptRoot $_ })) -join ';'
 $runs = New-Object System.Collections.Generic.List[object]
 foreach ($file in $toolFiles) {
     $part = $file -replace '^Relay\.|\.Tests\.ps1$', ''

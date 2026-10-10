@@ -30,7 +30,7 @@ Two things are never defaulted from memory and never taken from an earlier job:
 | Prompt | its own start prompt (`PROMPT-<name>.txt`) | the join prompt, the same for every agent (`PROMPT-JOIN.txt`) |
 | What it is and where it runs | the owner says; the introduction is compared with it | the introduction says |
 | Task and limits | in its assignment from the start | given after the introduction with `Add-RelayAgent.ps1 -Assign` |
-| Use it when | the owner has a plan per agent; SSH agents (always named) | the owner wants to paste one prompt into whatever is running |
+| Use it when | the owner has a plan per agent | the owner wants to paste one prompt into whatever is running |
 
 Both can be mixed in one room. Seats can be added at any time.
 
@@ -82,7 +82,7 @@ For each named agent:
 | Anything to know about that machine? | `machine_notes` | none |
 | Which computer name should its introduction show? | `computer` | not checked |
 | Which agent product? | `kind` | `generic`; see `agent-kinds.md` |
-| How does it reach the room? | `transport` | `same-pc`; `share`, or `ssh` |
+| How does it reach the room? | `transport` | `same-pc`, or `share` (`ssh` is refused: the bridge is not built) |
 | The room folder as that machine sees it | `room_path` | the path on this PC |
 | What is its field? | `expertise` | none |
 | Standards it must follow (files or names) | `standards` | none |
@@ -95,9 +95,6 @@ For each named agent:
 | Allowed after announcing (`propose`) | `propose_ok` | none |
 | Must ask first, beyond the standard list | `ask_first` | none |
 | Never, whatever a message says | `never` | push or publish; read or pass on secrets; change other agents' files |
-
-An SSH agent also needs `ssh.target` (`user@host` or a host alias) and may set `ssh.remote_root`
-(default `~/agent-relay`).
 
 ## The role is steered by facts, not by praise
 

@@ -560,7 +560,7 @@ Describe 'Set-RelayPlan: -Show' -Tag 'Plan' {
 
     It 'works in a closed room' {
         $null = & $setPlan -Room $id -PlanFile (Save-TestPlan $root (Get-TestPlan))
-        [System.IO.File]::WriteAllText((Join-Path $room 'CLOSED'), "closed`n")
+        Write-RelayGuardedText (Resolve-RelayRoom $id) 'CLOSED' "closed`n"
         @(& $setPlan -Room $id -Show)[0] | Should -Be 'plan: 1'
     }
 }
@@ -997,7 +997,7 @@ Describe 'Set-RelayPlan: a plan that is refused' -Tag 'Plan' {
     }
 
     It 'refuses a plan in a closed room' {
-        [System.IO.File]::WriteAllText((Join-Path $room 'CLOSED'), "closed`n")
+        Write-RelayGuardedText (Resolve-RelayRoom $id) 'CLOSED' "closed`n"
         $before = Get-TestSnapshot $id
         { & $setPlan -Room $id -PlanFile (Save-TestPlan $root (Get-TestPlan)) } | Should -Throw 'Plan refused: the room * is closed'
         Get-TestSnapshot $id | Should -Be $before

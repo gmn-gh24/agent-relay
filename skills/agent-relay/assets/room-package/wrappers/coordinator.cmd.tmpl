@@ -1,0 +1,16 @@
+@echo off
+rem agent-relay launcher for {{DISPLAY}} ({{NAME}}), the coordinator of room {{ROOM_ID}}, generation {{GEN}}.
+rem Written on the coordinator's PC and kept there: the coordinator runs nothing that lies in the room, where
+rem every agent can write. The tool it starts is this PC's own copy, and its draft is on this PC too.
+setlocal
+set "RELAY_NAME={{NAME}}"
+set "RELAY_GEN={{GEN}}"
+set "RELAY_ROOM_ID={{ROOM_ID}}"
+set "RELAY_ROOM={{ROOM_PATH_CMD}}"
+set "RELAY_DRAFT=%~dp0draft.md"
+set "RELAY_WRAPPER=%~f0"
+rem Called from PowerShell 7, the module path it hands down breaks the built-in cmdlets of Windows PowerShell:
+rem without the variable, Windows PowerShell builds its own.
+set "PSModulePath="
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0canon\tools\relay.ps1" %*
+exit /b %ERRORLEVEL%

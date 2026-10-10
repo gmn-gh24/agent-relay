@@ -287,7 +287,8 @@ $roomObject = Resolve-RelayRoom $Room
 if ($Show) {
     $current = Read-RelayText (Join-Path $roomObject.Path 'PLAN')
     if ($current -notmatch '(?m)^plan:') { "NO PLAN in room $($roomObject.Id)"; return }
-    ($current.TrimEnd("`n") -split "`n")
+    # The file is the room's: what is printed from it passes the one function that takes control characters out
+    foreach ($line in ($current.TrimEnd("`n") -split "`n")) { ConvertTo-RelayPrintedLine $line }
     return
 }
 
@@ -360,9 +361,9 @@ try {
         }
         $opened.Add("LINE open between $($pair[0]) and $($pair[1])")
     }
-    "PLAN $revision for room $($roomObject.Id): $(@($parts).Count) part(s)"
-    foreach ($item in $parts) { '  ' + (Format-PlanColumn $item.Id 12) + '  ' + (Format-PlanColumn $item.Status 8) + '  ' + (Format-PlanColumn $item.Owner 9) + '  ' + $item.Title }
-    $opened
+    ConvertTo-RelayPrintedLine "PLAN $revision for room $($roomObject.Id): $(@($parts).Count) part(s)"
+    foreach ($item in $parts) { ConvertTo-RelayPrintedLine ('  ' + (Format-PlanColumn $item.Id 12) + '  ' + (Format-PlanColumn $item.Status 8) + '  ' + (Format-PlanColumn $item.Owner 9) + '  ' + $item.Title) }
+    foreach ($line in $opened) { ConvertTo-RelayPrintedLine $line }
     'NEXT: the agents are shown the new plan with the next message they receive, or at once with the verb team.'
 }
 finally {

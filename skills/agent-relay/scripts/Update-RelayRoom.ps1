@@ -7,10 +7,13 @@
 .DESCRIPTION
     A room keeps the package it was created with: tools, protocol reference, agent-kind table, join wrappers.
     This script replaces them with the current ones, canonical copy first, so the tamper check agrees. Use it
-    when a fault in the tools was fixed while a room is running. The agents' instructions, assignments and
-    wrappers are not touched. A command that is running at that moment (a wait) finishes with the tool it
-    started with; every later command uses the new one.
-
+    when a fault in the tools was fixed while a room is running. It writes again, from the package's templates:
+    the tools, PROTOCOL.md, the agent-kind table, the join wrappers and PROMPT-JOIN.txt, every agent's wrappers,
+    every agent's START-HERE.md and ASSIGNMENT.md (from the answers its seat was built from; the coordinator's
+    instructions are not rewritten), and the coordinator's launcher on this PC. The package version in ROOM is
+    recorded. Not touched: the agents' names, generations, messages, tasks, state and the files in work\ and
+    files\. A command that is running at that moment (a wait) finishes with the tool it started with; every
+    later command uses the new one. An agent reads its new instructions at its next start.
 .PARAMETER Room
     Room id or room folder.
 

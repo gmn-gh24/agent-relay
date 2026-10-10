@@ -35,7 +35,7 @@ which files this PC writes, how the pieces fit, and where state lives.
 ```
 
 "Guarded" means: this PC keeps a canonical copy under `<machine state>/rooms/<room id>/canon/` and writes
-that copy first. The feed compares the room with it every few seconds, restores a changed or missing file,
+that copy first. The feed compares the room with it every 15 seconds, restores a changed or missing file,
 moves a file that does not belong out to `quarantine/`, and logs an alarm in `alarms.log`.
 
 ## Identity
@@ -43,6 +43,13 @@ moves a file that does not belong out to `quarantine/`, and logs an alarm in `al
 An agent is its wrapper. `g<N>/relay.cmd` (or `g<N>/relay`) sets `RELAY_NAME`, `RELAY_GEN`, `RELAY_ROOM_ID`
 and `RELAY_WRAPPER` and runs the tool. There is no `-Me` argument to get wrong. A replaced session has an old
 generation in its wrapper; the tool compares it with `gen` and tells it to stop.
+
+The coordinator is the one agent that does not run its wrapper in the room. Every agent can write there, and
+the coordinator's tool runs on the owner's PC: `New-RelayRoom.ps1` and `Update-RelayRoom.ps1` write a launcher
+into the machine state (`rooms/<room id>/relay.ps1` and `relay.cmd`) that sets the same four variables plus
+`RELAY_ROOM` (the room folder, from the room index) and `RELAY_DRAFT` (`draft.md` next to the launcher), and
+starts this PC's canonical copy of the tool. Both tools take the room folder from `RELAY_ROOM` when it names
+a folder that holds a `ROOM` file, and from their own place otherwise.
 
 An open seat has `open: yes` and `wake: auto` in its `seat`. `join` creates `claim` exclusively, so two
 sessions can never get the same seat, then carries on as that agent's `start`.
@@ -67,7 +74,10 @@ environment turns that off).
   `files/<id>/`, create the message under its final name exclusively, drop the claim. The message is the last
   thing to appear. A claim older than two minutes was left by a sender that died: whoever meets it removes it
   and skips that number. A send that created no message fails with exit code 2, keeps the draft and puts the
-  attachments back.
+  attachments back. That holds for every step: a message that could be written in part only, an attachment
+  that could not be moved, and a number that would need more than six digits (`could not find a free message
+  number in <inbox>`: a file with a longer number would be read by nobody). An existing name is never written
+  over, also where the file system has no hard links.
 - Sender, receiver and number are read from where the file is, never from its header. A header that
   disagrees is shown with a warning.
 - A message file is read, or it is not there: a file that does not begin with a `---` line, or whose header
@@ -80,7 +90,12 @@ environment turns that off).
   separate: a message shown to a session that then died is shown again as an open request at the next `start`.
   A delivery records exactly what it showed. A file that cannot be read (held open, still empty, no `type` in
   its header) stays pending and ends no wait; if it is still unreadable after two minutes it is shown once as
-  an unreadable message, so that it cannot stay hidden.
+  an unreadable message, so that it cannot stay hidden. The line that leaves in `delivered` ends in the word
+  `unreadable`: the id was shown, the message was not read. Two minutes are counted on the room's clock; a
+  file whose time cannot be read is young.
+- "Could not read" is not "empty". A `delivered` that has bytes and reads as nothing is read once more a second
+  later, and while it stays so nothing is delivered: every message would look new. A `state` file in that
+  condition is not written, because one key would replace all the others.
 - Times in headers are for display. Staleness and a proposal's clock use the file times the room's file
   system gives, read by one machine.
 
@@ -128,11 +143,19 @@ on, owner to reviewer).
 ## Waiting
 
 `wait` holds a lease (`wait.lease`: token, generation, host, process id; stale after 30 s without renewal or
-when the process is gone). On Windows it uses change events on the inbox plus a rescan every few seconds,
+when the process is gone). On Windows it uses change events on the inbox plus a rescan every five seconds,
 and rebuilds the watcher every ten minutes; `relay.sh` polls once a second. It returns on: new messages, a
 proposal's time running out, pause or resume, stop, replacement, the coordinator's silence, and its own time
 limit. A wait whose inbox folder is not there takes the room for unreachable (a share that is gone looks the
-same) and ends with code 2 after thirty minutes of it; a folder that comes back starts the count again.
+same) and ends with code 2 after thirty minutes of it; a folder that comes back starts the count again,
+whether the agent is paused or not. A `control` file that is there but gives no `state:` at that moment (this
+PC writes it by emptying and filling it) says nothing in that round: no pause, no resume, no delivery. A
+number given to `wait` or `propose` is decimal: `wait 08` waits eight minutes.
+
+Every age the tools judge (a lease, a lock, a claim, an unreadable file, the coordinator's silence) is the
+difference of two times the room's file system gave: the heartbeat the tool has just written, and the file in
+question. When the heartbeat cannot be written or read back, the room's time is not known and nothing is
+judged old in that call; the machine's own clock never stands in for it.
 
 One wait per agent, also when two start together: judging the lease, taking it, refreshing it and giving it
 back each happen inside `wait.lease.lock`, a name created exclusively (a file for `relay.ps1`, a folder for
@@ -140,16 +163,23 @@ back each happen inside `wait.lease.lock`, a name created exclusively (a file fo
 fifteen; one that is gone again when its age is asked for was given back, and nothing is removed. A refresh
 writes the first byte of the lease again with the byte it has, so that its time comes from the room's file
 system and not from the machine's clock. A wait confirms its lease that way directly before it says anything
-its agent acts on. A lease that
-belongs to another wait ends it with code 4 and nothing delivered; a lock it cannot get means it says nothing
-in that round and asks again in the next.
+its agent acts on. A lease that holds another wait's token ends it with code 4 and nothing delivered. A lock
+it cannot get, or a lease that is there but gives no token at that moment, means nothing is known: it says
+nothing in that round and asks again in the next. A lease that is not there at all is written again by the
+wait that asks, inside the lock, and the wait goes on; so is one that has been there without a token for 30
+seconds, because nobody refreshes such a file and a wait that only waited for it would say nothing for good.
+A wait that starts treats a lease without a token as somebody's while it is young, and takes it over after 30
+seconds.
 
 `proposals` is the agent's own note of what it proposed: id, minutes, when the coordinator received it, and
 `open`, `due` or `closed`. The inbox is the authority: an `answer` there closes the proposal whatever the note
 says. The note is updated inside `proposals.lock` and a state never goes backwards; a `propose` that cannot
-get the lock sends the proposal and leaves the note out, and that proposal never comes due by itself. Nothing
-is announced as due while the inbox holds a message the agent has not been shown: it may be the denial. The
-receipt time is noted all the same.
+get the lock sends the proposal and leaves the note out, and that proposal never comes due by itself. The
+receipt is a line of the coordinator's `delivered` that does not end in `unreadable`: a placeholder is no
+receipt. Nothing is announced as due while the inbox holds a message the agent has not been shown, or a file
+that cannot be read at that moment, shown already or not: it may be the denial. A proposal is announced only
+when the inbox holds no answer to it and the note could be set to `due`. The receipt time is noted all the
+same.
 
 Environment switches, for tests and odd machines: `RELAY_NO_EVENTS=1` (rescan only),
 `RELAY_POLL_SECONDS`, `RELAY_SETTLE_MS`, `RELAY_DRAFT` (another draft file), `RELAY_MINUTE_SECONDS` (how long a
@@ -159,10 +189,27 @@ minute is), `RELAY_PAUSE_AT` with `RELAY_PAUSE_DIR` (the tool stops at a named p
 ## The owner
 
 - `Send-RelayOwner.ps1` writes the owner's text into the coordinator's inbox as `owner-<NNNN>.md` and its
-  id and hash into `owner/log` on this PC. `Test-RelayOwnerMessage` (the board, the feed) checks every file
-  that claims to come from the owner against that log.
+  id and hash into `owner/log` on this PC, the log line first. The hash is that of the whole file, so the
+  header (type, subject, `re`) is verified together with the text, and the number comes from the log, not
+  from what lies in the inbox. `Test-RelayOwnerMessage` (the board, the feed) checks every file that claims
+  to come from the owner against that log.
+- A message from `owner` in the coordinator's inbox is not acted on by its header. Whatever its type and
+  subject, both tools print for it: look at the board first, act only if it says verified there.
 - Cards (`owner/cards/<NNNN>.md` plus `.answer`) are the coordinator's questions to the owner. They live on
-  this PC only.
+  this PC only. The text of a card, and of a standing rule, is read from a file on this PC (by default the
+  coordinator's `draft.md` in the machine state); a file inside the room folder is refused.
+
+## What this PC decides by
+
+Any agent can write any file in the room folder. What the coordinator's scripts decide by therefore comes
+from this PC: a room is an entry of the room index (an id of lower-case letters, digits and dashes, and the
+folder recorded for it), its settings are read from the canonical `ROOM`, an agent's generation, seat and
+control from the canonical copies, the standing rules of the transcript from the canonical `DECISIONS.md`,
+and a room is closed when the canonical copy holds `CLOSED`. A `CLOSED` that anybody else puts into the room
+closes nothing: the tamper pass, which runs before the feed looks at anything else, moves it out. That pass
+compares and restores each guarded file by itself: one that cannot be restored raises its own alarm (`TAMPER
+<kind> could not restore: <file>: <reason>`) and stops nothing. The prompts handed out (`PROMPT-*.txt`) are
+guarded files too.
 
 ## Machine state
 
@@ -170,7 +217,8 @@ minute is), `RELAY_PAUSE_AT` with `RELAY_PAUSE_DIR` (the tool stops at a named p
 `%LOCALAPPDATA%\agent-relay` for an installed copy (`AGENT_RELAY_LOCAL` overrides both). It holds
 `rooms.json` (the room index), `names.json` (which machine and role has which name), `machines.json` (known
 shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `prompts/`, `quarantine/`,
-`alarms.log`, `stats.json`; `archive/` holds one zip per closed room. None of it is in git.
+`alarms.log`, `stats.json`, the coordinator's launcher (`relay.ps1`, `relay.cmd`) and its `draft.md`;
+`archive/` holds one zip per closed room. None of it is in git.
 
 ## Limits
 
@@ -178,6 +226,20 @@ shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `pr
 - An agent that can write to the room can forge a message file. What limits the damage: sender and receiver
   come from the file's place, the "never" lists, the single path of authority through the coordinator, the
   owner's log on this PC, and the tamper check.
+- A wait that outlives its session keeps the lease: no new wait starts for that agent until the old process
+  ends or the agent is replaced (`Add-RelayAgent.ps1 -Replace <name>`).
+- Two callers that both judge the same left-over lock old can each take it. The window is the moment between
+  one caller's look and its removal, on a lock that was already left behind by a caller that died.
+- What a Linux SMB mount answers for a file's time in the first second after a write is not verified: the
+  ages above were measured on Windows clients and on local folders.
+- A send that is killed between staging its attachments and creating its message leaves them in
+  `files/.staging-*`. Nothing reads that folder; it is removed by hand or with the room.
+- Some damage is left for a person to mend, because every way a tool could mend it alone is a guess: a file
+  in an agent's inbox that never opens holds that agent's proposals back until the file is removed (it is
+  shown once as unreadable after two minutes, so the agent knows); a `delivered` list that has bytes and never
+  reads keeps its agent's wait from delivering; and without the room's time (a heartbeat that cannot be
+  written) a left-over lock is never taken away, so every call waits its three seconds for it.
+- The SSH bridge is not built: every agent needs a folder that the coordinator's PC can reach too.
 
 ## Where the two tools differ
 

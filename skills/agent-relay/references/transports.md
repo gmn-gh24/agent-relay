@@ -4,7 +4,7 @@
 |---|---|---|
 | `same-pc` | a local folder on the coordinator's PC | yes |
 | `share` | a folder on a file share every machine can reach | yes (Windows, SMB) |
-| `ssh` | a local folder on the remote machine, kept in step by a bridge on the coordinator's PC | not built yet |
+| `ssh` | a local folder on the remote machine, kept in step by a bridge on the coordinator's PC | not built: the scripts refuse it |
 
 ## Same PC
 
@@ -55,8 +55,9 @@ What was measured and what follows from it:
 ## SSH
 
 Planned, not available in this version: `Start-RelayBridge.ps1` on the coordinator's PC, one per SSH agent,
-keeping `~/agent-relay/<room id>/` on the remote machine in step with the room. Until it exists, a Linux or
-macOS machine joins by mounting the share and running `sh '<mount point>/<room id>/join' ...`.
+keeping `~/agent-relay/<room id>/` on the remote machine in step with the room. Until it exists the scripts
+refuse `ssh` as a transport (`the SSH bridge is not built yet: use share or same-pc`), and a Linux or macOS
+machine joins by mounting the share and running `sh '<mount point>/<room id>/join' ...`.
 
 ## Traps seen so far
 

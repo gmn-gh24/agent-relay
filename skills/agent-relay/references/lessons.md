@@ -247,3 +247,35 @@ to the last part: about forty minutes.
 - **"The folder is not there" and "the server is gone" look the same to a tool.** `Test-Path` answers false for
   a path on a share that is gone, and a missing folder lists as empty: a wait that reads "missing" as "empty"
   never notices that its room is gone. The wait counts a missing inbox as an unreachable room.
+
+## 2026-10-10: two more reviewers, each with one question (the coordinator's side; races and failures)
+
+- **A reviewer gets one question, and reviewers who have seen nothing find what the builders cannot.** After
+  the cross-read, two more reviews, each by somebody who had seen none of the work and was given one thing to
+  look for: "what can an agent that writes into the room make the coordinator's PC do" and "what happens when
+  a read fails or two callers meet". Thirty-three findings in files that had passed every test, among them
+  three that had to be fixed before anything was committed. The builders had tested what the tools do; nobody
+  had asked what they believe.
+- **What the coordinator decides by comes from its own PC.** The room's `ROOM` file said which room it was,
+  who coordinates it and whether it was closed, and every agent can write that file. One line in it moved the
+  machine state out of its folder, and another made one room's canonical files land in another room. An empty
+  file named `CLOSED` closed the room for everybody. The index and the canonical copy on the PC decide now,
+  and the room is only where the work is.
+- **The coordinator must not run what an agent can write.** Its tool and wrapper lay in the room and were
+  started with the execution policy bypassed, on the owner's PC, at the coordinator's next verb. The tamper
+  check would have restored a changed tool within fifteen seconds; a verb takes less. A launcher outside the
+  room starts the PC's own copy.
+- **A check that stops at its first failure protects nothing after it.** One guarded file replaced by a
+  folder of the same name made the tamper check throw, and every later file stayed as the attacker left it,
+  without an alarm. Each file is compared and restored by itself now, and the one that cannot be restored
+  raises its own alarm.
+- **"Could not read" is not "empty".** An empty read of `delivered` made every old message new, of `state`
+  made the next write drop every other key, of the lease made a live wait look gone, of `control` made a
+  paused agent run. Each of these is a file that this PC or another process was writing at that moment. A
+  reader that gets nothing where there are bytes knows nothing, says nothing and asks again.
+- **An age needs two times from the same clock.** Where the heartbeat could not be written, the tool fell
+  back to the machine's own clock and compared it with file times of the share: a machine that is minutes
+  off takes live locks and leases for dead ones. Without the room's time nothing is old.
+- **A dead feed must be loud.** The pane kept showing the room after its feed had ended, and with the feed
+  the tamper check and the coordinator's heartbeat had stopped. Whatever also carries a safety job restarts
+  itself and tells the owner when it cannot.

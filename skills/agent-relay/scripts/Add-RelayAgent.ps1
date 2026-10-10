@@ -110,16 +110,16 @@ switch ($PSCmdlet.ParameterSetName) {
         Assert-Agent $name
         $spec = Read-RelaySeatSpec $roomObject $name
         if ($Kind) { $spec = Switch-RelaySeatKind -Spec $spec -Kind $Kind }
-        $agentDir = Join-Path (Join-Path $roomObject.Path 'agents') $name
-        if (Test-Path -LiteralPath (Join-Path $agentDir 'retired')) { throw "The agent '$name' is retired; add a new agent instead" }
-        $current = 1
-        $null = [int]::TryParse((Read-RelayText (Join-Path $agentDir 'gen')).Trim(), [ref]$current)
+        # The generation and the retirement come from this PC's canonical copy: the room's files are the agents' to write
+        $canonDir = Join-Path (Join-Path $roomObject.Canon 'agents') $name
+        if (Test-Path -LiteralPath (Join-Path $canonDir 'retired')) { throw "The agent '$name' is retired; add a new agent instead" }
+        $current = Get-RelayCanonicalGeneration $roomObject $name
         $next = $current + 1
         $prompt = Add-RelayAgentSeat -Room $roomObject -Name $name -Spec $spec -Generation $next -IsCoordinator:($name -eq $roomObject.Coordinator)
         "REPLACED ${name}: generation $next ($($spec['kind'])). The old session is told to stop at its next command."
         if ($name -eq $roomObject.Coordinator) {
             Remove-Item -LiteralPath (Join-Path $roomObject.Path "PROMPT-$name.txt") -Force -ErrorAction SilentlyContinue
-            "NEXT: run your own start with the new wrapper: " + (Get-RelayCallLine -RoomPath $roomObject.Path -Name $name -Generation ([string]$next) -Shell 'powershell') + ' start <product> <model> <effort>'
+            "NEXT: run your own start with the new launcher: " + (Get-RelayCallLine -RoomPath $roomObject.Path -Name $name -Generation ([string]$next) -Shell 'powershell' -Launcher $roomObject.Local) + ' start <product> <model> <effort>'
         }
         else {
             "start prompt: " + (Join-Path $roomObject.Path "PROMPT-$name.txt")
@@ -159,15 +159,14 @@ switch ($PSCmdlet.ParameterSetName) {
         Assert-Agent $name
         if ($name -eq $roomObject.Coordinator) { throw 'The coordinator has no assignment to change' }
         $agentDir = Join-Path (Join-Path $roomObject.Path 'agents') $name
-        if (Test-Path -LiteralPath (Join-Path $agentDir 'retired')) { throw "The agent '$name' is retired" }
+        if (Test-Path -LiteralPath (Join-Path (Join-Path (Join-Path $roomObject.Canon 'agents') $name) 'retired')) { throw "The agent '$name' is retired" }
         if (-not (Test-Path -LiteralPath $AnswersFile)) { throw "No answers file: $AnswersFile" }
         $card = Read-RelayKeyValue (Join-Path $agentDir 'card')
         if ($card.Count -eq 0) { throw "The agent '$name' has not introduced itself yet: an assignment follows the introduction, it does not come before it" }
         $spec = Merge-RelaySeatSpec -Spec (Read-RelaySeatSpec $roomObject $name) -Answers (ConvertFrom-RelayJson (Read-RelayText $AnswersFile))
         # An agent that came in through the join prompt: its machine is known from its introduction
         if (([string]$spec['machine']).StartsWith('(')) { $spec['machine'] = Get-RelayValue $card 'computer' ([string]$spec['machine']) }
-        $current = 1
-        $null = [int]::TryParse((Read-RelayText (Join-Path $agentDir 'gen')).Trim(), [ref]$current)
+        $current = Get-RelayCanonicalGeneration $roomObject $name
         $null = Add-RelayAgentSeat -Room $roomObject -Name $name -Spec $spec -Generation $current -Reassign
         "ASSIGNED ${name}: $($spec['role']) ($($spec['work'])) on $($spec['machine']), machine $($spec['machine_care'])"
         # Whether this agent's model suits that kind of work, and who in the room would suit it better
@@ -179,7 +178,7 @@ switch ($PSCmdlet.ParameterSetName) {
         if (-not $JoinPrompt) { throw 'Give -JoinPrompt' }
         if (-not (Test-Path -LiteralPath (Join-Path $roomObject.Canon 'join.cmd'))) { throw "The room $($roomObject.Id) has no open seats: add some with -OpenSeats <n>" }
         $prompt = Get-RelayJoinPrompt $roomObject
-        Write-RelayText (Join-Path $roomObject.Path 'PROMPT-JOIN.txt') $prompt
+        Write-RelayGuardedText $roomObject 'PROMPT-JOIN.txt' $prompt
         Write-RelayText (Join-Path (Join-Path $roomObject.Local 'prompts') 'PROMPT-JOIN.txt') $prompt
         $prompt.TrimEnd()
         ''

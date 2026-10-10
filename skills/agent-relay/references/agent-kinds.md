@@ -8,7 +8,7 @@ or `claude`, otherwise `generic`.
 
 | Kind | Waits | Status |
 |---|---|---|
-| `claude-code` | `background`: `wait` runs as a background command with no limit; its exit wakes the session | worked a live room on Windows as coordinator and as two remote agents (2026-10-10) |
+| `claude-code` | `background`: `wait` runs as a background command with no limit; its exit wakes the session | worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10) |
 | `claude-code-headless` | `loop`, 9 minutes, parks after 3 idle waits; needs a command time limit of 10 minutes | has not worked a room yet |
 | `codex` | `loop`, 4 minutes, parks after 4; draft is `relay-draft-<name>.md` in its working folder | worked a live room on Windows as one remote agent (2026-10-10) |
 | `gemini` | `loop`, 1 minute, parks after 10 | untested: generic profile |

@@ -7,7 +7,7 @@
     "shell": { "windows": "powershell", "linux": "sh" },
     "draft": "",
     "prompt_extra": "When a NEXT line tells you to wait, start that command as a background command and end your turn: its exit is what wakes you. Do not run it in the foreground and do not poll its output.",
-    "status": "profile checked by the test suite; worked a live room on Windows as coordinator and as three remote agents (2026-10-10)"
+    "status": "profile checked by the test suite; worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10)"
   },
   "claude-code-headless": {
     "label": "Claude Code, headless (claude -p)",

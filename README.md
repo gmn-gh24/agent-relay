@@ -35,7 +35,7 @@ wait for messages, send, report.
 - **The owner outranks everyone.** The coordinator asks the owner for what is beyond its authority. What the
   owner says in the room is logged on the coordinator's PC and checked against that log.
 - **Tamper check.** The coordinator's PC keeps its own copy of the tools, wrappers, instructions and standing
-  rules, compares every few seconds, restores what changed and raises an alarm.
+  rules, compares every 15 seconds, restores what changed and raises an alarm.
 
 It is not a sandbox: scope is kept by instruction, evidence and review.
 
@@ -77,6 +77,7 @@ skills/agent-relay/scripts/         coordinator side (PowerShell): rooms, agents
 skills/agent-relay/assets/room-package/   what every room gets: tools, templates, protocol reference
 hooks/, types/                      the room pane in the coordinator's session
 tests/                              Pester suites and byte fixtures; Invoke-AllTests.ps1 is the gate
+evals/                              eval cases for the skill (claude plugin eval)
 ```
 
 State that belongs to one PC (known shares and machines, the room index, canonical copies, the owner's log,
@@ -93,6 +94,19 @@ on three engines (PowerShell 7, Windows PowerShell 5.1, dash), one run per test 
 and the coordinator scripts under both PowerShell editions. `relay.sh` starts many processes, which is slow
 on Windows: its runs set the length of the gate (about an hour). `-ShellRuns` and `-PowerShellRuns` say how
 many runs go side by side; the sh runs default to two, because each takes memory for as long as it runs.
+
+The room pane has its own tests (`claude plugin test .`), and the skill has eval cases:
+
+```
+claude plugin eval . --no-publish
+```
+
+Three requests that must load the skill without naming it, two that must not (plain work in the session, a
+subagent of the session), and one that checks what the coordinator does before it builds anything: it asks how
+the other machine may be treated and how far it may decide alone, and claims nothing it did not do. The cases
+grant no shell, so no script runs and no room is touched. Each run is a full headless session on your
+account; `--no-publish` keeps the report, which holds the transcripts, on this PC (`evals/results/`, not in
+git).
 
 ## Status
 

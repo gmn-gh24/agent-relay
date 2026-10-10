@@ -84,4 +84,45 @@ From the first team room (six agents, two products, one job split into parts wit
 - `relay.sh` starts fewer processes per call. The test gate runs one process per test file and engine, the
   PowerShell engines first and the sh runs after them.
 
+From two more independent reviews, one of the coordinator's side and one of both room tools for races and
+failures. What they have in common: any agent can write any file in the room folder, so nothing the
+coordinator's PC decides by may come from there, and "could not read" is never "empty".
+
+- A room is what the room index and the canonical copy on this PC say it is: its id, folder, settings and
+  closed state no longer come from the room's own `ROOM` and `CLOSED` files. A folder that is no entry of the
+  index is refused, an id is lower-case letters, digits and dashes, and what is put into a command line for
+  somebody to paste is quoted for the shell it is for.
+- The coordinator runs its tool from this PC: a launcher in the machine state starts the canonical copy and
+  names the room (`RELAY_ROOM`) and a draft next to itself. Cards for the owner and standing rules take their
+  text from that draft, never from a file in the room.
+- The tamper check never stops at one file: each is compared and restored by itself, and one that cannot be
+  restored raises its own alarm. It runs before the feed looks at anything else; a `CLOSED` planted in the
+  room is moved out and closes nothing. The prompts handed out are guarded files.
+- The owner's log covers the whole message file, header included, and is written before the file. A message
+  from `owner` is never acted on by its header: both tools tell the coordinator to look at the board first.
+- A message number that would need more than six digits is a failed send, not a message nobody reads; the
+  owner's messages are numbered from the owner's log.
+- The feed counts a message as known only after it has printed it. A failed archive can be made again by
+  closing the closed room once more. The statistics do not fail on a number an agent wrote.
+- `ssh` is refused as a transport until the bridge exists, and the descriptions no longer offer it.
+- The room pane: `/relay <room>` and `relay_bind` say "bound" only when the room resolved on this PC, and
+  say why not otherwise; a feed that ends by itself is started again (three times, after 5, 30 and 120
+  seconds) and the owner is told when that is used up, because the tamper check and the coordinator's
+  heartbeat end with it; a card is shown whole, and one the feed cut says that there is more.
+- Both room tools: a lock that cannot be had is given up after three seconds whatever the reason; the line a
+  placeholder leaves in `delivered` ends in `unreadable` and is no receipt for a proposal; a proposal is not
+  announced as due while any file in the inbox cannot be read, or when the inbox holds an answer to it; a
+  `control` file caught empty says nothing in that round; an age is never taken from the machine's own clock,
+  and without the room's time nothing is judged old; a lease that cannot be read is "nothing known", only
+  another wait's token is a lost lease, and a missing one, or one left without a token for 30 seconds, is
+  written again by the wait that holds it; a `state` or `delivered` file
+  that reads as nothing though it has bytes is neither rewritten nor believed; a file whose time cannot be
+  read is young; `wait 08` is eight minutes; `report` works without an attach folder.
+- `relay.sh` checks every write of a send (the message, each attachment, the self-audit) and never writes
+  over an existing name where no hard link can be made; it reads the inbox file by file, so one that cannot
+  be opened hides no other; of two lines with one key the last counts, as everywhere else.
+
+Also new: eval cases for the skill (`evals/`, run with `claude plugin eval . --no-publish`): when it loads,
+when it must not, and that it interviews the owner before it builds a room.
+
 Not in this version: the SSH bridge.
