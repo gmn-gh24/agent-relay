@@ -62,11 +62,21 @@ export type RelayView = {
   alarms: string[]
   isClosed: boolean
   note: string
+  // While the note is an error the feed printed: the ticks of the feed still to come before it is taken as past
+  errorTicks: number
+}
+
+// A decision the owner pressed on a card, on its way to the room: until it is answered, that card takes no other
+export type RelayDecision = {
+  room: string
+  card: string
+  decision: 'approve' | 'deny'
 }
 
 declare module 'claude-code' {
   interface PluginState {
     // scroll: the first row the pane's window shows; null while it follows the end
-    'agent-relay': { room: string | null; view: RelayView | null; scroll: number | null }
+    // deciding: the decisions on their way, each of a card of the room it names
+    'agent-relay': { room: string | null; view: RelayView | null; scroll: number | null; deciding: RelayDecision[] }
   }
 }
