@@ -13,13 +13,15 @@
     the room closes nothing; the tamper check, which runs first here, moves it out.
 
     Closing writes TRANSCRIPT.md into the room, sets the CLOSED marker (the tools refuse a closed room from then
-    on), saves the statistics and a zip of the whole room under the machine state folder, and marks the room
-    closed in the room index. The room folder itself stays where it is. If the zip could not be made, run this again
-    on the closed room: it makes the archive and says so.
+    on), marks the room closed in the room index, and saves the statistics and a zip of the whole room under the
+    machine state folder. A link in the room (a symbolic link or a junction) is left out of the zip and named: what
+    it points at is not the room's. The room folder itself stays where it is. If the zip could not be made, run
+    this again on the closed room: it makes the archive and says so. A close that was cut short is completed the
+    same way. -WhatIf shows what closing would do and changes nothing; -Confirm asks first.
 
     -ListClosed shows closed rooms whose folder still exists. -Remove deletes the folder of one closed room; it
-    needs the archive to exist and asks for confirmation (-Confirm:$false to skip, -WhatIf to see only).
-    Remove a room only when the owner said so.
+    needs the archive to exist and asks for confirmation (-Confirm:$false to skip, -WhatIf to see only). A link in
+    the folder is removed as a link: nothing it points at is deleted. Remove a room only when the owner said so.
 
 .PARAMETER Room
     Room id or room folder to close.
@@ -56,6 +58,9 @@ Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 
 $archiveRoot = Join-Path (Get-RelayLocalRoot) 'archive'
+# Closing asks nobody unless -Confirm is given (the coordinator closes when the owner said so); -WhatIf only shows
+$isWhatIf = [bool]$WhatIfPreference
+$askFirst = ($isWhatIf -or $PSBoundParameters.ContainsKey('Confirm'))
 
 function Test-RoomArchive {
     # An archive is a zip that opens and holds a file. An empty or half-written file at its name is none: the
@@ -94,30 +99,66 @@ if ($PSCmdlet.ParameterSetName -eq 'Remove') {
     $path = [string]$entry[0].path
     if (-not (Test-Path -LiteralPath (Join-Path $path 'CLOSED'))) { throw "The folder $path has no CLOSED marker: not removed" }
     if ($PSCmdlet.ShouldProcess($path, 'Delete the folder of the closed room (its archive stays)')) {
-        Remove-Item -LiteralPath $path -Recurse -Force
+        # Each link in the folder goes as a link: Windows PowerShell 5.1 would delete what lies behind a junction
+        Remove-RelayTree -Path $path -Confirm:$false
         "REMOVED the folder of room $Remove. Its archive stays: $archive"
     }
     return
 }
 
+function ConvertTo-RoomRelative {
+    # A path below the room folder as the room names it: relative, with forward slashes
+    param([string]$Top, [string]$Path)
+    return ($Path.Substring($Top.Length).TrimStart('\', '/') -replace '\\', '/')
+}
+
+function Write-RoomZip {
+    # The zip of every file of the room, from a list that enters no link: what a link points at is not the room's
+    # (a junction could pull in a whole disk). The paths are taken literally, brackets and all. A file an agent
+    # still writes to is read all the same. Returns the links that were left out, relative to the room.
+    param([string]$Folder, [string]$Zip)
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+    $top = (Get-RelayNormalPath $Folder).TrimEnd('\', '/')
+    $tree = Get-RelayFileTree $top
+    $zipArchive = [System.IO.Compression.ZipFile]::Open($Zip, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in @($tree.Files)) {
+            $entry = $zipArchive.CreateEntry((ConvertTo-RoomRelative $top $file.FullName), [System.IO.Compression.CompressionLevel]::Optimal)
+            # A zip holds times from 1980 to 2107 only
+            $stamp = $file.LastWriteTime
+            if ($stamp.Year -ge 1980 -and $stamp.Year -le 2107) { $entry.LastWriteTime = [DateTimeOffset]$stamp }
+            $source = [System.IO.File]::Open($file.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete))
+            try {
+                $target = $entry.Open()
+                try { $source.CopyTo($target) }
+                finally { $target.Dispose() }
+            }
+            finally { $source.Dispose() }
+        }
+    }
+    finally { $zipArchive.Dispose() }
+    return @($tree.Links | ForEach-Object { ConvertTo-RoomRelative $top $_ })
+}
+
 function Save-RoomArchive {
-    # The zip of the whole room under the machine state folder; $false (and an alarm) when it could not be made.
-    # It is made beside its place and moved there only when it is whole, so a file at the archive's name is
-    # always a whole archive. A room that is closing still has a writer or two (a wait that sees the marker and
-    # removes its lease, a feed that puts a file back): a file that went away while the zip was made fails the
-    # zip, so it is tried three times.
+    # The zip of the whole room under the machine state folder: IsMade is $false (and an alarm raised) when it could
+    # not be made, Links names the links that were left out. It is made beside its place and moved there only when
+    # it is whole, so a file at the archive's name is always a whole archive. A room that is closing still has a
+    # writer or two (a wait that sees the marker and removes its lease, a feed that puts a file back): a file that
+    # went away while the zip was made fails the zip, so it is tried three times.
     param($RoomObject, [string]$Archive)
     $building = Join-Path $archiveRoot "$($RoomObject.Id).building.zip"
     $reason = ''
+    $links = @()
     foreach ($try in 1..3) {
         try {
             if (-not (Test-Path -LiteralPath $archiveRoot)) { $null = New-Item -ItemType Directory -Path $archiveRoot -Force }
             if (Test-Path -LiteralPath $building) { Remove-Item -LiteralPath $building -Force }
-            Compress-Archive -Path (Join-Path $RoomObject.Path '*') -DestinationPath $building -Force -ErrorAction Stop
+            $links = @(Write-RoomZip -Folder $RoomObject.Path -Zip $building)
             if (-not (Test-RoomArchive $building)) { throw 'the zip that was made does not open or is empty' }
             if (Test-Path -LiteralPath $Archive) { Remove-Item -LiteralPath $Archive -Force }
             Move-Item -LiteralPath $building -Destination $Archive -Force
-            return $true
+            return [pscustomobject]@{ IsMade = $true; Links = $links }
         }
         catch {
             $reason = $_.Exception.Message
@@ -126,41 +167,95 @@ function Save-RoomArchive {
     }
     try { if (Test-Path -LiteralPath $building) { Remove-Item -LiteralPath $building -Force } } catch { $null = $_ }
     Add-RelayAlarm $RoomObject "ARCHIVE failed: $reason"
-    return $false
+    return [pscustomobject]@{ IsMade = $false; Links = $links }
+}
+
+function Save-ClosedStamp {
+    # Marks the room closed in the room index of this PC, under the index's lock; an index that cannot be read is
+    # an error, never an empty list. -KeepStamp: a date the entry already has stays.
+    param([string]$Id, [string]$Stamp, [switch]$KeepStamp)
+    Update-RelayRoomIndex -Change {
+        param($entries)
+        foreach ($entry in @($entries)) {
+            if ([string](Get-RelayProperty $entry 'id' '') -ceq $Id -and -not ($KeepStamp -and [string](Get-RelayProperty $entry 'closed_utc' ''))) {
+                $entry | Add-Member -NotePropertyName 'closed_utc' -NotePropertyValue $Stamp -Force
+            }
+            $entry
+        }
+    }
+}
+
+function Get-LinkLine {
+    # The line that names the links the archive left out; nothing when there were none. A link's name is room text.
+    param([string[]]$Links = @())
+    $named = @($Links | Where-Object { $_ })
+    if ($named.Count -eq 0) { return }
+    ConvertTo-RelayPrintedLine ('archive: links left out (what they point at is not the room''s): ' + ($named -join ', '))
 }
 
 $roomObject = Resolve-RelayRoom $Room
-# The tamper pass comes first: what anybody but this PC wrote into the room is put right before anything is read
-foreach ($finding in @(Test-RelayTamper $roomObject -Repair)) {
+# The tamper pass comes first: what anybody but this PC wrote into the room is put right before anything is read.
+# With -WhatIf it only says what it would put right.
+# TODO(merge, round 5): the module on main exports Format-RelayTamperFinding (it also words the new kinds 'link'
+# and 'unreadable'). When it is merged, print each finding as
+#     ConvertTo-RelayPrintedLine ('tamper check: ' + (Format-RelayTamperFinding $finding))
+# and keep only the -WhatIf wording below, for findings that were left as they are on purpose.
+foreach ($finding in @(Test-RelayTamper $roomObject -Repair:(-not $isWhatIf))) {
     $done = 'restored from the copy on this PC'
     if ($finding.Kind -eq 'extra') { $done = 'it does not belong there and was moved out' }
     if (-not $finding.Repaired) { $done = 'it could not be put right' }
+    if ($isWhatIf) { $done = 'left as it is (-WhatIf)' }
     ConvertTo-RelayPrintedLine "tamper check: $($finding.Relative) was $($finding.Kind): $done"
 }
 # Closed is what this PC says: the canonical CLOSED marker
-if (Test-Path -LiteralPath (Join-Path $roomObject.Canon 'CLOSED')) {
+$canonClosed = Join-Path $roomObject.Canon 'CLOSED'
+if (Test-Path -LiteralPath $canonClosed) {
+    # A close that was cut short after the marker: the index learns of it now, with the date of the marker
+    $indexed = @(Get-RelayRoomIndex | Where-Object { [string](Get-RelayProperty $_ 'id' '') -ceq $roomObject.Id })
+    if ($indexed.Count -gt 0 -and -not [string](Get-RelayProperty $indexed[0] 'closed_utc' '')) {
+        $stamp = Get-RelayValue (Read-RelayKeyValue $canonClosed) 'closed_utc' ''
+        if (-not $stamp) { $stamp = Format-RelayUtc (Get-RelayFileTimeUtc $canonClosed) }
+        if (-not $askFirst -or $PSCmdlet.ShouldProcess($roomObject.Id, 'Mark the closed room closed in the room index')) {
+            Save-ClosedStamp -Id $roomObject.Id -Stamp $stamp -KeepStamp
+            "The room index of this PC marks the room $($roomObject.Id) closed now ($stamp): an earlier close was cut short."
+        }
+    }
     $closedArchive = Join-Path $archiveRoot "$($roomObject.Id).zip"
-    if (Test-RoomArchive $closedArchive) { "The room $($roomObject.Id) is already closed."; return }
+    if (Test-RoomArchive $closedArchive) {
+        "The room $($roomObject.Id) is already closed."
+        "NEXT: nothing is left to do here. Remove its folder only when the owner says so: Close-RelayRoom.ps1 -Remove $($roomObject.Id)"
+        return
+    }
     # Closed, but the archive of an earlier call failed: make it now
     if (-not (Test-Path -LiteralPath $roomObject.Path)) { throw "The room $($roomObject.Id) is closed and has no archive, and its folder is gone: $($roomObject.Path)" }
-    if (Save-RoomArchive $roomObject $closedArchive) {
+    if ($askFirst -and -not $PSCmdlet.ShouldProcess($roomObject.Id, 'Make the missing archive of the closed room')) { return }
+    $saved = Save-RoomArchive $roomObject $closedArchive
+    if ($saved.IsMade) {
         "The room $($roomObject.Id) was already closed; its archive was missing and is made now."
         "archive: $closedArchive"
+        Get-LinkLine $saved.Links
+        "NEXT: nothing is left to do here. Remove its folder only when the owner says so: Close-RelayRoom.ps1 -Remove $($roomObject.Id)"
     }
-    else { 'ARCHIVE FAILED again: the room folder is the only copy, do not remove it. Run this again when the reason is gone (see alarms.log of the room).' }
+    else {
+        'ARCHIVE FAILED again: the room folder is the only copy, do not remove it. Run this again when the reason is gone (see alarms.log of the room).'
+        Get-LinkLine $saved.Links
+        "NEXT: find the reason in $(Join-Path $roomObject.Local 'alarms.log'), then run Close-RelayRoom.ps1 -Room $($roomObject.Id) again."
+    }
     return
 }
 $board = Get-RelayBoard $roomObject
 $stillHere = @($board.agents | Where-Object { -not $_.isCoordinator -and $_.isIntroduced -and @('offline', 'retired') -notcontains $_.state })
 if ($stillHere.Count -gt 0 -and -not $Force) {
-    "NOT CLOSED: these agents have not said bye: " + ((@($stillHere | ForEach-Object { "$($_.name) ($($_.state))" })) -join ', ')
+    # The state is what the agent's own status file says: room text, printed without its control characters
+    ConvertTo-RelayPrintedLine ("NOT CLOSED: these agents have not said bye: " + ((@($stillHere | ForEach-Object { "$($_.name) ($($_.state))" })) -join ', '))
     'NEXT: send your closing note to all and wait for each bye. Use -Force only for agents that cannot answer any more.'
     return
 }
+if ($askFirst -and -not $PSCmdlet.ShouldProcess($roomObject.Id, 'Close the room: transcript, CLOSED marker, room index, statistics and archive')) { return }
 
 $stats = Get-RelayStatistic $roomObject
 $messages = @(Get-RelayMessage $roomObject)
-$closedUtc = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+$closedUtc = Format-RelayUtc
 $text = New-Object System.Collections.Generic.List[string]
 $text.Add("# Transcript of room $($roomObject.Id)")
 $text.Add('')
@@ -192,13 +287,14 @@ foreach ($message in $messages) {
     $text.Add('')
     $text.Add("### $($message.Id): $($message.Type) from $($message.From) to $($message.To)$re")
     $text.Add('')
-    $text.Add("$($message.Time.ToString('yyyy-MM-dd HH:mm:ss')) UTC. **$($message.Subject)**")
+    $text.Add("$(Format-RelayUtc $message.Time 'yyyy-MM-dd HH:mm:ss') UTC. **$($message.Subject)**")
     $text.Add('')
     $text.Add($message.Body)
     $files = Join-Path (Join-Path $roomObject.Path 'files') $message.Id
-    if (Test-Path -LiteralPath $files) {
+    # The attachments as the room holds them: a link among them is not followed
+    if ((Test-Path -LiteralPath $files -PathType Container) -and -not (Test-RelayLinkedPath -Root $roomObject.Path -Path $files)) {
         $text.Add('')
-        $text.Add('Files: ' + ((@(Get-ChildItem -LiteralPath $files -File -Recurse | ForEach-Object { $_.Name })) -join ', '))
+        $text.Add('Files: ' + ((@((Get-RelayFileTree $files).Files | ForEach-Object { $_.Name })) -join ', '))
     }
 }
 $cards = @(Get-RelayOwnerCard $roomObject)
@@ -226,21 +322,18 @@ if ($alarms.Count -gt 0) {
 $transcript = ($text -join "`n") + "`n"
 Write-RelayGuardedText $roomObject 'TRANSCRIPT.md' $transcript
 Write-RelayGuardedText $roomObject 'CLOSED' ("closed_utc: $closedUtc`nby: $($roomObject.Coordinator)`n")
+# The index follows the marker at once: a close cut short after this point (the archive is slow) still lists the
+# room as closed, and a call on the closed room makes what is missing
+Save-ClosedStamp -Id $roomObject.Id -Stamp $closedUtc
 Write-RelayText (Join-Path $roomObject.Local 'stats.json') ((ConvertTo-Json -InputObject $stats -Depth 6) + "`n")
 
 $archive = Join-Path $archiveRoot "$($roomObject.Id).zip"
-$isArchived = Save-RoomArchive $roomObject $archive
-
-$index = New-Object System.Collections.Generic.List[object]
-foreach ($entry in @(Get-RelayRoomIndex)) {
-    if ($entry.id -eq $roomObject.Id) { $entry.closed_utc = $closedUtc }
-    $index.Add($entry)
-}
-Save-RelayRoomIndex $index.ToArray()
+$saved = Save-RoomArchive $roomObject $archive
 
 "CLOSED room $($roomObject.Id)"
 "transcript: " + (Join-Path $roomObject.Path 'TRANSCRIPT.md')
-if ($isArchived) { "archive: $archive" } else { "ARCHIVE FAILED: the room folder is the only copy, do not remove it. Run this again on the closed room to make the archive." }
+if ($saved.IsMade) { "archive: $archive" } else { "ARCHIVE FAILED: the room folder is the only copy, do not remove it. Run this again on the closed room to make the archive." }
+Get-LinkLine $saved.Links
 "statistics: " + (Join-Path $roomObject.Local 'stats.json')
 if ($stillHere.Count -gt 0) { 'closed with -Force; no bye from: ' + ((@($stillHere | ForEach-Object { $_.name })) -join ', ') }
 'NEXT: run the retro (workflow "Improve"): Get-RelayStats.ps1, the byes, lessons.md.'

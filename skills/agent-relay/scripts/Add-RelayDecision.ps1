@@ -17,8 +17,9 @@
 
 .PARAMETER DraftFile
     The text. Default: draft.md of this room on this PC (<local>\rooms\<room id>\draft.md, the file the
-    coordinator's launcher names as its draft). A file in the room folder is refused: any agent can write there. A
-    relative path is taken against the PowerShell location, once. The file is removed after use.
+    coordinator's launcher names as its draft). A file in the room folder is refused: any agent can write there. So
+    is a path that leads into the room through a link. A relative path is taken against the PowerShell location,
+    once. The file is removed after use.
 
 .PARAMETER Owner
     Mark the lines as decisions of the owner.
@@ -41,27 +42,17 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 
-function Resolve-TextFile {
-    # Where the text of a rule comes from: this PC, never the room (any agent can write in the room folder). A file
-    # given by parameter is made absolute once, against the PowerShell location, and the same path is read and
-    # removed; one inside the room folder is refused.
-    param($RoomObject, [string]$File)
-    $default = Join-Path $RoomObject.Local 'draft.md'
-    if (-not $File) { return $default }
-    $full = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine((Get-Location).ProviderPath, $File))
-    $inside = [System.IO.Path]::GetFullPath($RoomObject.Path).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-    if ($full.StartsWith($inside, [System.StringComparison]::OrdinalIgnoreCase)) { throw "The file $full lies inside the room folder, where any agent can write: no rule is made from it. Put the text outside the room (default: $default)" }
-    return $full
-}
-
 $roomObject = Resolve-RelayRoom $Room
 if (Test-Path -LiteralPath (Join-Path $roomObject.Canon 'CLOSED')) { throw "The room $($roomObject.Id) is closed" }
-$DraftFile = Resolve-TextFile $roomObject $DraftFile
+# Where the text of a rule comes from: this PC, never the room (any agent can write in the room folder)
+$DraftFile = Resolve-RelayDraftPath -Room $roomObject -File $DraftFile -What 'rule'
 $rules = @(((Read-RelayText $DraftFile) -split "`n") | ForEach-Object { ConvertTo-RelayHeaderText (($_ -replace '^\s*[-*#]+\s*', '') -replace '\|', '/') } | Where-Object { $_ })
 if ($rules.Count -eq 0) { throw "There is no rule to record: $DraftFile is missing or empty. Write one rule per line there and run this again." }
 
-$current = (Read-RelayText (Join-Path $roomObject.Canon 'DECISIONS.md')).TrimEnd()
-$date = (Get-Date).ToString('yyyy-MM-dd')
+# What is recorded is written back whole: a copy that cannot be read right now is an error, never an empty file,
+# which would keep only the new rules
+$current = (Read-RelayTextStrict (Join-Path $roomObject.Canon 'DECISIONS.md')).TrimEnd()
+$date = Format-RelayUtc -Time (Get-Date) -Format 'yyyy-MM-dd'
 $added = New-Object System.Collections.Generic.List[string]
 foreach ($rule in $rules) {
     $text = $rule
