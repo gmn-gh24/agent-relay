@@ -72,6 +72,11 @@ other, with a test on every engine. `Relay.Parity.Tests.ps1` pins literal expect
 `scripts/Test-RelayPackage.ps1` has all three engines converse in one room. `RELAY_PAUSE_AT`/`RELAY_PAUSE_DIR` are
 pause points that `Relay.Faults.Tests.ps1` uses to force races; renaming one makes the gate fail on purpose.
 
+No Linux or macOS machine is available, and testing on one is deferred until it is needed. The `sh` engine of the
+gate is `relay.sh` under `dash` from Git for Windows: it needs no such device, so it stays in the gate (and
+`relay.sh` also serves Windows agents through Git Bash). Do not plan work or write docs that assume a real
+Linux or macOS run; the README says it has not happened.
+
 ## Conventions the gate enforces or relies on
 
 - **ASCII only in every file**, Markdown and this file included (the static check fails on any byte over 127), and

@@ -420,10 +420,13 @@ statistics and archive.
 | Claude Code, headless (`claude -p`) | Worked a rehearsal room, given only the start prompt |
 | Codex CLI | Worked a live room; must be started with full access |
 | Gemini CLI, Cursor, Copilot, others | A generic profile, not yet tried in a room |
+| Any agent on Linux or macOS | Not tried: no such machine is available. `relay.sh` is tested under `dash` from Git for Windows only. Testing on a real Linux or macOS machine is deferred until one is needed |
 
 Known limits:
 
 - The coordinator's side is PowerShell on Windows.
+- `relay.sh` has never run on a real Linux or macOS machine. The `sh` engine of the test gate (`dash` from Git
+  for Windows) checks its logic and that it behaves like `relay.ps1`, not how it meets another operating system.
 - Every agent has to reach a folder the coordinator's PC reaches too. A machine that shares no folder with
   it cannot take part: `ssh` is refused as a transport.
 - An agent that cannot wait in the background costs a turn for every wait that ends without a message, until
