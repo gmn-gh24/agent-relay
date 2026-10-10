@@ -202,7 +202,7 @@ foreach ($template in $templates) {
 # speed, and a run takes its tests one after the other. The coordinator-side scripts are one run per edition.
 # A test file that is in neither list would never run, so the gate fails on one.
 $toolFiles = @('Relay.Tool.Tests.ps1', 'Relay.Team.Tests.ps1', 'Relay.Faults.Tests.ps1', 'Relay.Parity.Tests.ps1')
-$scriptFiles = @('Relay.Scripts.Tests.ps1', 'Relay.Plan.Tests.ps1', 'Relay.Guard.Tests.ps1', 'Relay.Owner.Tests.ps1')
+$scriptFiles = @('Relay.Scripts.Tests.ps1', 'Relay.Plan.Tests.ps1', 'Relay.Guard.Tests.ps1', 'Relay.Owner.Tests.ps1', 'Relay.Gate.Tests.ps1')
 $listed = @($toolFiles + $scriptFiles)
 $missingFiles = @($listed | Where-Object { -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $_) -PathType Leaf) })
 foreach ($file in $missingFiles) { $problems.Add("the test file $file is missing") }
