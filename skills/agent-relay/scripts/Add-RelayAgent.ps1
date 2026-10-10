@@ -188,7 +188,7 @@ switch ($PSCmdlet.ParameterSetName) {
         $spec = Merge-RelaySeatSpec -Spec (Read-RelaySeatSpec $roomObject $name) -Answers (ConvertFrom-RelayJson (Read-RelayText $AnswersFile))
         # An agent that came in through the join prompt: its machine is known from its introduction, which the agent
         # wrote; its control characters go before the name is kept anywhere
-        if (([string]$spec['machine']).StartsWith('(')) { $spec['machine'] = ConvertTo-RelayHeaderText (Get-RelayValue $card 'computer' ([string]$spec['machine'])) }
+        if (([string]$spec['machine']).StartsWith('(', [System.StringComparison]::Ordinal)) { $spec['machine'] = ConvertTo-RelayHeaderText (Get-RelayValue $card 'computer' ([string]$spec['machine'])) }
         $current = Get-RelayCanonicalGeneration $roomObject $name
         $null = Add-RelayAgentSeat -Room $roomObject -Name $name -Spec $spec -Generation $current -Reassign
         ConvertTo-RelayPrintedLine "ASSIGNED ${name}: $($spec['role']) ($($spec['work'])) on $($spec['machine']), machine $($spec['machine_care'])"
