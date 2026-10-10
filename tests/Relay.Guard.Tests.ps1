@@ -857,6 +857,8 @@ Describe 'What the coordinator''s PC writes and decides by (round 5)' -Tag 'Guar
     }
 
     It 'tells a guarded file that is there and cannot be read from one that is missing' {
+        # Pester 6 calls no original command for a call that no filter matches: the default mock hashes as the module does
+        Mock -ModuleName RelayCommon Get-RelayFileHash { if (-not [System.IO.File]::Exists($Path)) { return '' }; return (Get-RelayBytesHash ([System.IO.File]::ReadAllBytes($Path))) }
         Mock -ModuleName RelayCommon Get-RelayFileHash -ParameterFilter { $Path -like '*DECISIONS.md' -and $Path -notlike '*canon*' } { return '' }
         @(Test-RelayTamper $object | ForEach-Object { "$($_.Kind) $($_.Relative)" }) | Should -Be @('unreadable DECISIONS.md')
         [System.IO.File]::Delete((Join-Path $room 'DECISIONS.md'))
