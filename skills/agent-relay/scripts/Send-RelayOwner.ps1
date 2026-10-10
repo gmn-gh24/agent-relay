@@ -27,6 +27,7 @@
 
 .PARAMETER TextFile
     Read the text from this file instead of standard input. A relative path is taken against the PowerShell location.
+    A file in the room folder, or reached through a link into it, is refused: any agent can write there.
 
 .EXAMPLE
     'Use the staging share, not production.' | .\Send-RelayOwner.ps1 -Room 2026-10-10-docs -For emma
@@ -54,8 +55,9 @@ if (Test-Path -LiteralPath (Join-Path $roomObject.Canon 'CLOSED')) { throw "The 
 
 $text = ''
 if ($TextFile) {
-    # A relative path is taken against the PowerShell location, once
-    $TextFile = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine((Get-Location).ProviderPath, $TextFile))
+    # A relative path is taken against the PowerShell location, once. The owner's words never come from a file in
+    # the room folder, where any agent can write.
+    $TextFile = Resolve-RelayDraftPath -Room $roomObject -File $TextFile -What 'owner''s message'
     $text = Read-RelayText $TextFile
 }
 elseif ([Console]::IsInputRedirected) {

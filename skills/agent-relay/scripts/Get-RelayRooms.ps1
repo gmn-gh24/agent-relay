@@ -74,3 +74,4 @@ if ($machinesText.Trim()) {
 else { "KNOWN MACHINES AND SHARES: none recorded yet ($machinesFile)" }
 ''
 'Remembered are facts only (how a machine is reached, its system, its agents). Whether a machine may be changed is asked for every job.'
+'NEXT: resume an open room of this job (Get-RelayBoard.ps1 -Room <id>, then your own start), or interview the owner for a new one.'

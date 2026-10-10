@@ -2219,4 +2219,131 @@ function Switch-RelaySeatKind {
 
 #endregion
 
+#region Script helpers (round 5)
+
+function Get-RelayAgentKindName {
+    # The agent kinds agent-kinds.json knows, in the order of the file
+    $all = ConvertFrom-RelayJson (Read-RelayText (Join-Path $PSScriptRoot 'agent-kinds.json'))
+    return @($all.PSObject.Properties | ForEach-Object { $_.Name })
+}
+
+function Assert-RelayAgentKind {
+    # An agent kind given in an answers file or on a command line is one that agent-kinds.json knows: a typo would
+    # otherwise give the agent the generic profile without a word. The 'auto' of an open seat is set by the
+    # scripts themselves and never passes here.
+    param([string]$Kind, [string]$What = 'The agent kind')
+    $known = @(Get-RelayAgentKindName)
+    if ($known -notcontains $Kind) { throw "$What '$Kind' is not one of $($known -join ', ')" }
+}
+
+function Get-RelayCoordinatorNote {
+    # What agent-kinds.json has the coordinator tell the owner about an agent kind (its coordinator_note), once
+    # per kind, in the order the kinds come
+    param([string[]]$Kind = @())
+    $notes = New-Object System.Collections.Generic.List[string]
+    $seen = @{}
+    foreach ($name in @($Kind)) {
+        if (-not $name -or $seen.ContainsKey($name)) { continue }
+        $seen[$name] = $true
+        $note = [string](Get-RelayProperty (Get-RelayAgentKind $name) 'coordinator_note' '')
+        if ($note) { $notes.Add($note) }
+    }
+    return @($notes.ToArray())
+}
+
+function Add-RelayLinePair {
+    # Opens a direct line between two agents, both ways: each name goes into the other's lines file, canonical
+    # copy first. A lines file of this PC that cannot be read is an error, never an empty list: the lines it
+    # held would be lost when it is written back.
+    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$First, [Parameter(Mandatory)][string]$Second)
+    foreach ($direction in @(@($First, $Second), @($Second, $First))) {
+        $path = "agents/$($direction[0])/lines"
+        $existing = @(((Read-RelayTextStrict (Join-Path $Room.Canon $path)) -split "`n") | Where-Object { $_.Trim() })
+        if ($existing -notcontains $direction[1]) { Write-RelayGuardedText $Room $path ((@($existing + $direction[1]) -join "`n") + "`n") }
+    }
+}
+
+function Test-RelayPathWithin {
+    # True when a path is the folder itself or lies below it: both as full paths in normal form, compared without
+    # regard to case
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Folder)
+    $top = (Get-RelayNormalPath $Folder).TrimEnd('\', '/')
+    $full = Get-RelayNormalPath $Path
+    if ([string]::Equals($full, $top, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    return $full.StartsWith($top + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-RelayLinkTarget {
+    # Where a link points, as a full path; '' when that cannot be read
+    param([Parameter(Mandatory)][string]$Path)
+    try {
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        # Windows PowerShell 5.1 gives the target as a list, PowerShell 7 as one text
+        $target = [string](@($item.Target | Where-Object { $_ }) | Select-Object -First 1)
+        if (-not $target) { return '' }
+        if ($target.StartsWith('\??\')) { $target = $target.Substring(4) }
+        if (-not [System.IO.Path]::IsPathRooted($target)) { $target = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($Path), $target) }
+        return [System.IO.Path]::GetFullPath($target)
+    }
+    catch { return '' }
+}
+
+function Get-RelayRealPath {
+    # A full path with each link on it replaced by where that link points, from the root down; '' when a link on
+    # it cannot be followed. Forty links on one way are taken for a loop.
+    param([Parameter(Mandatory)][string]$Path)
+    $current = Get-RelayNormalPath $Path
+    for ($hop = 0; $hop -lt 40; $hop++) {
+        $root = [System.IO.Path]::GetPathRoot($current)
+        $parts = @($current.Substring($root.Length) -split '[\\/]' | Where-Object { $_ })
+        $walked = $root
+        $isFollowed = $false
+        for ($index = 0; $index -lt $parts.Count; $index++) {
+            $walked = [System.IO.Path]::Combine($walked, $parts[$index])
+            if (-not (Test-RelayLink $walked)) { continue }
+            $target = Get-RelayLinkTarget $walked
+            if (-not $target) { return '' }
+            foreach ($part in @($parts | Select-Object -Skip ($index + 1))) { $target = [System.IO.Path]::Combine($target, $part) }
+            $current = Get-RelayNormalPath $target
+            $isFollowed = $true
+            break
+        }
+        if (-not $isFollowed) { return $current }
+    }
+    return ''
+}
+
+function Resolve-RelayDraftPath {
+    # Where the text of a card, a rule or an owner's message is read from: this PC, never the room, where any agent
+    # can write. Without -File: draft.md of the room on this PC. A file that is named is made absolute once,
+    # against the PowerShell location, so that the same path is read and removed. A file inside the room folder is
+    # refused, also when the way to it, or to the room, goes through a link: where a link really leads decides.
+    param([Parameter(Mandatory)]$Room, [string]$File = '', [string]$What = 'text')
+    $default = Join-Path $Room.Local 'draft.md'
+    if (-not $File) { return $default }
+    $full = Get-RelayNormalPath $File
+    $roomPath = Get-RelayNormalPath $Room.Path
+    $paths = New-Object System.Collections.Generic.List[string]
+    $paths.Add($full)
+    $folders = New-Object System.Collections.Generic.List[string]
+    $folders.Add($roomPath)
+    if (Test-RelayLinkedPath -Root ([System.IO.Path]::GetPathRoot($full)) -Path $full) {
+        $real = Get-RelayRealPath $full
+        if (-not $real) { throw "The file $full is reached through a link that cannot be followed: give the path of the file itself" }
+        $paths.Add($real)
+    }
+    if (Test-RelayLinkedPath -Root ([System.IO.Path]::GetPathRoot($roomPath)) -Path $roomPath) {
+        $realRoom = Get-RelayRealPath $roomPath
+        if ($realRoom) { $folders.Add($realRoom) }
+    }
+    foreach ($path in $paths) {
+        foreach ($folder in $folders) {
+            if (Test-RelayPathWithin -Path $path -Folder $folder) { throw "The file $full lies inside the room folder, where any agent can write: no $What is made from it. Put the text outside the room (default: $default)" }
+        }
+    }
+    return $full
+}
+
+#endregion
+
 Export-ModuleMember -Function *-Relay*
