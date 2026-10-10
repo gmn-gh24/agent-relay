@@ -12,7 +12,8 @@
                 depends, files and notes are empty.
     -Part       Changes one part of the plan the room has: -Status, -Owner, -Reviewer (a name, or '-' for
                 nobody) and -Note (adds a note). Give at least one.
-    -Show       Prints the PLAN file as it is, or 'NO PLAN in room <id>'. Changes nothing.
+    -Show       Prints the room's PLAN file as it is, or 'NO PLAN in room <id>', and a last line
+                '[DIFFERS FROM THE COPY ON THIS PC: ...]' when it is not this PC's copy. Changes nothing.
 
     Everything is checked before anything is written. A fault throws 'Plan refused: <what and where>' and the
     room stays as it was. The revision goes up by one with every change; the plan to change is read from the canonical copy. One call writes at a time: it holds the mutex Global\agent-relay-plan-<room id>, and waits for it 30 seconds. The text is written to the canonical
@@ -77,18 +78,6 @@ Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 $statuses = @('todo', 'doing', 'review', 'done', 'blocked')
 $idPattern = '^[a-z0-9-]{1,24}$'
 
-function Get-PlanLength {
-    # Characters, not UTF-16 units: a surrogate pair counts once
-    param([string]$Text)
-    return ($Text.Length - [regex]::Matches($Text, '[\uD800-\uDBFF][\uDC00-\uDFFF]').Count)
-}
-
-function Format-PlanColumn {
-    # A value padded on the right with spaces up to its width in characters; a longer value is not cut
-    param([string]$Text, [int]$Width)
-    return ($Text + (' ' * [Math]::Max(0, $Width - (Get-PlanLength $Text))))
-}
-
 function Assert-PlanText {
     # A text field: text, no line break, no bar, no other control character, within its length in characters.
     # Returns it trimmed of spaces and tabs.
@@ -98,7 +87,7 @@ function Assert-PlanText {
     if ($Value.Contains('|')) { throw "Plan refused: $What must not contain a bar" }
     $text = $Value.Trim(' ', "`t")
     if ($text -match '\p{Cc}') { throw "Plan refused: $What must not contain a control character" }
-    $length = Get-PlanLength $text
+    $length = Get-RelayTextLength $text
     if ($length -lt $Min -or $length -gt $Max) { throw "Plan refused: $What must have $Min to $Max characters (it has $length)" }
     return $text
 }
@@ -240,7 +229,7 @@ function ConvertTo-PlanText {
     param([int]$Revision, [string]$Goal, [object[]]$Parts)
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add("plan: $Revision")
-    $lines.Add('updated_utc: ' + [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture))
+    $lines.Add('updated_utc: ' + (Format-RelayUtc))
     $lines.Add("goal: $Goal")
     foreach ($item in $Parts) {
         $depends = '-'
@@ -251,6 +240,14 @@ function ConvertTo-PlanText {
     foreach ($item in $Parts) { foreach ($text in $item.Notes) { $lines.Add("note: $($item.Id) | $text") } }
     $lines.Add("end: $Revision")
     return (($lines -join "`n") + "`n")
+}
+
+function Read-PlanLine {
+    # The lines file of one agent in this PC's copy. It is written back with a name added, so one that is there
+    # and cannot be read refuses the plan: read as empty, every line the agent had would be lost.
+    param($RoomObject, [string]$Agent)
+    try { return (Read-RelayTextStrict (Join-Path $RoomObject.Canon "agents/$Agent/lines")) }
+    catch { throw "Plan refused: the lines of $Agent cannot be read from the copy on this PC: $($_.Exception.Message)" }
 }
 
 function Get-PlanLinePair {
@@ -274,7 +271,7 @@ function Get-PlanLinePair {
         $names = $key -split ' '
         $open = $true
         foreach ($direction in @(@($names[0], $names[1]), @($names[1], $names[0]))) {
-            $existing = @(((Read-RelayText (Join-Path $RoomObject.Canon "agents/$($direction[0])/lines")) -split "`n") | Where-Object { $_.Trim() })
+            $existing = @(((Read-PlanLine $RoomObject $direction[0]) -split "`n") | Where-Object { $_.Trim() })
             if ($existing -notcontains $direction[1]) { $open = $false }
         }
         if (-not $open) { $result.Add($names) }
@@ -285,10 +282,18 @@ function Get-PlanLinePair {
 $roomObject = Resolve-RelayRoom $Room
 
 if ($Show) {
+    # The room's PLAN, as the agents read it. When it is not this PC's copy byte for byte (the tamper check puts
+    # the copy back), a last line says so, as the board does.
+    $differsLine = '[DIFFERS FROM THE COPY ON THIS PC: the feed puts it back]'
     $current = Read-RelayText (Join-Path $roomObject.Path 'PLAN')
-    if ($current -notmatch '(?m)^plan:') { "NO PLAN in room $($roomObject.Id)"; return }
+    if ($current -notmatch '(?m)^plan:') {
+        "NO PLAN in room $($roomObject.Id)"
+        if ((Get-RelayFileHash (Join-Path $roomObject.Canon 'PLAN')) -and (Test-RelayPlanDifference $roomObject)) { $differsLine }
+        return
+    }
     # The file is the room's: what is printed from it passes the one function that takes control characters out
     foreach ($line in ($current.TrimEnd("`n") -split "`n")) { ConvertTo-RelayPrintedLine $line }
+    if (Test-RelayPlanDifference $roomObject) { $differsLine }
     return
 }
 
@@ -303,9 +308,14 @@ try {
     catch [System.Threading.AbandonedMutexException] { $held = $true }
     if (-not $held) { throw "Plan refused: another Set-RelayPlan is running for room $($roomObject.Id)" }
 
-    # The plan about to be replaced is read from this PC's canonical copy: the room's file may have been tampered with
+    # The plan about to be replaced is read from this PC's canonical copy: the room's file may have been tampered
+    # with. A copy that is there and cannot be read refuses the change: taken for no plan, the revision would start
+    # again at 1, and the agents would never take the new plan for a newer one.
     $canonPlan = Join-Path $roomObject.Canon 'PLAN'
-    $current = Read-PlanFile (Read-RelayText $canonPlan)
+    $canonText = ''
+    try { $canonText = Read-RelayTextStrict $canonPlan }
+    catch { throw "Plan refused: the plan of room $($roomObject.Id) cannot be read from the copy on this PC: $($_.Exception.Message)" }
+    $current = Read-PlanFile $canonText
     $hasCanon = Test-Path -LiteralPath $canonPlan
     if ($current.UsedUp) { throw "Plan refused: the revision counter of room $($roomObject.Id) is used up" }
 
@@ -356,15 +366,13 @@ try {
         if (-not $PSCmdlet.ShouldProcess("agents $($pair[0]) and $($pair[1])", 'open a direct line')) { continue }
         foreach ($direction in @(@($pair[0], $pair[1]), @($pair[1], $pair[0]))) {
             $path = "agents/$($direction[0])/lines"
-            $existing = @(((Read-RelayText (Join-Path $roomObject.Canon $path)) -split "`n") | Where-Object { $_.Trim() })
+            $existing = @(((Read-PlanLine $roomObject $direction[0]) -split "`n") | Where-Object { $_.Trim() })
             if ($existing -notcontains $direction[1]) { Write-RelayGuardedText $roomObject $path ((@($existing + $direction[1]) -join "`n") + "`n") }
         }
         $opened.Add("LINE open between $($pair[0]) and $($pair[1])")
     }
     ConvertTo-RelayPrintedLine "PLAN $revision for room $($roomObject.Id): $(@($parts).Count) part(s)"
-    $idWidth = 12
-    foreach ($item in $parts) { $idWidth = [Math]::Max($idWidth, (Get-PlanLength $item.Id)) }
-    foreach ($item in $parts) { ConvertTo-RelayPrintedLine ('  ' + (Format-PlanColumn $item.Id $idWidth) + '  ' + (Format-PlanColumn $item.Status 8) + '  ' + (Format-PlanColumn $item.Owner 9) + '  ' + $item.Title) }
+    foreach ($line in @(Format-RelayPlanTable -Parts @($parts) -Indent '  ')) { ConvertTo-RelayPrintedLine $line }
     foreach ($line in $opened) { ConvertTo-RelayPrintedLine $line }
     'NEXT: the agents are shown the new plan with the next message they receive, or at once with the verb team.'
 }

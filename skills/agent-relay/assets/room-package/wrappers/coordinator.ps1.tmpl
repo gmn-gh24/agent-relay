@@ -1,12 +1,16 @@
 # agent-relay launcher for {{DISPLAY}} ({{NAME}}), the coordinator of room {{ROOM_ID}}, generation {{GEN}}.
 # Written on the coordinator's PC and kept there: the coordinator runs nothing that lies in the room, where
 # every agent can write. The tool it starts is this PC's own copy, and its draft is on this PC too.
-# Started as: powershell -NoProfile -ExecutionPolicy Bypass -File <this file> <verb>
+# Started as: powershell -NoProfile -ExecutionPolicy Bypass -File <this file> <verb>, or through relay.cmd next to it.
+# Written with a BOM: Windows PowerShell 5.1 reads a script without one in the ANSI code page.
 $env:RELAY_NAME = '{{NAME}}'
 $env:RELAY_GEN = '{{GEN}}'
 $env:RELAY_ROOM_ID = '{{ROOM_ID}}'
 $env:RELAY_ROOM = '{{ROOM_PATH_PS}}'
 $env:RELAY_DRAFT = Join-Path $PSScriptRoot 'draft.md'
 $env:RELAY_WRAPPER = $PSCommandPath
+# Started by relay.cmd: the call lines the tool prints are for cmd
+if ($env:RELAY_LAUNCHER -eq 'cmd') { $env:RELAY_WRAPPER = Join-Path $PSScriptRoot 'relay.cmd' }
+$env:RELAY_LAUNCHER = $null
 & (Join-Path $PSScriptRoot 'canon\tools\relay.ps1') @args
 exit $LASTEXITCODE

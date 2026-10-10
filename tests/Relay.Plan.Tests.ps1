@@ -1198,6 +1198,28 @@ Describe 'Set-RelayPlan: what the board, the feed and the tamper check make of t
         @(& $boardScript -Room $id | Where-Object { $_ -like '*DIFFERS*' }).Count | Should -Be 0
     }
 
+    It 'marks in the text feed a plan that differs from this PC''s copy, as the board does, and keeps the JSON lines as they were' {
+        $null = & $setPlan -Room $id -PlanFile (Save-TestPlan $root (Get-TestPlan))
+        $feedArguments = @('-Room', $id, '-Follow', '-Once', '-NoHeartbeat', '-NoTamperCheck')
+        $same = Invoke-RelayTestScript -Script 'Watch-RelayFeed.ps1' -Arguments $feedArguments
+        $same.Output | Should -Match '(?m)^  PLAN 1: A team view for every agent$'
+        [System.IO.File]::AppendAllText((Join-Path $room 'PLAN'), "`n")
+        $feed = Invoke-RelayTestScript -Script 'Watch-RelayFeed.ps1' -Arguments $feedArguments
+        $feed.ExitCode | Should -Be 0 -Because $feed.Error
+        $feed.Output | Should -Match '(?m)^  PLAN 1: A team view for every agent   \[DIFFERS FROM THE COPY ON THIS PC: the feed puts it back\]$'
+        $json = Invoke-RelayTestScript -Script 'Watch-RelayFeed.ps1' -Arguments @('-Room', $id, '-Json', '-Once', '-NoHeartbeat', '-NoTamperCheck')
+        $json.ExitCode | Should -Be 0 -Because $json.Error
+        $json.Output | Should -Not -Match '"differs"'
+    }
+
+    It 'counts a character outside the basic plane once when it lines up the columns of the board' {
+        $face = [char]::ConvertFromUtf32(0x1F600)
+        Write-RelayGuardedText $object 'PLAN' ($header + "part: a | emma | todo | - | - | Short`npart: " + ($face * 13) + " | jack | doing | - | - | Faces`nend: 3`n")
+        $text = @(& $boardScript -Room $id)
+        $text | Should -Contain ('  ' + 'a'.PadRight(13) + '  todo      emma       Short')
+        $text | Should -Contain ('  ' + ($face * 13) + '  doing     jack       Faces')
+    }
+
     It 'takes what follows part:, files: or note: as the value with or without a blank after the colon' {
         Write-RelayGuardedText $object 'PLAN' "plan: 3`nupdated_utc: 2026-10-10T08:15:00Z`ngoal: G`npart:a | emma | todo | - | - | X`nfiles:a | f/one`nnote:a | n one`nend: 3`n"
         $part = @((Get-RelayBoard $object).plan.parts)
@@ -1210,5 +1232,68 @@ Describe 'Set-RelayPlan: what the board, the feed and the tamper check make of t
         $text | Should -Contain 'part: a | emma | doing | - | - | X'
         $text | Should -Contain 'files: a | f/one'
         $text | Should -Contain 'note: a | n one'
+    }
+}
+
+Describe 'Set-RelayPlan: what it takes from this PC, and what it cannot read (round 5)' -Tag 'Plan' {
+
+    BeforeEach {
+        $case = New-RelayTestId
+        $root = Join-Path $TestDrive "pc-$case"
+        $id = "pc-$case"
+        $room = (New-RelayTestRoom -Root $root -RoomId $id).Path
+        $object = Resolve-RelayRoom $id
+        $differsLine = '[DIFFERS FROM THE COPY ON THIS PC: the feed puts it back]'
+    }
+
+    It 'refuses an owner whose folder an agent planted in the room, and takes an agent whose retired marker an agent planted' {
+        $mallory = Join-Path $room 'agents\mallory'
+        $null = New-Item -ItemType Directory -Path $mallory -Force
+        [System.IO.File]::WriteAllText((Join-Path $mallory 'gen'), "1`n")
+        [System.IO.File]::WriteAllText((Join-Path $room 'agents\jack\retired'), "retired_utc: 2026-10-10T00:00:00Z`n")
+        $plan = Get-TestPlan
+        $plan.parts[1].owner = 'mallory'
+        { & $setPlan -Room $id -PlanFile (Save-TestPlan $root $plan 'mallory.json') } | Should -Throw "Plan refused: part 'tests' owner 'mallory' is not an agent of this room*"
+        $output = @(& $setPlan -Room $id -PlanFile (Save-TestPlan $root (Get-TestPlan) 'jack.json'))
+        $output[0] | Should -Be "PLAN 1 for room ${id}: 3 part(s)"
+        (Get-TestPlanLine $room) | Should -Contain 'part: tests | jack | todo | tool-ps | - | Tests for both verbs'
+    }
+
+    It 'refuses a change while this PC''s copy of the plan is there and cannot be read, and writes nothing' {
+        $null = & $setPlan -Room $id -PlanFile (Save-TestPlan $root (Get-TestPlan))
+        $again = Save-TestPlan $root (Get-TestPlan) 'again.json'
+        $lock = [System.IO.File]::Open((Join-Path $object.Canon 'PLAN'), [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+        try {
+            $before = Get-TestSnapshot $id
+            { & $setPlan -Room $id -Part 'tests' -Status 'doing' } | Should -Throw "Plan refused: the plan of room $id cannot be read from the copy on this PC*"
+            { & $setPlan -Room $id -PlanFile $again } | Should -Throw "Plan refused: the plan of room $id cannot be read from the copy on this PC*"
+            Get-TestSnapshot $id | Should -Be $before
+        }
+        finally { $lock.Dispose() }
+        (Get-TestPlanLine $room)[0] | Should -Be 'plan: 1'
+    }
+
+    It 'refuses a plan while the lines of an agent it would join are there and cannot be read, and writes nothing' {
+        $lines = Join-Path $object.Canon 'agents\emma\lines'
+        $plan = Save-TestPlan $root (Get-TestPlan)
+        $lock = [System.IO.File]::Open($lines, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+        try {
+            $before = Get-TestSnapshot $id
+            { & $setPlan -Room $id -PlanFile $plan } | Should -Throw 'Plan refused: the lines of emma cannot be read from the copy on this PC*'
+            Get-TestSnapshot $id | Should -Be $before
+        }
+        finally { $lock.Dispose() }
+        Test-Path -LiteralPath (Join-Path $room 'PLAN') | Should -BeFalse
+    }
+
+    It 'shows the room''s plan with a last line that marks it when it is not this PC''s copy' {
+        $null = & $setPlan -Room $id -PlanFile (Save-TestPlan $root (Get-TestPlan))
+        @(& $setPlan -Room $id -Show) | Should -Not -Contain $differsLine
+        [System.IO.File]::AppendAllText((Join-Path $room 'PLAN'), "note: tests | forged`n")
+        $lines = @(& $setPlan -Room $id -Show)
+        $lines[-2] | Should -Be 'note: tests | forged'
+        $lines[-1] | Should -Be $differsLine
+        Remove-Item -LiteralPath (Join-Path $room 'PLAN') -Force
+        @(& $setPlan -Room $id -Show) | Should -Be @("NO PLAN in room $id", $differsLine)
     }
 }
