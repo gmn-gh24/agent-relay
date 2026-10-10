@@ -244,7 +244,7 @@ try {
     )
     $teamLines = @($withPlan['olivia'].Lines)
     foreach ($row in $rows) {
-        $found = @($teamLines | Where-Object { $_ -ceq $row -or ($row.EndsWith('  (') -and $_.StartsWith($row)) })
+        $found = @($teamLines | Where-Object { $_ -ceq $row -or ($row.EndsWith('  (', [System.StringComparison]::Ordinal) -and $_.StartsWith($row, [System.StringComparison]::Ordinal)) })
         Assert-That ($found.Count -ge 1) "team prints the line: $row"
     }
     # The part lines come in the order of the file, and the blocks are separated by exactly one empty line

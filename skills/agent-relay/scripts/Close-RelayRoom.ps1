@@ -196,16 +196,10 @@ function Get-LinkLine {
 $roomObject = Resolve-RelayRoom $Room
 # The tamper pass comes first: what anybody but this PC wrote into the room is put right before anything is read.
 # With -WhatIf it only says what it would put right.
-# TODO(merge, round 5): the module on main exports Format-RelayTamperFinding (it also words the new kinds 'link'
-# and 'unreadable'). When it is merged, print each finding as
-#     ConvertTo-RelayPrintedLine ('tamper check: ' + (Format-RelayTamperFinding $finding))
-# and keep only the -WhatIf wording below, for findings that were left as they are on purpose.
 foreach ($finding in @(Test-RelayTamper $roomObject -Repair:(-not $isWhatIf))) {
-    $done = 'restored from the copy on this PC'
-    if ($finding.Kind -eq 'extra') { $done = 'it does not belong there and was moved out' }
-    if (-not $finding.Repaired) { $done = 'it could not be put right' }
-    if ($isWhatIf) { $done = 'left as it is (-WhatIf)' }
-    ConvertTo-RelayPrintedLine "tamper check: $($finding.Relative) was $($finding.Kind): $done"
+    $line = Format-RelayTamperFinding $finding
+    if ($isWhatIf -and $finding.Kind -ne 'link') { $line = "$($finding.Relative) was $($finding.Kind): left as it is (-WhatIf)" }
+    ConvertTo-RelayPrintedLine "tamper check: $line"
 }
 # Closed is what this PC says: the canonical CLOSED marker
 $canonClosed = Join-Path $roomObject.Canon 'CLOSED'
