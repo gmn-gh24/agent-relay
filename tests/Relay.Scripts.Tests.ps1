@@ -24,6 +24,23 @@ BeforeAll {
             if ($result.ExitCode -ne 0) { throw "start failed for ${name}: $($result.Output) $($result.Error)" }
         }
     }
+
+    function Remove-TestLink {
+        # The link itself, never what it points at, so that the test drive is removed without following it
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper')]
+        param([string]$Path)
+        if ([System.IO.Directory]::Exists($Path)) { [System.IO.Directory]::Delete($Path, $false) }
+        elseif ([System.IO.File]::Exists($Path)) { [System.IO.File]::Delete($Path) }
+    }
+
+    function Get-TestZipEntry {
+        # The entry names of a zip, with forward slashes
+        param([string]$Path)
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($Path)
+        try { return @($zip.Entries | ForEach-Object { $_.FullName -replace '\\', '/' }) }
+        finally { $zip.Dispose() }
+    }
 }
 
 AfterAll {
@@ -252,6 +269,70 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         { New-RelayTestRoom -Root $root -RoomId 'nossh' -Agents @([ordered]@{ role = 'x'; transport = 'ssh' }) } | Should -Throw '*the SSH bridge is not built yet: use share or same-pc*'
         { New-RelayTestRoom -Root (Join-Path $root 'bad-ssh') -RoomId 'ssh-target' -Agents @([ordered]@{ role = 'x'; transport = 'ssh'; ssh = @{ target = 'dev@buildbox' } }) } | Should -Throw '*the SSH bridge is not built yet: use share or same-pc*'
     }
+
+    It 'checks every answer before it builds anything, and leaves nothing behind when the room cannot be made' {
+        $null = New-Item -ItemType Directory -Path $root -Force
+        $env:AGENT_RELAY_LOCAL = Join-Path $root 'local'
+        $file = Join-Path $root 'staged.json'
+        $answers = [ordered]@{ job = 'Staged files'; room_id = 'staged'; rooms_root = (Join-Path $root 'rooms'); agents = @([ordered]@{ role = 'tester' }); work_files = @((Join-Path $root 'no-such-file.txt')) }
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $answers -Depth 6))
+        { & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $file -NoClipboard } | Should -Throw '*work file to stage does not exist*'
+        Test-Path -LiteralPath (Join-Path $root 'rooms\staged') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $root 'local\rooms\staged') | Should -BeFalse
+        @(Get-RelayRoomIndex).Count | Should -Be 0
+        # An agent kind nobody knows is refused before anything is built, not taken for the generic one
+        { New-RelayTestRoom -Root $root -RoomId 'kind-bad' -Agents @([ordered]@{ role = 'x'; kind = 'codx' }) } | Should -Throw "*'codx' is not one of*codex*"
+        Test-Path -LiteralPath (Join-Path $root 'rooms\kind-bad') | Should -BeFalse
+
+        # An index this PC cannot parse fails the build at its end: the room goes again and the index is not written over
+        $answers['work_files'] = @()
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $answers -Depth 6))
+        $indexPath = Join-Path $root 'local\rooms.json'
+        [System.IO.File]::WriteAllText($indexPath, '[{"id": "kept", "path": ')
+        { & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $file -NoClipboard } | Should -Throw '*cannot be parsed*'
+        Test-Path -LiteralPath (Join-Path $root 'rooms\staged') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $root 'local\rooms\staged') | Should -BeFalse
+        [System.IO.File]::ReadAllText($indexPath) | Should -Be '[{"id": "kept", "path": '
+    }
+
+    It 'does not build a room on the folder an earlier attempt left on this PC, and passes over that name when it names the room itself' {
+        $null = New-Item -ItemType Directory -Path $root -Force
+        $env:AGENT_RELAY_LOCAL = Join-Path $root 'local'
+        $leftover = Join-Path $root 'local\rooms\left'
+        $null = New-Item -ItemType Directory -Path (Join-Path $leftover 'canon\agents\zack') -Force
+        [System.IO.File]::WriteAllText((Join-Path $leftover 'canon\agents\zack\seat'), "name: zack`n")
+        { New-RelayTestRoom -Root $root -RoomId 'left' } | Should -Throw '*left from an earlier attempt*'
+        Test-Path -LiteralPath (Join-Path $root 'rooms\left') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $leftover 'canon\agents\zack\seat') | Should -BeTrue
+        @(Get-RelayRoomIndex).Count | Should -Be 0
+
+        $file = Join-Path $root 'named.json'
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject ([ordered]@{ job = 'Left over'; room_name = 'left over'; rooms_root = (Join-Path $root 'rooms'); open_seats = 1 })))
+        $null = New-Item -ItemType Directory -Path (Join-Path $root 'local\rooms\left-over') -Force
+        $made = & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $file -NoClipboard -PassThru
+        $made.Id | Should -Be ('left-over-' + (Get-Date).ToString('yyyy-MM-dd'))
+        @(Test-RelayTamper (Resolve-RelayRoom $made.Id)).Count | Should -Be 0
+    }
+
+    It 'writes the time stamps of the scripts in one fixed form, whatever the culture' {
+        $saved = [System.Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            # The Thai culture counts the years of another calendar
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = New-Object System.Globalization.CultureInfo 'th-TH'
+            $null = New-RelayTestRoom -Root $root -RoomId 'culture'
+            $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'culture' -Retire 'jack'
+            $draft = Join-Path $root 'rule.md'
+            [System.IO.File]::WriteAllText($draft, "A rule.`n")
+            $recorded = @(& (Join-Path $scripts 'Add-RelayDecision.ps1') -Room 'culture' -DraftFile $draft)
+        }
+        finally { [System.Threading.Thread]::CurrentThread.CurrentCulture = $saved }
+        $stamp = '^20\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ$'
+        $object = Resolve-RelayRoom 'culture'
+        (Read-RelayKeyValue (Join-Path $object.Canon 'ROOM'))['created_utc'] | Should -Match $stamp
+        [string]@(Get-RelayRoomIndex | Where-Object { $_.id -eq 'culture' })[0].created_utc | Should -Match $stamp
+        (Read-RelayKeyValue (Join-Path $object.Canon 'agents\jack\retired'))['retired_utc'] | Should -Match $stamp
+        $recorded[0] | Should -Match '^RECORDED \| 20\d\d-\d\d-\d\d \| A rule\. \|$'
+    }
 }
 
 Describe 'Agent names' -Tag 'Scripts' {
@@ -389,6 +470,45 @@ Describe 'Add-RelayAgent' -Tag 'Scripts' {
         Start-TestAgent $room @('olivia', 'emma', 'jack')
         (Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('note', 'jack') -Text "Direct`n`nHello Jack.").ExitCode | Should -Be 0
         (Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('note', 'henry') -Text "No line`n`nHello Henry.").ExitCode | Should -Be 1
+    }
+
+    It 'refuses an empty list of agents and an agent kind that agent-kinds.json does not know, and adds nobody' {
+        $file = Join-Path $root 'kinds.json'
+        [System.IO.File]::WriteAllText($file, '{ "agents": [] }')
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $file -NoClipboard } | Should -Throw '*empty "agents" list*'
+        # The second entry has the typo: the first is not added either
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -Depth 6 @{ agents = @([ordered]@{ name = 'zoe'; role = 'writer' }, [ordered]@{ name = 'yara'; role = 'builder'; kind = 'codx' }) }))
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $file -NoClipboard } | Should -Throw "*'codx' is not one of*codex*"
+        @(Get-RelayRoster (Resolve-RelayRoom $id)).Count | Should -Be 4
+        Test-Path -LiteralPath (Join-Path $room 'agents\zoe') | Should -BeFalse
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'emma' -Kind 'codx' -NoClipboard } | Should -Throw "*'codx' is not one of*"
+        (Get-Content -LiteralPath (Join-Path $room 'agents\emma\gen') -Raw).Trim() | Should -Be '1'
+        (Read-RelayKeyValue (Join-Path $room 'agents\emma\seat'))['kind'] | Should -Be 'generic'
+    }
+
+    It 'ends a retirement, a pause, a stop, a resume, a line and the join prompt with a NEXT line' {
+        $retired = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Retire 'henry')
+        $retired[$retired.Count - 1] | Should -Match '^NEXT: give what henry was working on to another agent'
+        foreach ($state in 'pause', 'stop', 'run') {
+            $control = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Control 'emma' -State $state)
+            $control[0] | Should -Match "^CONTROL emma: $state\."
+            $control[$control.Count - 1] | Should -Match '^NEXT: '
+        }
+        $line = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Line 'emma' -To 'jack')
+        $line | Should -Be @('LINE open between emma and jack, both ways.', 'NEXT: tell both of them in a note what the line is for.')
+        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -OpenSeats 1 -NoClipboard
+        $prompt = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -JoinPrompt -NoClipboard)
+        $prompt[$prompt.Count - 1] | Should -Match '^NEXT: the owner pastes the join prompt into each agent that should join'
+    }
+
+    It 'opens no line while this PC''s copy of a lines file cannot be read, and keeps the lines it holds' -Skip:([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Line 'emma' -To 'henry'
+        $lines = Join-Path (Resolve-RelayRoom $id).Canon 'agents\emma\lines'
+        # Readers are kept out and a writer is let in: the read fails where a write would go through
+        $hold = [System.IO.File]::Open($lines, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Write)
+        try { { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Line 'emma' -To 'jack' } | Should -Throw '*Could not read*' }
+        finally { $hold.Dispose() }
+        @((([System.IO.File]::ReadAllText($lines)) -replace "`r", '').Trim() -split "`n") | Should -Be @('henry')
     }
 }
 
@@ -850,6 +970,103 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         ((& (Join-Path $scripts 'Close-RelayRoom.ps1') -ListClosed) -join "`n") | Should -Match 'flow  closed \S+  archive: yes'
         ((& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow') -join "`n") | Should -Match 'already closed'
     }
+
+    It 'changes nothing with -WhatIf: no marker, no transcript, no statistics, no archive, and the index keeps the room open' {
+        $archiveRoot = Join-Path $root 'local\archive'
+        $archive = Join-Path $archiveRoot 'flow.zip'
+        $shown = (@(& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force -WhatIf)) -join "`n"
+        $shown | Should -Not -Match 'CLOSED room|ARCHIVE FAILED'
+        Test-Path -LiteralPath (Join-Path $object.Canon 'CLOSED') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $room 'CLOSED') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $room 'TRANSCRIPT.md') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $object.Local 'stats.json') | Should -BeFalse
+        Test-Path -LiteralPath $archive | Should -BeFalse
+        [string]@(Get-RelayRoomIndex | Where-Object { $_.id -eq 'flow' })[0].closed_utc | Should -Be ''
+
+        # Closed for real while the archive cannot be made: -WhatIf on the closed room does not make it either
+        [System.IO.File]::WriteAllText($archiveRoot, 'in the way')
+        $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force
+        Remove-Item -LiteralPath $archiveRoot -Force
+        $again = (@(& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -WhatIf)) -join "`n"
+        $again | Should -Not -Match 'made now'
+        Test-Path -LiteralPath $archive | Should -BeFalse
+    }
+
+    It 'marks the room closed in the index as soon as the marker is written, and completes a close that was cut short' {
+        # Statistics that cannot be written stop the close after the marker
+        $null = New-Item -ItemType Directory -Path (Join-Path $object.Local 'stats.json') -Force
+        { & (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force } | Should -Throw
+        Test-Path -LiteralPath (Join-Path $object.Canon 'CLOSED') | Should -BeTrue
+        $stamp = (Read-RelayKeyValue (Join-Path $object.Canon 'CLOSED'))['closed_utc']
+        $stamp | Should -Match '^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$'
+        [string]@(Get-RelayRoomIndex | Where-Object { $_.id -eq 'flow' })[0].closed_utc | Should -Be $stamp
+
+        # A close cut short before the index knew of it: the marker on this PC, the index still saying open
+        $index = @(Get-RelayRoomIndex)
+        foreach ($entry in $index) { if ($entry.id -eq 'flow') { $entry.closed_utc = '' } }
+        Save-RelayRoomIndex $index
+        $again = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow') -join "`n"
+        $again | Should -Match 'marks the room flow closed now'
+        $again | Should -Match 'its archive was missing and is made now'
+        [string]@(Get-RelayRoomIndex | Where-Object { $_.id -eq 'flow' })[0].closed_utc | Should -Be $stamp
+        ((& (Join-Path $scripts 'Close-RelayRoom.ps1') -ListClosed) -join "`n") | Should -Match ('flow  closed ' + [regex]::Escape($stamp) + '  archive: yes')
+        $third = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow') -join "`n"
+        $third | Should -Match 'already closed'
+        $third | Should -Not -Match 'closed now'
+    }
+
+    It 'archives the room without what a link in it points at, names the link, and removes the folder without following it' {
+        $outside = Join-Path $root 'outside'
+        $null = New-Item -ItemType Directory -Path $outside -Force
+        [System.IO.File]::WriteAllText((Join-Path $outside 'secret.txt'), 'not the room''s')
+        $work = Join-Path $room 'work'
+        if (-not (Test-Path -LiteralPath $work)) { $null = New-Item -ItemType Directory -Path $work -Force }
+        # A file link where the system allows one, a junction where Windows allows no symbolic link
+        $link = Join-Path $work 'leak.txt'
+        $linkName = 'work/leak.txt'
+        try { $null = New-Item -ItemType SymbolicLink -Path $link -Target (Join-Path $outside 'secret.txt') -ErrorAction Stop }
+        catch {
+            $link = Join-Path $work 'leak'
+            $linkName = 'work/leak'
+            $null = New-Item -ItemType Junction -Path $link -Target $outside
+        }
+        try {
+            $closed = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force) -join "`n"
+            $closed | Should -Match 'CLOSED room flow'
+            $closed | Should -Match '(?m)^archive: .+flow\.zip$'
+            $closed | Should -Match ('(?m)^archive: links left out .*' + [regex]::Escape($linkName) + '$')
+            $entries = @(Get-TestZipEntry (Join-Path $root 'local\archive\flow.zip'))
+            $entries | Should -Contain 'ROOM'
+            $entries | Should -Contain 'TRANSCRIPT.md'
+            $entries | Should -Contain 'agents/emma/START-HERE.md'
+            @($entries | Where-Object { $_ -like 'work/leak*' -or $_ -like '*secret.txt' }).Count | Should -Be 0
+            $removed = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -Confirm:$false) -join "`n"
+            $removed | Should -Match 'REMOVED the folder of room flow'
+            Test-Path -LiteralPath $room | Should -BeFalse
+            [System.IO.File]::ReadAllText((Join-Path $outside 'secret.txt')) | Should -Be 'not the room''s'
+        }
+        finally { Remove-TestLink $link }
+    }
+
+    It 'makes the archive of a room whose folder has brackets in its path' {
+        $odd = Join-Path $root 'rooms\[x] flow'
+        [System.IO.Directory]::Move($room, $odd)
+        $index = @(Get-RelayRoomIndex)
+        foreach ($entry in $index) { if ($entry.id -eq 'flow') { $entry.path = $odd } }
+        Save-RelayRoomIndex $index
+        $closed = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force) -join "`n"
+        $closed | Should -Match 'CLOSED room flow'
+        $closed | Should -Not -Match 'ARCHIVE FAILED'
+        @(Get-TestZipEntry (Join-Path $root 'local\archive\flow.zip')) | Should -Contain 'TRANSCRIPT.md'
+    }
+
+    It 'prints the state of an agent that has not said bye without the control characters of its status file' {
+        [System.IO.File]::WriteAllText((Join-Path $room 'agents\jack\status'), ("state: busy" + [char]27 + "[2J" + [char]7 + "`ndetail: `nsince_utc: 2026-10-10T08:00:00Z`ngen: 1`n"))
+        $refused = @(& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow')
+        @($refused | Where-Object { $_ -match '[\x00-\x1f\x7f]' }).Count | Should -Be 0
+        ($refused -join "`n") | Should -Match 'NOT CLOSED: these agents have not said bye: .*jack \(busy'
+        Test-Path -LiteralPath (Join-Path $object.Canon 'CLOSED') | Should -BeFalse
+    }
 }
 
 Describe 'Open seats' -Tag 'Scripts' {
@@ -1100,5 +1317,83 @@ Describe 'Open seats' -Tag 'Scripts' {
         $board = (& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'fit') -join "`n"
         $board | Should -Match "(?m)^  models: strong: $($displays[1]) \| standard: - \| light: $($displays[0])$"
         $board | Should -Match 'haiku-5\.5/low \[light\]'
+    }
+
+    It 'prints the assignment and the fit of a joined agent without the control characters of its introduction' {
+        $room = (New-RelayTestRoom -Root $root -RoomId 'ctrl' -Extra @{ open_seats = 1 }).Path
+        $name = @(Get-RelayTestOpenSeat $room)[0]
+        (Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'gemini', 'm', 'e')).ExitCode | Should -Be 0
+        # The introduction is the agent's own file: it can hold anything
+        $cardPath = Join-Path $room "agents\$name\card"
+        $esc = [string][char]27
+        $card = [System.IO.File]::ReadAllText($cardPath)
+        $card = $card -replace '(?m)^computer: .*$', "computer: BOX${esc}[31m"
+        $card = $card -replace '(?m)^model: .*$', ('model: opus-5.5' + [char]7)
+        [System.IO.File]::WriteAllText($cardPath, $card)
+        $file = Join-Path $root 'ctrl.json'
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject ([ordered]@{ role = 'developer'; work = 'development' })))
+        $lines = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'ctrl' -Assign $name -AnswersFile $file)
+        @($lines | Where-Object { $_ -match '[\x00-\x1f\x7f]' }).Count | Should -Be 0
+        ($lines -join "`n") | Should -Match "ASSIGNED ${name}: developer \(development\) on BOX"
+        ($lines -join "`n") | Should -Match '(?m)^FIT: .*opus-5\.5'
+        (Read-RelayKeyValue (Join-Path $room "agents\$name\seat"))['machine'] | Should -Match '^BOX'
+        (Get-Content -LiteralPath (Join-Path $room "agents\$name\ASSIGNMENT.md") -Raw) | Should -Not -Match '[\x1b\x07]'
+    }
+
+    It 'hands -Confirm on to the update: in a run nobody can answer, the question stops it before it changes anything' {
+        $room = (New-RelayTestRoom -Root $root -RoomId 'confirm').Path
+        $object = Resolve-RelayRoom 'confirm'
+        Write-RelayGuardedText $object 'tools/relay.sh' "old tool`n"
+        $asked = Invoke-RelayTestScript -Script 'Update-RelayRoom.ps1' -Arguments @('-Room', 'confirm', '-Confirm') -Environment @{ AGENT_RELAY_LOCAL = (Join-Path $root 'local') }
+        $asked.Output | Should -Not -Match 'UPDATED'
+        (Get-Content -LiteralPath (Join-Path $room 'tools\relay.sh') -Raw) | Should -Be "old tool`n"
+        (Get-Content -LiteralPath (Join-Path $object.Canon 'tools\relay.sh') -Raw) | Should -Be "old tool`n"
+        # Without -Confirm nothing is asked
+        ((& (Join-Path $scripts 'Update-RelayRoom.ps1') -Room 'confirm') -join "`n") | Should -Match 'UPDATED room confirm: tools/relay\.sh'
+    }
+}
+
+Describe 'Get-RelayRooms' -Tag 'Scripts' {
+
+    BeforeEach {
+        $case = New-RelayTestId
+        $root = Join-Path $TestDrive "list-$case"
+    }
+
+    It 'lists an indexed room, says which copy of the plugin runs, and ends with a NEXT line' {
+        $created = New-RelayTestRoom -Root $root -RoomId "list-$case"
+        $lines = @(& (Join-Path $scripts 'Get-RelayRooms.ps1'))
+        $text = $lines -join "`n"
+        $text | Should -Match ('(?m)^machine state: ' + [regex]::Escape($env:AGENT_RELAY_LOCAL) + '$')
+        $text | Should -Match '(?m)^plugin: working copy at '
+        $text | Should -Match "(?m)^  list-$case  open  coordinator olivia  created \S"
+        $text | Should -Match ('(?m)^      ' + [regex]::Escape($created.Path) + '$')
+        $text | Should -Match '(?m)^KNOWN MACHINES AND SHARES: none recorded yet'
+        $lines[$lines.Count - 1] | Should -Match '^NEXT: '
+        $json = ConvertFrom-Json -InputObject ((@(& (Join-Path $scripts 'Get-RelayRooms.ps1') -AsJson)) -join "`n")
+        $json.isWorkingCopy | Should -BeTrue
+        $json.local | Should -Be $env:AGENT_RELAY_LOCAL
+        @($json.rooms | Where-Object { $_.id -eq "list-$case" -and $_.state -eq 'open' -and $_.isReachable }).Count | Should -Be 1
+
+        # A closed room is listed with -All only, and a folder that is gone is said to be
+        $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Room "list-$case" -Force
+        ((@(& (Join-Path $scripts 'Get-RelayRooms.ps1'))) -join "`n") | Should -Match '(?m)^ROOMS: none open$'
+        Remove-Item -LiteralPath $created.Path -Recurse -Force
+        $all = (@(& (Join-Path $scripts 'Get-RelayRooms.ps1') -All)) -join "`n"
+        $all | Should -Match "(?m)^  list-$case  closed  coordinator olivia  created .+  \[folder not reachable\]$"
+    }
+}
+
+Describe 'Test-RelayPackage' -Tag 'Scripts' {
+
+    It 'keeps a work folder that was there before, also when the run stops on an error' {
+        $folder = Join-Path $TestDrive ('package-' + (New-RelayTestId))
+        $null = New-Item -ItemType Directory -Path $folder -Force
+        [System.IO.File]::WriteAllText((Join-Path $folder 'keep.txt'), 'the owner''s')
+        # No engine at all: the run stops at once on an error
+        $run = Invoke-RelayTestScript -Script 'Test-RelayPackage.ps1' -Arguments @('-WorkFolder', $folder) -Environment @{ RELAY_TEST_ENGINES = 'none' }
+        $run.ExitCode | Should -Not -Be 0
+        ($run.Output + $run.Error) | Should -Match 'at least two engines'
+        [System.IO.File]::ReadAllText((Join-Path $folder 'keep.txt')) | Should -Be 'the owner''s'
     }
 }

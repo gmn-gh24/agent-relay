@@ -13,7 +13,8 @@
     instructions are not rewritten), and the coordinator's launcher on this PC. The package version in ROOM is
     recorded. Not touched: the agents' names, generations, messages, tasks, state and the files in work\ and
     files\. A command that is running at that moment (a wait) finishes with the tool it started with; every
-    later command uses the new one. An agent reads its new instructions at its next start.
+    later command uses the new one. An agent reads its new instructions at its next start. -WhatIf shows what
+    would be written; -Confirm asks before each part.
 .PARAMETER Room
     Room id or room folder.
 
@@ -38,7 +39,10 @@ Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 
 $roomObject = Resolve-RelayRoom $Room
 if ($roomObject.IsClosed) { throw "The room $($roomObject.Id) is closed" }
-$changed = @(Update-RelayRoomPackage -Room $roomObject -WhatIf:$WhatIfPreference)
+# A function of a module does not see this script's -WhatIf and -Confirm: both are handed on
+$passOn = @{ WhatIf = [bool]$WhatIfPreference }
+if ($PSBoundParameters.ContainsKey('Confirm')) { $passOn['Confirm'] = [bool]$PSBoundParameters['Confirm'] }
+$changed = @(Update-RelayRoomPackage -Room $roomObject @passOn)
 if ($WhatIfPreference) { return }
 if ($changed.Count -eq 0) { "UP TO DATE: room $($roomObject.Id) already has this package"; return }
 "UPDATED room $($roomObject.Id): " + ($changed -join ', ')
