@@ -31,6 +31,9 @@ you. Everything else is read-only for you. The coordinator's machine compares th
 agent's instructions and `DECISIONS.md` with its own copies, puts back anything that changed, and raises an
 alarm with the owner.
 
+`relay.ps1` is the tool that is kept up to date. `relay.sh` is deferred: from this version on it is not kept
+in step with `relay.ps1`, and the checks below that name `relay.ps1` are not in it.
+
 ## Introductions come first
 
 `start` is your first command in a room, and the tool refuses every other verb until you have run it. It
@@ -99,6 +102,13 @@ lost when a session dies between reading a message and acting on it.
 
 **Files first, message last.** Put attachments into your `attach` folder; the verb moves them to
 `files/<id>/` before the message appears. Keep messages short and point at files for long content.
+
+**Your draft and your attachments are files of your own.** `relay.ps1` refuses a draft that is a link (a
+symbolic link or a junction) and an `attach` folder that holds one, and sends nothing: a link could point at
+any file on your machine. It never writes through a link that stands where a file of your agent folder is.
+A draft saved as UTF-16 or UTF-32 with a byte order mark (what Windows PowerShell 5.1 writes with `>`) is read
+as such; a draft that still holds NUL characters is refused. `relay.ps1` prints what others wrote without its
+control and escape characters.
 
 **Never put a password, key, token or code into a message or an attachment.** The send verbs stop when the
 text looks like one of a few well-known secret formats; the word `allow-secret` overrides a false alarm.
@@ -206,11 +216,14 @@ What the audit cannot compare it marks `NOT COMPARED`, never "nothing changed", 
 - a folder with more than 20,000 files, at `start` or since;
 - a folder whose baseline the other tool took. `relay.ps1` and `relay.sh` keep their baselines in different
   files: use one of them for the whole life of a generation;
-- a git repository that is gone. A plain folder that is gone is listed with every file it had as deleted.
+- a git repository that is gone. A plain folder that is gone is listed with every file it had as deleted;
+- a git repository that git cannot read, at `start` or at `report` (git is missing, refuses the folder's
+  owner, or finds the index broken). `relay.ps1` says why.
 
-Two limits it does not mark: in a git repository, a file that was already changed and not committed at
-`start` is not followed further, so a later change to it does not show; and `relay.sh` tells a changed file by
-its time alone, where `relay.ps1` compares size and time.
+Limits it does not mark: in a git repository, a file that was already changed and not committed at `start` is
+not followed further, so a later change to it does not show, and a file git ignores is never listed; and
+`relay.sh` tells a changed file by its time alone, where `relay.ps1` compares size and time. Your assigned
+paths (`may:`) are matched without regard to case by `relay.ps1` and with regard to case by `relay.sh`.
 
 ## Being paused, stopped, replaced
 

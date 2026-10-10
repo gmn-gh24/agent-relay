@@ -3,6 +3,9 @@
 <#
     Behaviour of the room tools, the same cases for every engine: relay.ps1 under PowerShell 7 and under Windows
     PowerShell 5.1, relay.sh under dash. Every tool call is a real child process. Pester 6. ASCII only.
+
+    relay.sh is frozen from round 5 on: a case that only relay.ps1 was fixed for skips itself under sh. The last
+    block reads the source of relay.ps1 for what no child process can show (a clock change, an old .NET).
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester: a variable set in BeforeAll or BeforeEach is read in the It blocks')]
@@ -756,6 +759,60 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $hostile.Output.Contains('backtick `n `whoami`; pipes a | b || c; quotes "double" and ''single''; percent %PATH%; amp a & b && c; angle <in> >out; bang !history; backslash C:\temp\x; caret ^; tilde ~; star *; hash #; semicolon;') | Should -BeTrue
         }
     }
+
+    Context 'Round 5: what the tool prints, and how it spells its own command (relay.ps1; relay.sh is frozen)' {
+        It 'leaves control, escape and direction characters out of what it prints, and nothing else' {
+            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
+            $esc = [string][char]27
+            $strays = @($esc, [string][char]7, [string][char]0x9B, [string][char]0x200B, [string][char]0x202E, [string][char]0x2028, [string][char]0xFEFF)
+            $subject = 'Clean' + $esc + '[31m red' + [char]0x202E + 'txt'
+            $body = 'Line one' + $esc + ']0;new title' + [char]7 + "`nTab`there " + [char]0x200B + 'x' + [char]0x9B + 'y caf' + [char]0x00E9 + [char]0x2028 + 'end' + [char]0xFEFF
+            $text = "---`nid: olivia-emma-0001`nfrom: olivia`nto: emma`ntype: note`nre: `nsubject: $subject`nsent_utc: 2026-10-10T08:00:00Z`nexpects: none`n---`n$body`n"
+            [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\inbox\olivia-0001.md'), $text, (New-Object System.Text.UTF8Encoding($false)))
+            $shown = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+            $shown.ExitCode | Should -Be 0
+            foreach ($stray in $strays) { $shown.Output.Contains($stray) | Should -BeFalse }
+            $shown.Output.Contains('subject: Clean[31m redtxt') | Should -BeTrue
+            $shown.Output.Contains("Line one]0;new title`nTab`there xy caf" + [char]0x00E9 + 'end') | Should -BeTrue
+        }
+
+        It 'counts and lists the hidden files of an attachment folder too' {
+            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
+            $files = Join-Path $room 'files\olivia-emma-0001'
+            $null = New-Item -ItemType Directory -Path $files -Force
+            [System.IO.File]::WriteAllText((Join-Path $files 'seen.txt'), "seen`n")
+            $hidden = Join-Path $files '.hidden.txt'
+            [System.IO.File]::WriteAllText($hidden, "hidden`n")
+            # A dot-file is hidden on Linux and macOS; Windows hides a file that carries the attribute
+            if ($env:OS -eq 'Windows_NT') { [System.IO.File]::SetAttributes($hidden, [System.IO.FileAttributes]::Hidden) }
+            $text = "---`nid: olivia-emma-0001`nfrom: olivia`nto: emma`ntype: note`nre: `nsubject: Two files`nsent_utc: 2026-10-10T08:00:00Z`nexpects: none`n---`nSee the files.`n"
+            [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\inbox\olivia-0001.md'), $text, (New-Object System.Text.UTF8Encoding($false)))
+            $received = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+            $received.ExitCode | Should -Be 0
+            $received.Output | Should -Match '(?m)^files: .*olivia-emma-0001 \(2\)$'
+            $shown = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('show', 'olivia-emma-0001')
+            $shown.ExitCode | Should -Be 0
+            $shown.Output | Should -Match '(?m)^  file: .*\.hidden\.txt \(7 bytes\)$'
+            $shown.Output | Should -Match '(?m)^  file: .*seen\.txt \(5 bytes\)$'
+        }
+
+        It 'spells its own command as a literal the shell takes, whatever quotes the path holds' {
+            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
+            # PowerShell reads the typographic single quotes as single quotes too; the test file stays ASCII
+            $curly = [string][char]0x2019
+            $wrapper = Join-Path (Join-Path $room ("o'neil" + $curly + 's room')) 'relay.ps1'
+            $started = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('start') -Environment @{ RELAY_WRAPPER = $wrapper }
+            $started.ExitCode | Should -Be 0
+            $line = @($started.Output -split "`n" | Where-Object { $_ -like 'your command: *' })
+            $line.Count | Should -Be 1
+            ($line[0] -match '^your command: (?<call>.+) <verb> {6}your draft file: ') | Should -BeTrue
+            $prefix = 'powershell -NoProfile -ExecutionPolicy Bypass -File '
+            $forPowerShell = $prefix + "'" + $wrapper.Replace("'", "''").Replace($curly, $curly + $curly) + "'"
+            $forBash = $prefix + "'" + ($wrapper -replace '\\', '/').Replace("'", "'\''") + "'"
+            $forCmd = $prefix + '"' + $wrapper + '"'
+            @($forPowerShell, $forBash, $forCmd) -ccontains $Matches['call'] | Should -BeTrue
+        }
+    }
 }
 
 Describe 'Self-audit on <Engine>' -Tag 'Tool' -ForEach $engineCases {
@@ -1061,5 +1118,25 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $closed = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'x', 'm', 'e')
         $closed.ExitCode | Should -Be 5
         $closed.Output | Should -Match 'is closed'
+    }
+}
+
+Describe 'Room tool source' -Tag 'Tool' {
+
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'RelayTestHelpers.ps1')
+        $source = [System.IO.File]::ReadAllText((Join-Path (Get-RelayTestPath package) 'tools\relay.ps1'))
+    }
+
+    It 'takes every span of time on the UTC clock: local time jumps an hour twice a year' {
+        $source | Should -Not -Match '\bGet-Date\b'
+    }
+
+    It 'needs no .NET newer than 4.5 for the seconds since 1970 (Windows PowerShell 5.1 may run on 4.5.2)' {
+        $source | Should -Not -Match 'ToUnixTimeSeconds\s*\('
+    }
+
+    It 'writes no time in the form of the current culture' {
+        $source | Should -Not -Match "ToString\('yyyy-MM-ddTHH:mm:ssZ'\)"
     }
 }

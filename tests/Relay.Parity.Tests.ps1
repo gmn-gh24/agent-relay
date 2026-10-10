@@ -5,6 +5,9 @@
     the same cases for every engine: relay.ps1 under PowerShell 7 and under Windows PowerShell 5.1, relay.sh under
     dash. A literal expected line in a test is what makes the engines print the same thing. Written from
     work\team-plan\ROUND2.md. Every tool call is a real child process. Pester 6. ASCII only.
+
+    The round-5 context adds the culture of the machine. relay.sh is frozen from that round on: a case that only
+    relay.ps1 was fixed for skips itself under sh.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester: a variable set in BeforeAll or BeforeEach is read in the It blocks')]
@@ -269,6 +272,58 @@ Describe 'Parity on <Engine>' -Tag 'Parity' -ForEach $engineCases {
         ) {
             $null = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('note') -Text ($Subject + "`n`nThe text.")
             (Read-RelayTestMessage (Join-Path $room 'agents\olivia\inbox\emma-0002.md'))['subject'] | Should -BeExactly $Expected
+        }
+    }
+
+    Context 'Round 5: the same words and orders on every machine' {
+        It 'refuses a sign in front of the minutes of wait: <Word>' -ForEach @(
+            @{ Word = '-0' }
+            @{ Word = '-5' }
+        ) {
+            $result = Invoke-Parity 'emma' @('wait', $Word) -TimeoutSeconds 60
+            $result.TimedOut | Should -BeFalse
+            $result.ExitCode | Should -Be 1
+            $lines = Get-ParityLine $result.Output
+            $lines | Should -Contain 'ERROR: wait takes a number of minutes, or nothing'
+            $lines[$lines.Count - 1] | Should -BeExactly "NEXT: example: $(Get-ParityCall) wait 9"
+        }
+
+        It 'compares the type of a message exactly: a Task is no task' {
+            Write-ParityFile (Join-Path $room 'agents\emma\inbox\olivia-0001.md') "---`nid: olivia-emma-0001`nfrom: olivia`nto: emma`ntype: Task`nre: `nsubject: Capital type`nsent_utc: 2026-10-10T08:00:00Z`nexpects: reply`n---`nNot a request.`n"
+            $open = Invoke-Parity 'emma' @('show', 'open')
+            $open.ExitCode | Should -Be 0
+            Get-ParityLine $open.Output | Should -Contain '=== no open requests: you owe nobody a reply ==='
+        }
+
+        It 'writes its times in the same form whatever the culture of the machine (Thai: another calendar)' {
+            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
+            # .NET takes the culture from these on Linux and macOS; on Windows the test asks nothing of the culture
+            $thai = @{ LC_ALL = 'th_TH.UTF-8'; LC_MESSAGES = 'th_TH.UTF-8'; LANG = 'th_TH.UTF-8' }
+            Write-ParityFile (Join-Path $room 'agents\emma\draft.md') "In Thai`n`nThe time stays Gregorian."
+            $sent = Invoke-Parity 'emma' @('note') $thai
+            $sent.ExitCode | Should -Be 0
+            $message = Read-RelayTestMessage (Join-Path $room 'agents\olivia\inbox\emma-0002.md')
+            $message['sent_utc'] | Should -Match '^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+            $journal = @([System.IO.File]::ReadAllLines((Join-Path $room 'agents\emma\journal')))
+            $journal[$journal.Count - 1] | Should -Match '^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z sent emma-olivia-0002 note$'
+        }
+
+        It 'lists the agents in byte order whatever the culture of the machine (Danish: aa after z)' {
+            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
+            $number = New-RelayTestId
+            $agents = @(
+                [ordered]@{ name = 'zed'; role = 'tester'; kind = 'generic'; transport = 'same-pc' },
+                [ordered]@{ name = 'aage'; role = 'reviewer'; kind = 'generic'; transport = 'same-pc' }
+            )
+            $danishRoom = (New-RelayTestRoom -Root (Join-Path $root "danish-$number") -RoomId "danish-$number" -Agents $agents).Path
+            (Invoke-RelayTool -Room $danishRoom -Agent 'olivia' -Engine $engine -Words @('start', 'p', 'm', 'e')).ExitCode | Should -Be 0
+            $danish = @{ LC_ALL = 'da_DK.UTF-8'; LC_MESSAGES = 'da_DK.UTF-8'; LANG = 'da_DK.UTF-8' }
+            $who = Invoke-RelayTool -Room $danishRoom -Agent 'olivia' -Engine $engine -Words @('who') -Environment $danish
+            $who.ExitCode | Should -Be 0
+            $first = $who.Output.IndexOf('(aage)', [System.StringComparison]::Ordinal)
+            $second = $who.Output.IndexOf('(zed)', [System.StringComparison]::Ordinal)
+            $first | Should -BeGreaterThan -1
+            $second | Should -BeGreaterThan $first
         }
     }
 }
