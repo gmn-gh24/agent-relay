@@ -5,7 +5,9 @@
     a file in the room (G3), the room is closed when this PC says so (G7), the feed loses nothing when a round
     fails (G12), what is printed for reading carries no control character (G14), a failed archive can be made again
     (G15). Written from work\team-plan\ROUND4.md. Every test fails against the scripts as they were before the
-    change. Runs under PowerShell 7 and Windows PowerShell 5.1. Pester 6. ASCII only.
+    change. Round 5 adds: a draft reached through a link into the room is refused, the owner's message is never
+    read from a file in the room, an answered card keeps its answer, and an unreadable copy of the rules is not
+    written over. Runs under PowerShell 7 and Windows PowerShell 5.1. Pester 6. ASCII only.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester: a variable set in BeforeAll or BeforeEach is read in the It blocks')]
@@ -37,6 +39,22 @@ BeforeAll {
         $folder = Join-Path $Room.Owner 'cards'
         if (-not (Test-Path -LiteralPath $folder)) { return @() }
         return @(Get-ChildItem -LiteralPath $folder -Filter '*.md' -File)
+    }
+
+    function New-OwnerLink {
+        # A link to a folder: a symbolic link, or a junction where Windows allows no symbolic link
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper')]
+        param([string]$Path, [string]$Target)
+        try { $null = New-Item -ItemType SymbolicLink -Path $Path -Target $Target -ErrorAction Stop }
+        catch { $null = New-Item -ItemType Junction -Path $Path -Target $Target }
+    }
+
+    function Remove-OwnerLink {
+        # The link itself, never what it points at, so that the test drive is removed without following it
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper')]
+        param([string]$Path)
+        if ([System.IO.Directory]::Exists($Path)) { [System.IO.Directory]::Delete($Path, $false) }
+        elseif ([System.IO.File]::Exists($Path)) { [System.IO.File]::Delete($Path) }
     }
 }
 
@@ -101,16 +119,19 @@ Describe 'Owner scripts, the feed and closing (round 4)' -Tag 'Owner' {
         }
 
         It 'refuses a file inside the room folder for <Script>, and leaves the file and the room as they are' -ForEach @(
-            @{ Script = 'Request-RelayOwner.ps1' }
-            @{ Script = 'Add-RelayDecision.ps1' }
+            @{ Script = 'Request-RelayOwner.ps1'; Parameter = 'DraftFile' }
+            @{ Script = 'Add-RelayDecision.ps1'; Parameter = 'DraftFile' }
+            @{ Script = 'Send-RelayOwner.ps1'; Parameter = 'TextFile' }
         ) {
             $inside = Join-Path $room 'work\text.md'
             Write-OwnerFile $inside "A question`n`nSomebody put this here."
-            $arguments = @{ Room = $id; DraftFile = $inside }
+            $arguments = @{ Room = $id }
+            $arguments[$Parameter] = $inside
             { & (Join-Path $scripts $Script) @arguments } | Should -Throw '*inside the room folder*'
             Test-Path -LiteralPath $inside | Should -BeTrue
             @(Get-OwnerCardFile $object).Count | Should -Be 0
             (Read-RelayText (Join-Path $object.Canon 'DECISIONS.md')) | Should -Not -Match 'Somebody put this here'
+            @(Get-RelayTestInbox -Room $room -Agent 'olivia' -From 'owner').Count | Should -Be 0
         }
 
         It 'takes a file outside the room, given as a relative path against the PowerShell location, and removes that same file' {
@@ -244,6 +265,69 @@ Describe 'Owner scripts, the feed and closing (round 4)' -Tag 'Owner' {
             $third = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $id) -join "`n"
             $third | Should -Match 'already closed'
             $third | Should -Not -Match 'made now'
+        }
+    }
+
+    Context 'Round 5: the draft of a card, a rule or an owner''s message, answered cards and strict reads' {
+        It 'refuses a file outside the room that leads into it through a link, for <Script>' -ForEach @(
+            @{ Script = 'Request-RelayOwner.ps1'; Parameter = 'DraftFile' }
+            @{ Script = 'Add-RelayDecision.ps1'; Parameter = 'DraftFile' }
+            @{ Script = 'Send-RelayOwner.ps1'; Parameter = 'TextFile' }
+        ) {
+            $work = Join-Path $room 'work'
+            $inside = Join-Path $work 'linked.md'
+            Write-OwnerFile $inside "A question`n`nSomebody put this here."
+            # Outside the room by its name, inside it in fact
+            $link = Join-Path $outside 'into-room'
+            New-OwnerLink -Path $link -Target $work
+            try {
+                $arguments = @{ Room = $id }
+                $arguments[$Parameter] = Join-Path $link 'linked.md'
+                { & (Join-Path $scripts $Script) @arguments } | Should -Throw '*inside the room folder*'
+                Test-Path -LiteralPath $inside | Should -BeTrue
+                @(Get-OwnerCardFile $object).Count | Should -Be 0
+                (Read-RelayText (Join-Path $object.Canon 'DECISIONS.md')) | Should -Not -Match 'Somebody put this here'
+                @(Get-RelayTestInbox -Room $room -Agent 'olivia' -From 'owner').Count | Should -Be 0
+            }
+            finally { Remove-OwnerLink $link }
+        }
+
+        It 'takes a file outside the room whose way goes through a link that leads elsewhere' {
+            $elsewhere = Join-Path $root 'elsewhere'
+            Write-OwnerFile (Join-Path $elsewhere 'card.md') "Through a link`n`nThe link leads out of the room, not into it."
+            $link = Join-Path $outside 'to-elsewhere'
+            New-OwnerLink -Path $link -Target $elsewhere
+            try {
+                $card = @(& (Join-Path $scripts 'Request-RelayOwner.ps1') -Room $id -DraftFile (Join-Path $link 'card.md'))
+                $card[0] | Should -Be 'CARD olivia-owner-0001 opened for the owner: Through a link'
+                Test-Path -LiteralPath (Join-Path $elsewhere 'card.md') | Should -BeFalse
+            }
+            finally { Remove-OwnerLink $link }
+        }
+
+        It 'refuses to record a decision in the session for a card that is already answered, and keeps the first one' {
+            Write-OwnerFile (Join-Path $object.Local 'draft.md') "Restart the build machine?`n`nJack asks to restart it."
+            $null = & (Join-Path $scripts 'Request-RelayOwner.ps1') -Room $id
+            $denied = Invoke-RelayTestScript -Script 'Send-RelayOwner.ps1' -Arguments @('-Room', $id, '-Deny', 'olivia-owner-0001') -Environment $local
+            $denied.ExitCode | Should -Be 0 -Because $denied.Error
+            { & (Join-Path $scripts 'Request-RelayOwner.ps1') -Room $id -Resolve 'olivia-owner-0001' -Decision approved } | Should -Throw '*already answered (denied*'
+            $card = @(Get-RelayOwnerCard $object)[0]
+            $card.Decision | Should -Be 'denied'
+            $card.Via | Should -Be 'chat'
+            @((Get-Content -LiteralPath (Join-Path $object.Owner 'log')) | Where-Object { $_ -match "`tapproved`t" }).Count | Should -Be 0
+            { & (Join-Path $scripts 'Request-RelayOwner.ps1') -Room $id -Resolve 'olivia-owner-0009' -Decision approved } | Should -Throw '*no card*'
+        }
+
+        It 'records no rule while this PC''s copy of the rules cannot be read, and keeps the rules it holds' -Skip:([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+            $canonical = Join-Path $object.Canon 'DECISIONS.md'
+            $before = [System.IO.File]::ReadAllText($canonical)
+            Write-OwnerFile (Join-Path $outside 'rule.md') 'A rule that must not replace the others.'
+            # Readers are kept out and a writer is let in: the read fails where a write would go through
+            $hold = [System.IO.File]::Open($canonical, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Write)
+            try { { & (Join-Path $scripts 'Add-RelayDecision.ps1') -Room $id -DraftFile (Join-Path $outside 'rule.md') } | Should -Throw '*Could not read*' }
+            finally { $hold.Dispose() }
+            [System.IO.File]::ReadAllText($canonical) | Should -Be $before
+            Test-Path -LiteralPath (Join-Path $outside 'rule.md') | Should -BeTrue
         }
     }
 }

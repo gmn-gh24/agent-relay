@@ -24,7 +24,8 @@
     Messages per sender in the load run. Default 50.
 
 .PARAMETER WorkFolder
-    Where the throw-away room is built. Default: a new folder under the temp folder; removed on success.
+    Where the throw-away room is built. Default: a new folder under the temp folder. Only a folder this run made
+    is removed again, and only after a run that went through and agreed; a folder that was there before is kept.
 
 .PARAMETER Keep
     Keep the work folder also on success.
@@ -50,8 +51,12 @@ Set-StrictMode -Version Latest
 $helpers = Join-Path $PSScriptRoot '..\..\..\tests\RelayTestHelpers.ps1'
 if (-not (Test-Path -LiteralPath $helpers)) { throw "The conformance run needs the test helpers of the working copy: $helpers" }
 . $helpers
+Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 
 if (-not $WorkFolder) { $WorkFolder = Join-Path ([System.IO.Path]::GetTempPath()) ('relay-conformance-' + [guid]::NewGuid().ToString('N').Substring(0, 8)) }
+# Only a folder this run makes is removed again: one that was there before may hold anything
+$isOwnFolder = -not (Test-Path -LiteralPath $WorkFolder)
+$isCompleted = $false
 $savedLocal = $env:AGENT_RELAY_LOCAL
 $failures = New-Object System.Collections.Generic.List[string]
 $checks = 0
@@ -146,7 +151,7 @@ try {
     '2. Team plan: team and progress across engines'
     $everybody = @('olivia') + $names
     $displayOf = @{}
-    foreach ($name in $everybody) { $displayOf[$name] = $name.Substring(0, 1).ToUpper() + $name.Substring(1) }
+    foreach ($name in $everybody) { $displayOf[$name] = ConvertTo-RelayDisplayName $name }
     # What team prints for every seat except the YOU: line, one string per seat
     function Get-TeamBody {
         param([string]$Name)
@@ -283,7 +288,12 @@ exit $failed
     $shell = (Get-Process -Id $PID).Path
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($name in $names) {
-        $handles.Add((Start-Process -FilePath $shell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runnerPath, $helpers, $room, $name, $engineOf[$name], $Messages) -PassThru -WindowStyle Hidden))
+        # One command line, each argument quoted as the process reads it: Start-Process joins a list with blanks
+        # and nothing else, and a temp folder or a repository path with a blank in it would split
+        $line = (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runnerPath, $helpers, $room, $name, $engineOf[$name], [string]$Messages) | ForEach-Object { ConvertTo-RelayTestArgument $_ }) -join ' '
+        $startOptions = @{ FilePath = $shell; ArgumentList = $line; PassThru = $true }
+        if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { $startOptions['WindowStyle'] = 'Hidden' }
+        $handles.Add((Start-Process @startOptions))
     }
     foreach ($process in $handles) {
         $null = $process.WaitForExit(1800000)
@@ -311,10 +321,12 @@ exit $failed
     ''
     if ($failures.Count -eq 0) { "CONFORMANCE PASSED: $checks checks, engines $($engines -join ', ')" }
     else { "CONFORMANCE FAILED: $($failures.Count) of $checks checks"; foreach ($failure in $failures) { "  $failure" } }
+    $isCompleted = $true
 }
 finally {
     $env:AGENT_RELAY_LOCAL = $savedLocal
-    if ($failures.Count -eq 0 -and -not $Keep -and (Test-Path -LiteralPath $WorkFolder)) { Remove-Item -LiteralPath $WorkFolder -Recurse -Force -ErrorAction SilentlyContinue }
+    # A run that stopped on an error has counted no failure, and still proves nothing: its folder is kept
+    if ($isOwnFolder -and $isCompleted -and $failures.Count -eq 0 -and -not $Keep -and (Test-Path -LiteralPath $WorkFolder)) { Remove-Item -LiteralPath $WorkFolder -Recurse -Force -ErrorAction SilentlyContinue }
     elseif (Test-Path -LiteralPath $WorkFolder) { "kept for inspection: $WorkFolder" }
 }
 if ($failures.Count -gt 0) { exit 1 }
