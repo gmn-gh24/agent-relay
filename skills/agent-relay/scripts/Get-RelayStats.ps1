@@ -32,31 +32,34 @@ $roomObject = Resolve-RelayRoom $Room
 $stats = Get-RelayStatistic $roomObject
 if ($AsJson) { return (ConvertTo-Json -InputObject $stats -Depth 6) }
 
-"=== statistics of room $($stats.room) (package $($stats.package)) ==="
-"job: $($stats.job)"
-"messages: $($stats.messages) in $($stats.minutesFromFirstToLast) minutes  (" + ((@($stats.byType.Keys | ForEach-Object { "$_ $($stats.byType[$_])" })) -join ', ') + ')'
-"requests: $($stats.requests), answered $($stats.answered), never answered $($stats.unanswered)"
-"reply time: median $($stats.replyMedianMinutes) min, longest $($stats.replyMaxMinutes) min"
-foreach ($responder in @($stats.byResponder)) { "  $($responder.agent): $($responder.answered) answered, median $($responder.medianMinutes) min, longest $($responder.maxMinutes) min" }
-"requests waited on the coordinator: $($stats.waitedOnCoordinatorMinutes) min in total; on the owner ($($stats.ownerCards) cards): $($stats.waitedOnOwnerMinutes) min"
-if (@($stats.slowest).Count -gt 0) {
-    'slowest answers:'
-    foreach ($request in @($stats.slowest)) { "  $($request.minutes) min  $($request.id) ($($request.type) to $($request.to)): $($request.subject)" }
-}
-"asked twice: $(@($stats.repeatedQuestions).Count)"
-foreach ($repeat in @($stats.repeatedQuestions)) { "  $($repeat.from), $($repeat.times) times: $($repeat.subject) ($($repeat.ids))" }
-"delivered twice: $($stats.redelivered)"
-"reports with changes outside the assigned paths: $(@($stats.reportsWithChangesOutside).Count)"
-foreach ($report in @($stats.reportsWithChangesOutside)) { "  $($report.id) from $($report.from): $($report.outside) outside" }
-"alarms from the tamper check: $($stats.alarms)"
-''
-'agent      sent  recv  sessions  timeouts  parked  2nd-wait  silent  proceeded'
-foreach ($agent in @($stats.agents)) { '{0,-10} {1,4}  {2,4}  {3,8}  {4,8}  {5,6}  {6,8}  {7,6}  {8,9}' -f $agent.agent, $agent.sent, $agent.received, $agent.sessions, $agent.waitTimeouts, $agent.parked, $agent.secondWaits, $agent.coordinatorSilent, $agent.proposalsProceeded }
-if (@($stats.byes).Count -gt 0) {
-    ''
-    'what the agents said on leaving:'
-    foreach ($bye in @($stats.byes)) {
-        "  $($bye.from): $($bye.subject)"
-        foreach ($line in ($bye.text -split "`n")) { if ($line.Trim()) { "      $line" } }
+# Every line printed for reading passes one place: no control character from a room file, no blank at the end
+& {
+    "=== statistics of room $($stats.room) (package $($stats.package)) ==="
+    "job: $($stats.job)"
+    "messages: $($stats.messages) in $($stats.minutesFromFirstToLast) minutes  (" + ((@($stats.byType.Keys | ForEach-Object { "$_ $($stats.byType[$_])" })) -join ', ') + ')'
+    "requests: $($stats.requests), answered $($stats.answered), never answered $($stats.unanswered)"
+    "reply time: median $($stats.replyMedianMinutes) min, longest $($stats.replyMaxMinutes) min"
+    foreach ($responder in @($stats.byResponder)) { "  $($responder.agent): $($responder.answered) answered, median $($responder.medianMinutes) min, longest $($responder.maxMinutes) min" }
+    "requests waited on the coordinator: $($stats.waitedOnCoordinatorMinutes) min in total; on the owner ($($stats.ownerCards) cards): $($stats.waitedOnOwnerMinutes) min"
+    if (@($stats.slowest).Count -gt 0) {
+        'slowest answers:'
+        foreach ($request in @($stats.slowest)) { "  $($request.minutes) min  $($request.id) ($($request.type) to $($request.to)): $($request.subject)" }
     }
-}
+    "asked twice: $(@($stats.repeatedQuestions).Count)"
+    foreach ($repeat in @($stats.repeatedQuestions)) { "  $($repeat.from), $($repeat.times) times: $($repeat.subject) ($($repeat.ids))" }
+    "delivered twice: $($stats.redelivered)"
+    "reports with changes outside the assigned paths: $(@($stats.reportsWithChangesOutside).Count)"
+    foreach ($report in @($stats.reportsWithChangesOutside)) { "  $($report.id) from $($report.from): $($report.outside) outside" }
+    "alarms from the tamper check: $($stats.alarms)"
+    ''
+    'agent      sent  recv  sessions  timeouts  parked  2nd-wait  silent  proceeded'
+    foreach ($agent in @($stats.agents)) { '{0,-10} {1,4}  {2,4}  {3,8}  {4,8}  {5,6}  {6,8}  {7,6}  {8,9}' -f $agent.agent, $agent.sent, $agent.received, $agent.sessions, $agent.waitTimeouts, $agent.parked, $agent.secondWaits, $agent.coordinatorSilent, $agent.proposalsProceeded }
+    if (@($stats.byes).Count -gt 0) {
+        ''
+        'what the agents said on leaving:'
+        foreach ($bye in @($stats.byes)) {
+            "  $($bye.from): $($bye.subject)"
+            foreach ($line in ($bye.text -split "`n")) { if ($line.Trim()) { "      $line" } }
+        }
+    }
+} | ForEach-Object { ConvertTo-RelayPrintedLine $_ }

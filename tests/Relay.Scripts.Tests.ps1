@@ -162,7 +162,7 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $agents = @(
             [ordered]@{ name = 'emma'; role = 'tester'; kind = 'claude-code'; transport = 'share'; room_path = '\\fileserver\team\agent-relay\prompts' },
             [ordered]@{ name = 'jack'; role = 'reviewer'; kind = 'codex' },
-            [ordered]@{ name = 'liam'; role = 'builder'; kind = 'claude-code'; transport = 'ssh'; ssh = @{ target = 'dev@buildbox' } }
+            [ordered]@{ name = 'liam'; role = 'builder'; kind = 'claude-code'; transport = 'share'; os = 'linux'; room_path = '~/agent-relay/prompts' }
         )
         $created = New-RelayTestRoom -Root $root -RoomId 'prompts' -Agents $agents
         $share = [string]$created.Prompts['emma']
@@ -188,9 +188,9 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $ssh | Should -Match ([regex]::Escape('sh ~/agent-relay/prompts/agents/liam/g1/relay start <product> <model> <effort>'))
         $ssh | Should -Not -Match 'Git Bash'
         $sshSeat = Read-RelayKeyValue (Join-Path $created.Path 'agents\liam\seat')
-        $sshSeat['transport'] | Should -Be 'ssh'
-        $sshSeat['ssh_target'] | Should -Be 'dev@buildbox'
-        $sshSeat['ssh_remote_room'] | Should -Be '~/agent-relay/prompts'
+        $sshSeat['transport'] | Should -Be 'share'
+        $sshSeat['ssh_target'] | Should -BeNullOrEmpty
+        $sshSeat['room_path'] | Should -Be '~/agent-relay/prompts'
         $sshSeat['shell'] | Should -Be 'sh'
         $sshSeat['os'] | Should -Be 'linux'
     }
@@ -247,7 +247,8 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $null = New-RelayTestRoom -Root $root -RoomId 'twice'
         { New-RelayTestRoom -Root $root -RoomId 'twice' } | Should -Throw '*already exists*'
         { New-RelayTestRoom -Root $root -RoomId 'transport' -Agents @([ordered]@{ role = 'x'; transport = 'carrier-pigeon' }) } | Should -Throw '*Transport*'
-        { New-RelayTestRoom -Root $root -RoomId 'nossh' -Agents @([ordered]@{ role = 'x'; transport = 'ssh' }) } | Should -Throw '*ssh.target*'
+        { New-RelayTestRoom -Root $root -RoomId 'nossh' -Agents @([ordered]@{ role = 'x'; transport = 'ssh' }) } | Should -Throw '*the SSH bridge is not built yet: use share or same-pc*'
+        { New-RelayTestRoom -Root (Join-Path $root 'bad-ssh') -RoomId 'ssh-target' -Agents @([ordered]@{ role = 'x'; transport = 'ssh'; ssh = @{ target = 'dev@buildbox' } }) } | Should -Throw '*the SSH bridge is not built yet: use share or same-pc*'
     }
 }
 
@@ -497,10 +498,10 @@ Describe 'The owner' -Tag 'Scripts' {
     }
 
     It 'opens a card for the owner and closes it with the owner''s decision from the chat window' {
-        Set-RelayTestDraft -Room $room -Agent 'olivia' -Text "May Emma install Pester 6 on the build machine?`n`nEmma needs Pester 6 to run the suite. The machine is in use; installing is beyond my authority.`nApprove = she installs it for the current user only."
+        Set-RelayTestDraft -Room $room -Agent 'olivia' -Path (Join-Path $object.Local 'draft.md') -Text "May Emma install Pester 6 on the build machine?`n`nEmma needs Pester 6 to run the suite. The machine is in use; installing is beyond my authority.`nApprove = she installs it for the current user only."
         $opened = @(& (Join-Path $scripts 'Request-RelayOwner.ps1') -Room $id -Re 'emma-olivia-0002')
         ($opened -join "`n") | Should -Match 'CARD olivia-owner-0001 opened for the owner: May Emma install Pester 6'
-        Test-Path -LiteralPath (Join-Path $room 'agents\olivia\draft.md') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $object.Local 'draft.md') | Should -BeFalse
         $board = Get-RelayBoard $object
         @($board.waitingOnOwner).Count | Should -Be 1
         $board.waitingOnOwner[0].re | Should -Be 'emma-olivia-0002'
@@ -522,9 +523,9 @@ Describe 'The owner' -Tag 'Scripts' {
     }
 
     It 'denies a card without text and records an answer given in the session' {
-        Set-RelayTestDraft -Room $room -Agent 'olivia' -Text "Restart the build machine?`n`nJack asks to restart it."
+        Set-RelayTestDraft -Room $room -Agent 'olivia' -Path (Join-Path $object.Local 'draft.md') -Text "Restart the build machine?`n`nJack asks to restart it."
         $null = & (Join-Path $scripts 'Request-RelayOwner.ps1') -Room $id -Re 'jack-olivia-0002'
-        Set-RelayTestDraft -Room $room -Agent 'olivia' -Text "Delete the old logs?`n`nHenry asks to delete them."
+        Set-RelayTestDraft -Room $room -Agent 'olivia' -Path (Join-Path $object.Local 'draft.md') -Text "Delete the old logs?`n`nHenry asks to delete them."
         $null = & (Join-Path $scripts 'Request-RelayOwner.ps1') -Room $id
         @((Get-RelayBoard $object).waitingOnOwner).Count | Should -Be 2
         $denied = Invoke-RelayTestScript -Script 'Send-RelayOwner.ps1' -Arguments @('-Room', $id, '-Deny', 'olivia-owner-0001') -Environment $local
@@ -612,7 +613,7 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         (Get-Item -LiteralPath (Join-Path $room 'agents\jack\alive')).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-12)
         [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\status'), "state: parked`ndetail: idle through 6 waits`nsince_utc: 2026-10-10T08:00:00Z`ngen: 1`n")
         $seat = Join-Path $room 'agents\emma\seat'
-        [System.IO.File]::WriteAllText($seat, ([System.IO.File]::ReadAllText($seat) -replace 'expect_computer: .*', 'expect_computer: '))
+        Write-RelayGuardedText $object 'agents/emma/seat' ([System.IO.File]::ReadAllText($seat) -replace 'expect_computer: .*', 'expect_computer: ')
         $board = Get-RelayBoard $object
         $jack = @($board.agents | Where-Object { $_.name -eq 'jack' })[0]
         $jack.isStale | Should -BeTrue

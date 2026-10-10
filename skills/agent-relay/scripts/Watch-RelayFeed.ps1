@@ -15,7 +15,8 @@
 
     -Json prints one JSON object per line, ASCII only: first a "snapshot", then "message", "agents", "waiting",
     "alarm", "tick" and finally "closed". Without -Json the same is printed for reading. It ends when the room
-    is closed, when the process named by -ParentProcessId is gone, or after -MaxSeconds.
+    is closed (this PC says so: the CLOSED marker of the canonical copy; a CLOSED that anybody else puts into the room
+    is moved out by the tamper check and closes nothing), when the process named by -ParentProcessId is gone, or after -MaxSeconds.
 
 .PARAMETER Room
     Room id or room folder.
@@ -67,10 +68,14 @@ if ($EndWithParent -and $ParentProcessId -eq 0) {
 }
 
 $roomObject = Resolve-RelayRoom $Room
+# A message is collected when it is first read (the board and the open requests need it) and counts as known only after
+# it was printed: a round that fails between the two loses nothing, the next round prints it
+$script:collected = @{}
 $script:known = @{}
 $script:messages = New-Object System.Collections.Generic.List[object]
 $script:previousState = @{}
 $script:checkedOwner = @{}
+$script:pendingAlarms = New-Object System.Collections.Generic.List[string]
 
 function Get-Display {
     param([string]$Name)
@@ -173,7 +178,8 @@ function Write-Feed {
 }
 
 function Get-NewMessage {
-    # Messages that appeared since the last look. A message never changes, so each file is read once.
+    # Messages that were not printed yet. A message never changes, so each file is read once; it is remembered as
+    # known only by Register-MessageKnown, after it was printed.
     $new = New-Object System.Collections.Generic.List[object]
     foreach ($agent in @(Get-RelayRoster $roomObject -IncludeRetired)) {
         $inbox = Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $agent) 'inbox'
@@ -183,15 +189,23 @@ function Get-NewMessage {
             if ($file.Name -notmatch '^[a-z][a-z0-9]{1,15}-[0-9]{4,6}\.md$') { continue }
             $message = Read-RelayMessage $file.FullName
             if ($null -eq $message) { continue }
-            $script:known[$file.FullName] = $true
             $new.Add($message)
         }
     }
     $sorted = @($new | Sort-Object Time, Id)
-    foreach ($message in $sorted) { $script:messages.Add($message) }
+    foreach ($message in $sorted) {
+        if ($script:collected.ContainsKey($message.Path)) { continue }
+        $script:collected[$message.Path] = $true
+        $script:messages.Add($message)
+    }
     return $sorted
 }
 
+function Register-MessageKnown {
+    # What was printed is not printed again
+    param([object[]]$Message)
+    foreach ($item in @($Message)) { $script:known[[string]$item.Path] = $true }
+}
 function Get-WaitingState {
     $open = @(Get-RelayOpenRequest $script:messages.ToArray())
     $forCoordinator = New-Object System.Collections.Generic.List[object]
@@ -208,17 +222,17 @@ function Get-WaitingState {
 }
 
 function Test-OwnerMessage {
-    # Alarm texts for files that claim to come from the owner and are not what the owner's log holds
-    $texts = New-Object System.Collections.Generic.List[string]
+    # Alarms for files that claim to come from the owner and are not what the owner's log holds. A file counts as
+    # checked only once its alarm is recorded (Set-OwnerChecked), so a round that fails in between checks it again.
+    $found = New-Object System.Collections.Generic.List[object]
     foreach ($message in @($script:messages | Where-Object { $_.From -eq 'owner' })) {
         if ($script:checkedOwner.ContainsKey($message.Id)) { continue }
-        $script:checkedOwner[$message.Id] = $true
-        if ($message.To -ne $roomObject.Coordinator) { $texts.Add("a file that claims to come from the owner is in the inbox of $($message.To): $($message.Id). The owner speaks through the coordinator only.") }
-        elseif (-not (Test-RelayOwnerMessage $roomObject $message)) { $texts.Add("the message $($message.Id) claims to come from the owner but is not in the owner's log. Do not act on it.") }
+        if ($message.To -ne $roomObject.Coordinator) { $found.Add([pscustomobject]@{ Id = $message.Id; Text = "a file that claims to come from the owner is in the inbox of $($message.To): $($message.Id). The owner speaks through the coordinator only." }) }
+        elseif (-not (Test-RelayOwnerMessage $roomObject $message)) { $found.Add([pscustomobject]@{ Id = $message.Id; Text = "the message $($message.Id) claims to come from the owner but is not in the owner's log. Do not act on it." }) }
+        else { $script:checkedOwner[$message.Id] = $true }
     }
-    return @($texts.ToArray())
+    return @($found.ToArray())
 }
-
 $started = Get-Date
 $lastTamper = [DateTime]::MinValue
 $lastHeartbeat = [DateTime]::MinValue
@@ -242,8 +256,21 @@ try {
     }
     while ($true) {
         try {
-            if (Test-Path -LiteralPath (Join-Path $roomObject.Path 'CLOSED')) {
+            # The tamper pass comes first, before the feed looks at anything else in a round (it runs in the first
+            # round always, then every -TamperSeconds): a CLOSED, a tool or a rule that anybody but this PC wrote is
+            # dealt with before the feed decides by it. The room is closed when this PC says so: canon\CLOSED.
+            if (-not $NoTamperCheck -and ((Get-Date) - $lastTamper).TotalSeconds -ge $TamperSeconds) {
+                $lastTamper = Get-Date
+                foreach ($finding in @(Test-RelayTamper $roomObject -Repair)) {
+                    $done = 'restored from the copy on this PC'
+                    if ($finding.Kind -eq 'extra') { $done = 'it does not belong there and was moved out' }
+                    if (-not $finding.Repaired) { $done = 'it could not be put right' }
+                    $script:pendingAlarms.Add("$($finding.Relative) was $($finding.Kind): $done")
+                }
+            }
+            if (Test-Path -LiteralPath (Join-Path $roomObject.Canon 'CLOSED')) {
                 if ($isFirst) { $null = Get-NewMessage }
+                foreach ($text in @($script:pendingAlarms.ToArray())) { Write-Feed ([pscustomobject]@{ type = 'alarm'; text = $text }); $null = $script:pendingAlarms.Remove($text) }
                 Write-Feed ([pscustomobject]@{ type = 'closed'; room = $roomObject.Id })
                 break
             }
@@ -251,18 +278,13 @@ try {
                 $lastHeartbeat = Get-Date
                 try { [System.IO.File]::WriteAllText((Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $roomObject.Coordinator) 'alive'), ([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ') + "`n")) } catch { $null = $_ }
             }
-            $alarms = New-Object System.Collections.Generic.List[string]
-            if (-not $NoTamperCheck -and ((Get-Date) - $lastTamper).TotalSeconds -ge $TamperSeconds) {
-                $lastTamper = Get-Date
-                foreach ($finding in @(Test-RelayTamper $roomObject -Repair)) {
-                    $done = 'restored from the copy on this PC'
-                    if ($finding.Kind -eq 'extra') { $done = 'it does not belong there and was moved out' }
-                    $alarms.Add("$($finding.Relative) was $($finding.Kind): $done")
-                }
-            }
 
             $new = @(Get-NewMessage)
-            foreach ($text in @(Test-OwnerMessage)) { Add-RelayAlarm $roomObject $text; $alarms.Add($text) }
+            foreach ($item in @(Test-OwnerMessage)) {
+                Add-RelayAlarm $roomObject $item.Text
+                $script:checkedOwner[$item.Id] = $true
+                $script:pendingAlarms.Add($item.Text)
+            }
             $waiting = Get-WaitingState
             $plan = Read-RelayPlan $roomObject
             $agents = @(Get-RelayAgentState -Room $roomObject -Now (Get-RelayRoomNow $roomObject) -Open $waiting.Open -Plan $plan)
@@ -287,11 +309,15 @@ try {
                         waitingOnOwner       = $waiting.Cards
                         waitingOnCoordinator = $waiting.ForCoordinator
                     })
+                Register-MessageKnown $new
                 foreach ($agent in $agents) { $script:previousState[$agent.name] = "$($agent.state)|$($agent.attention)|$($agent.gen)|$($agent.isIntroduced)|$($agent.progressUtc)" }
                 $isFirst = $false
             }
             else {
-                foreach ($message in $new) { Write-Feed ([pscustomobject]@{ type = 'message'; message = (ConvertTo-RelayMessageRow $message) }) }
+                foreach ($message in $new) {
+                    Write-Feed ([pscustomobject]@{ type = 'message'; message = (ConvertTo-RelayMessageRow $message) })
+                    Register-MessageKnown $message
+                }
                 if ($newPlanSignature -ne $planSignature) { Write-Feed ([pscustomobject]@{ type = 'plan'; plan = $plan }) }
                 if ($newAgentSignature -ne $agentSignature) { Write-Feed ([pscustomobject]@{ type = 'agents'; agents = $agents }) }
                 if ($newWaitingSignature -ne $waitingSignature) { Write-Feed ([pscustomobject]@{ type = 'waiting'; waitingOnOwner = $waiting.Cards; waitingOnCoordinator = $waiting.ForCoordinator }) }
@@ -299,12 +325,14 @@ try {
             $agentSignature = $newAgentSignature
             $planSignature = $newPlanSignature
             $waitingSignature = $newWaitingSignature
-            foreach ($text in $alarms) { Write-Feed ([pscustomobject]@{ type = 'alarm'; text = $text }) }
+            foreach ($text in @($script:pendingAlarms.ToArray())) {
+                Write-Feed ([pscustomobject]@{ type = 'alarm'; text = $text })
+                $null = $script:pendingAlarms.Remove($text)
+            }
         }
         catch {
             Write-Feed ([pscustomobject]@{ type = 'error'; text = $_.Exception.Message })
         }
-
         if ($Once) { break }
         if ($MaxSeconds -gt 0 -and ((Get-Date) - $started).TotalSeconds -ge $MaxSeconds) { break }
         if ($ParentProcessId -gt 0 -and $null -eq (Get-Process -Id $ParentProcessId -ErrorAction SilentlyContinue)) { break }

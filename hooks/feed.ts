@@ -4,8 +4,10 @@ import type { RelayAgent, RelayCard, RelayMessage, RelayPlan, RelayView } from '
 // touches the engine: the lines go in, the view and what is worth telling the owner come out.
 
 export type FeedEvent =
+  | { kind: 'up' }
   | { kind: 'card'; subject: string }
   | { kind: 'alarm'; text: string }
+  | { kind: 'error'; text: string }
   | { kind: 'closed' }
 
 const MESSAGE_LIMIT = 200
@@ -119,8 +121,13 @@ export const applyFeedLine = (view: RelayView, line: string): { view: RelayView;
 
   switch (asText(item.type)) {
     case 'snapshot': {
+      // The room resolved on this PC and the feed is up: whoever bound it may say so now
+      events.push({ kind: 'up' })
+      // Only a card the view did not hold yet is worth telling: a feed that was started again prints a
+      // snapshot of what the owner was told already
       const cards = asList(item.waitingOnOwner).map(toCard)
-      for (const card of cards) events.push({ kind: 'card', subject: card.subject })
+      const known = new Set(view.cards.map(card => card.id))
+      for (const card of cards) if (!known.has(card.id)) events.push({ kind: 'card', subject: card.subject })
 
       return {
         view: {
@@ -162,8 +169,12 @@ export const applyFeedLine = (view: RelayView, line: string): { view: RelayView;
 
       return { view: { ...view, alarms: [...view.alarms, text].slice(-ALARM_LIMIT) }, events }
     }
-    case 'error':
-      return { view: { ...view, note: asText(item.text) }, events }
+    case 'error': {
+      const text = asText(item.text)
+      events.push({ kind: 'error', text })
+
+      return { view: { ...view, note: text }, events }
+    }
     case 'closed':
       events.push({ kind: 'closed' })
 
@@ -179,6 +190,31 @@ export const splitOwnerText = (typed: string): { to: string; text: string } => {
   if (match === null) return { to: '', text: typed.trim() }
 
   return { to: (match[1] ?? '').toLowerCase(), text: (match[2] ?? '').trim() }
+}
+
+// Why a script ended, from what it wrote: its message without the lines PowerShell adds about where it was
+// thrown, on one line, and short enough for a toast
+export const reasonOf = (output: string): string => {
+  const said: string[] = []
+  for (const line of asText(output).split('\n')) {
+    const one = line.trim()
+    if (/^(At |\+ )/.test(one)) break
+    if (one !== '') said.push(one)
+  }
+  const reason = said.join(' ')
+
+  return reason.length > 300 ? `${reason.slice(0, 300)} ...` : reason
+}
+
+// The feed sends a long card cut, and marks the cut with three dots after a blank: the owner must be told
+// that there is more before deciding on it
+export const isCutText = (text: string): boolean => text.endsWith(' ...')
+
+// How many rows a text takes in a column of that width, wrapped
+export const textRows = (text: string, width: number): number => {
+  const columns = Math.max(1, width)
+
+  return text.split('\n').reduce((rows, line) => rows + Math.max(1, Math.ceil(line.length / columns)), 0)
 }
 
 // Hour and minute of a time the feed gives (UTC)

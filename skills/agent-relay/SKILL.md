@@ -1,6 +1,6 @@
 ---
 name: agent-relay
-description: Coordinate any number of coding agents (Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot or any other) that run on this PC, on other machines over a shared folder, or on Linux over SSH, from this session - hand out tasks, answer their questions, approve or deny what goes beyond their assignment, and keep a record. Use it to offload development work, run tests or debug on another machine, research, update documentation or review work in parallel. Use when the user mentions agent relay, a relay room, a remote agent, the agent on another machine or VM, coordinating or orchestrating several agents, offloading a task to another session, or asks to start, resume, watch or close a room, or to add, replace, pause or stop an agent.
+description: Coordinate any number of coding agents (Claude Code, Codex CLI, Gemini CLI, Cursor, Copilot or any other) that run on this PC or on other machines over a shared folder, from this session - hand out tasks, answer their questions, approve or deny what goes beyond their assignment, and keep a record. Use it to offload development work, run tests or debug on another machine, research, update documentation or review work in parallel. Use when the user mentions agent relay, a relay room, a remote agent, the agent on another machine or VM, coordinating or orchestrating several agents, offloading a task to another session, or asks to start, resume, watch or close a room, or to add, replace, pause or stop an agent.
 ---
 
 # agent-relay
@@ -10,8 +10,10 @@ work in a shared folder called a **room**. Each has its own name, inbox and writ
 this skill; they get one start prompt and one command.
 
 Everything a room needs is done by the scripts in `scripts/` next to this file (PowerShell, also fine under
-Windows PowerShell 5.1). Run them from your PowerShell tool. Your own messages go through your wrapper in the
-room, the same tool the other agents use; `New-RelayRoom.ps1` prints the exact line (your command).
+Windows PowerShell 5.1). Run them from your PowerShell tool. Your own messages go through the same tool the
+other agents use, started by a launcher on this PC that `New-RelayRoom.ps1` writes and prints (your command).
+It runs this PC's own copy of the tool: you never run a file that lies in the room, where every agent can
+write.
 
 Four rules hold in every workflow:
 
@@ -27,7 +29,9 @@ Four rules hold in every workflow:
   elevation prompt, unless the owner chose it. Plain command runs go to the lightest model in the room,
   running tests to a standard one, writing or reviewing code and tests to the strongest
   (`references/coordinating.md`, "Who gets which task").
-- **Text never goes on a command line.** Write a message into your draft file, then run the verb.
+- **Text never goes on a command line.** Write a message into your draft file, then run the verb. Your
+  draft is `draft.md` next to your launcher, on this PC; a card for the owner and a standing rule are written
+  there too, and no script takes such a text from a file in the room.
 
 ## 1. Start a room
 
@@ -41,13 +45,15 @@ Four rules hold in every workflow:
    It prints your command and the prompts: one **join prompt** that is the same for every agent taking an open
    seat, and a start prompt for each agent named in advance. One prompt goes on the clipboard.
 4. Introduce yourself: `<your command> start claude-code <model> <effort>`.
-5. For each SSH agent start its bridge first (`references/transports.md`).
-6. Give the owner the prompts and say which one is on the clipboard. The join prompt is pasted into as many
+5. Give the owner the prompts and say which one is on the clipboard. The join prompt is pasted into as many
    agents as there are free seats; add seats with `scripts/Add-RelayAgent.ps1 -OpenSeats <n>`.
-7. Show the room: bind the chat window if the `relay_bind` tool exists, otherwise tell the owner to run
+6. Show the room: bind the chat window if the `relay_bind` tool exists, otherwise tell the owner to run
    `scripts/Watch-RelayFeed.ps1 -Room <id> -Follow` in a terminal. One of the two must run: it is also the
    tamper check and your heartbeat.
-8. Start `<your command> wait` as a background command and go to workflow 2.
+7. Start `<your command> wait` as a background command and go to workflow 2.
+
+A machine that cannot reach a folder this PC can also reach cannot take part yet: the SSH bridge is not built,
+and `ssh` is refused as a transport (`references/transports.md`).
 
 ## 2. Coordinate
 
@@ -129,7 +135,7 @@ created with; when a fix must reach a running room, `scripts/Update-RelayRoom.ps
 | `references/startup-interview.md` | starting a room or adding an agent |
 | `references/coordinating.md` | coordinating: authority, approval tiers, verifying results, stale or parked agents |
 | `references/agent-kinds.md` | choosing an agent kind, or an agent has trouble waiting or calling its command |
-| `references/transports.md` | a room on a share or over SSH; paths as each agent sees them; known traps |
+| `references/transports.md` | a room on this PC or on a share; paths as each agent sees them; known traps |
 | `references/protocol.md` | something about the room's files or messages is unclear |
 | `references/self-improvement.md` | after a close, or after a failure |
 | `references/lessons.md` | before designing a job, and when writing new lessons |

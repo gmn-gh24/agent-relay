@@ -6,7 +6,7 @@
     {
       "name": "agent-relay",
       "source": "./",
-      "description": "Coordinate any number of coding agents on this PC, on other machines over a shared folder, or over SSH, from one session."
+      "description": "Coordinate any number of coding agents on this PC, or on other machines over a shared folder, from one session."
     }
   ]
 }

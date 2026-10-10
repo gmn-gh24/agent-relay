@@ -97,7 +97,10 @@ $openSeats = [int](Get-RelayProperty $answers 'open_seats' 0)
 if ($openSeats -lt 0 -or $openSeats -gt 200) { throw '"open_seats" is a number from 0 to 200' }
 if ($agentAnswers.Count -lt 1 -and $openSeats -lt 1) { throw 'The answers file needs at least one entry under "agents", or "open_seats" of 1 or more' }
 
-$roomPath = Join-Path $roomsRoot $roomId
+$roomPath = Get-RelayNormalPath (Join-Path $roomsRoot $roomId)
+# What is put into a command line for somebody to paste cannot hold a double quote or a line break
+Assert-RelayPastePath $roomPath 'The room folder'
+Assert-RelayPastePath ([string](Get-RelayProperty $answers 'reach_path' '')) 'The path other machines reach the room by (reach_path)'
 if (Test-Path -LiteralPath $roomPath) { throw "The room folder already exists: $roomPath. Choose another room_id, or resume that room." }
 foreach ($entry in @(Get-RelayRoomIndex)) { if ($entry.id -eq $roomId) { throw "A room with the id '$roomId' is already in the room index ($($entry.path)). Choose another room_id." } }
 
@@ -132,10 +135,12 @@ if (@('no', 'false', '0') -contains $tabTitles) { $roomInfo['tab_titles'] = 'no'
 # subnet may not resolve the name this PC uses.
 $reachPath = ([string](Get-RelayProperty $answers 'reach_path' '')).TrimEnd('\', '/')
 if (-not $reachPath) { $reachPath = Resolve-RelayRemotePath $roomPath }
+Assert-RelayPastePath $reachPath 'The path other machines reach the room by (reach_path)'
 $roomInfo['reach'] = $reachPath
-Write-RelayText (Join-Path $roomPath 'ROOM') (ConvertTo-RelayKeyValueText $roomInfo)
-$room = Resolve-RelayRoom $roomPath
+# What the room is comes from this PC's canonical copy: it is written first, and the room object is made from it
+$room = Get-RelayRoomObject -Id $roomId -Path $roomPath
 Write-RelayGuardedText $room 'ROOM' (ConvertTo-RelayKeyValueText $roomInfo)
+$room = Get-RelayRoomObject -Id $roomId -Path $roomPath
 
 Copy-RelayGuardedFile $room 'PROTOCOL.md' (Join-Path $package 'PROTOCOL.md')
 Copy-RelayGuardedFile $room 'tools/VERSION' (Join-Path $package 'VERSION')
@@ -202,7 +207,8 @@ $isCopied = $false
 if (-not $NoClipboard) {
     try { Set-Clipboard -Value $copyText.TrimEnd(); $isCopied = $true } catch { $isCopied = $false }
 }
-$coordinatorCall = Get-RelayCallLine -RoomPath $roomPath -Name $coordinatorName -Generation '1' -Shell 'powershell'
+# The coordinator runs its launcher on this PC, not a wrapper in the room
+$coordinatorCall = Get-RelayCallLine -RoomPath $roomPath -Name $coordinatorName -Generation '1' -Shell 'powershell' -Launcher $room.Local
 
 if ($PassThru) {
     return [pscustomobject]@{

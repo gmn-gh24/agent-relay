@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { RelayAgent, RelayView } from '../types'
-import { applyFeedLine, clockOf, emptyView, splitOwnerText, statusOf, takeLines } from './feed'
+import { applyFeedLine, clockOf, emptyView, isCutText, reasonOf, splitOwnerText, statusOf, takeLines, textRows } from './feed'
 import type { FeedEvent } from './feed'
 
 // The chat window of a room. It is thin on purpose: everything that knows a room lives in the scripts, and
@@ -17,6 +17,14 @@ const view = atom({ plugin: 'agent-relay', key: 'view' } as const, null)
 
 // Which feed loop is the current one: binding another room, or none, ends the loop before it
 let feedRun = 0
+
+// The feed is also the room's tamper check and the coordinator's heartbeat: one that ends by itself is started
+// again after these waits, and the owner is told when they are used up. A feed that ran this long before it
+// ended starts the count again.
+const RESTART_WAITS_MS: readonly number[] = [5000, 30000, 120000]
+const STEADY_MS = 600000
+
+type FeedEnd = { reason: string; isClosed: boolean }
 
 const scriptOf = ($: EngineInterface, name: string): string =>
   `${$.plugin.root}/skills/agent-relay/scripts/${name}`
@@ -45,50 +53,139 @@ const tell = async ($: EngineInterface, id: string, events: readonly FeedEvent[]
   }
 }
 
-const startFeed = ($: EngineInterface, id: string): void => {
+// One run of the feed, read to its end: what it prints becomes the view, and why it ended comes back (what it
+// wrote as an error, or the last error line it printed)
+const readFeed = async ($: EngineInterface, id: string, run: number): Promise<FeedEnd> => {
+  let rest = ''
+  let errors = ''
+  let said = ''
+  let isClosed = false
+  try {
+    const feed = $.process.spawn({
+      argv: shellOf(scriptOf($, 'Watch-RelayFeed.ps1'), ['-Room', id, '-Json', '-EndWithParent']),
+      env: { PSModulePath: '' },
+    })
+    for await (const chunk of feed) {
+      if (run !== feedRun) break
+      if (chunk.stream === 'stderr') {
+        if (errors.length < 4000) errors += chunk.text
+        continue
+      }
+      const taken = takeLines(rest + chunk.text)
+      rest = taken.rest
+      for (const line of taken.lines) {
+        let events: FeedEvent[] = []
+        await update($, view, current => {
+          const applied = applyFeedLine(current ?? emptyView(id), line)
+          events = applied.events
+
+          return applied.view
+        })
+        for (const event of events) {
+          if (event.kind === 'error') said = event.text
+          if (event.kind === 'closed') isClosed = true
+        }
+        await tell($, id, events)
+      }
+      $.ui.status(statusOf(await read($, view)))
+    }
+  } catch (error) {
+    return { reason: reasonOf(error instanceof Error ? error.message : String(error)), isClosed }
+  }
+
+  return { reason: reasonOf(errors) || reasonOf(said), isClosed }
+}
+
+// first: the lines of a look at the room that was taken just before (bind), drawn until the feed's own arrive
+const startFeed = ($: EngineInterface, id: string, first: readonly string[] = []): void => {
   feedRun += 1
   const run = feedRun
   void (async () => {
-    await update($, view, () => ({ ...emptyView(id), note: 'Connecting to the room...' }))
-    let rest = ''
-    try {
-      const feed = $.process.spawn({
-        argv: shellOf(scriptOf($, 'Watch-RelayFeed.ps1'), ['-Room', id, '-Json', '-EndWithParent']),
-        env: { PSModulePath: '' },
-      })
-      for await (const chunk of feed) {
-        if (run !== feedRun) break
-        if (chunk.stream !== 'stdout') continue
-        const taken = takeLines(rest + chunk.text)
-        rest = taken.rest
-        for (const line of taken.lines) {
-          let events: FeedEvent[] = []
-          await update($, view, current => {
-            const applied = applyFeedLine(current ?? emptyView(id), line)
-            events = applied.events
+    let seen = emptyView(id)
+    const found: FeedEvent[] = []
+    for (const line of first) {
+      const applied = applyFeedLine(seen, line)
+      seen = applied.view
+      found.push(...applied.events)
+    }
+    await update($, view, () => (seen.isClosed ? seen : { ...seen, note: 'Connecting to the room...' }))
+    await tell($, id, found)
+    let restarts = 0
+    for (;;) {
+      const startedAt = await $.clock.now()
+      const ended = await readFeed($, id, run)
+      // Another room was bound, or none: that loop speaks now
+      if (run !== feedRun) return
+      if (ended.isClosed) return
+      const why = ended.reason === '' ? '' : `: ${ended.reason}`
+      if ((await $.clock.now()) - startedAt >= STEADY_MS) restarts = 0
+      const wait = RESTART_WAITS_MS[restarts]
+      if (wait === undefined) {
+        // Nothing checks the room for tampering now and no agent sees the coordinator alive: the owner is
+        // told where it cannot be missed, not only in a pane that may be closed
+        const text = `relay ${id}: the feed has ended${why}. The tamper check and the coordinator's heartbeat have stopped with it. /relay ${id} starts it again.`
+        await update($, view, current => (current === null ? current : { ...current, note: text }))
+        $.ui.status(`relay ${id} | THE FEED HAS ENDED`)
+        const sent = await $.ui.notify(text, { title: 'agent-relay' })
+        if (!sent.isSent) $.ui.toast(text)
 
-            return applied.view
-          })
-          await tell($, id, events)
-        }
-        $.ui.status(statusOf(await read($, view)))
+        return
       }
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      if (run === feedRun) await update($, view, current => ({ ...(current ?? emptyView(id)), note: `The feed failed: ${reason}` }))
+      restarts += 1
+      const again = `The feed ended${why}. Starting it again in ${wait / 1000} seconds (try ${restarts} of ${RESTART_WAITS_MS.length}).`
+      await update($, view, current => (current === null ? current : { ...current, note: again }))
+      await $.clock.sleep(wait)
+      if (run !== feedRun) return
     }
-    if (run === feedRun) {
-      await update($, view, current =>
-        current === null || current.isClosed ? current : { ...current, note: `The feed has ended. /relay ${id} starts it again.` },
-      )
+  })().catch(async (error: unknown) => {
+    // The loop itself failed: said in the pane, like a feed that ended, never swallowed
+    const reason = reasonOf(error instanceof Error ? error.message : String(error))
+    try {
+      await update($, view, current => (current === null ? current : { ...current, note: `The feed loop failed: ${reason}. /relay ${id} starts it again.` }))
+    } catch {
+      // Nothing is left to say it with
     }
-  })()
+  })
 }
 
-const bind = async ($: EngineInterface, id: string): Promise<void> => {
+// Is it a room of this PC? One snapshot of the feed says so before anything is bound: a name that is no room
+// must not read as "bound". The look checks nothing and beats no heart; the feed that follows does.
+const firstLook = async ($: EngineInterface, wanted: string): Promise<{ lines: string[]; reason: string }> => {
+  try {
+    const looked = await $.process.run(
+      shellOf(scriptOf($, 'Watch-RelayFeed.ps1'), ['-Room', wanted, '-Json', '-Once', '-NoHeartbeat', '-NoTamperCheck']),
+      { env: { PSModulePath: '' }, timeoutMs: 60000 },
+    )
+    if (looked.exitCode !== 0) {
+      return { lines: [], reason: reasonOf(looked.stderr || looked.stdout) || `the feed ended with exit code ${looked.exitCode}` }
+    }
+
+    return { lines: takeLines(`${looked.stdout}\n`).lines, reason: '' }
+  } catch (error) {
+    return { lines: [], reason: reasonOf(error instanceof Error ? error.message : String(error)) || 'the feed could not be started' }
+  }
+}
+
+// Binds the session to a room and says which, by the id the room has on this PC; or says why not, and then
+// whatever was bound before stays as it is
+const bind = async ($: EngineInterface, wanted: string): Promise<{ id: string; reason: string }> => {
+  const look = await firstLook($, wanted)
+  if (look.reason !== '') return { id: '', reason: look.reason }
+  let seen = emptyView(wanted)
+  let isUp = false
+  for (const line of look.lines) {
+    const applied = applyFeedLine(seen, line)
+    seen = applied.view
+    if (applied.events.some(event => event.kind === 'up' || event.kind === 'closed')) isUp = true
+  }
+  if (!isUp) return { id: '', reason: seen.note || 'the feed printed no snapshot of that room' }
+  const id = seen.room
   await update($, room, () => id)
-  startFeed($, id)
-  void $.ui.open({ id: PANE, title: `relay ${id}`, columns: 64, rows: 18 })
+  startFeed($, id, look.lines)
+  // A pane that cannot be opened (a surface without one) takes nothing from the binding: the feed runs
+  void $.ui.open({ id: PANE, title: `relay ${id}`, columns: 64, rows: 18 }).catch(() => undefined)
+
+  return { id, reason: '' }
 }
 
 const unbind = async ($: EngineInterface): Promise<void> => {
@@ -181,9 +278,9 @@ export const register: Register = on => {
       return { text: 'The relay pane is unbound; its feed has stopped.' }
     }
     if (wanted !== '') {
-      await bind($, wanted)
+      const done = await bind($, wanted)
 
-      return { text: `Relay pane bound to room ${wanted}.` }
+      return { text: done.reason === '' ? `Relay pane bound to room ${done.id}.` : `Not bound: ${done.reason}` }
     }
     const bound = await read($, room)
     if (bound === null) return { text: 'No room is bound. Type /relay <room id>.' }
@@ -200,9 +297,12 @@ export const register: Register = on => {
 
       return { result: 'Unbound. The feed has stopped; start Watch-RelayFeed.ps1 yourself if the room is still open.' }
     }
-    await bind($, wanted)
+    const done = await bind($, wanted)
+    if (done.reason !== '') {
+      return { result: `Not bound: ${done.reason}. Nothing checks that room for tampering and nothing shows you alive in it until a feed runs: bind a room that exists on this PC, or run Watch-RelayFeed.ps1 for it yourself.` }
+    }
 
-    return { result: `Bound to room ${wanted}. The chat window shows it; its feed is the room's tamper check and your heartbeat.` }
+    return { result: `Bound to room ${done.id}. The chat window shows it; its feed is the room's tamper check and your heartbeat.` }
   }).catch(() => ({ deny: 'relay_bind failed. Run Watch-RelayFeed.ps1 for the room yourself; /relay <room> binds the pane by hand.' }))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -236,10 +336,13 @@ export const register: Register = on => {
     const working = agents.filter(agent => agent.progress !== '').length
     // What is left for the conversation once the fixed parts have their rows; each message takes two
     const planRows = plan === null ? 0 : 2 + plan.parts.length
-    const fixed = 6 + agents.length + working + planRows + current.cards.length * 4 + Math.min(2, current.alarms.length)
+    const width = columns - 2
+    // A card is shown whole, as the feed gives it: the owner decides on what it says. Its rows: the margin, the
+    // border, the subject and the buttons, then the text, then the line that says the feed cut it.
+    const cardRows = current.cards.reduce((sum, card) => sum + 5 + textRows(card.text, width - 4) + (isCutText(card.text) ? 2 : 0), 0)
+    const fixed = 6 + agents.length + working + planRows + cardRows + Math.min(2, current.alarms.length)
     const shown = Math.max(3, Math.floor((rows - fixed) / 2))
     const messages = current.messages.slice(-shown)
-    const width = columns - 2
 
     return (
       <Box flexDirection="column" width={columns}>
@@ -292,7 +395,12 @@ export const register: Register = on => {
             <Text bold wrap="truncate-end">
               {`Your decision: ${card.subject}`}
             </Text>
-            <Text wrap="wrap">{card.text.slice(0, width * 3)}</Text>
+            <Text wrap="wrap">{card.text}</Text>
+            {isCutText(card.text) && (
+              <Text color="yellow" wrap="wrap">
+                This card is longer than what is shown here. Ask the coordinator for all of it before you decide.
+              </Text>
+            )}
             <Box flexDirection="row" gap={2}>
               <Button
                 key={`approve-${card.id}`}

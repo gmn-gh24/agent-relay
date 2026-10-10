@@ -19,7 +19,9 @@
     Id of the agent's request this card is about.
 
 .PARAMETER DraftFile
-    The text of the card. Default: the coordinator's draft.md in the room. It is removed after use.
+    The text of the card. Default: draft.md of this room on this PC (<local>\rooms\<room id>\draft.md, the file the
+    coordinator's launcher names as its draft). A file in the room folder is refused: any agent can write there. A
+    relative path is taken against the PowerShell location, once. The file is removed after use.
 
 .PARAMETER Resolve
     Id of the card the owner answered in the session.
@@ -50,8 +52,21 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 
+function Resolve-TextFile {
+    # Where the text of a card comes from: this PC, never the room (any agent can write in the room folder). A file
+    # given by parameter is made absolute once, against the PowerShell location, and the same path is read and
+    # removed; one inside the room folder is refused.
+    param($RoomObject, [string]$File)
+    $default = Join-Path $RoomObject.Local 'draft.md'
+    if (-not $File) { return $default }
+    $full = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine((Get-Location).ProviderPath, $File))
+    $inside = [System.IO.Path]::GetFullPath($RoomObject.Path).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    if ($full.StartsWith($inside, [System.StringComparison]::OrdinalIgnoreCase)) { throw "The file $full lies inside the room folder, where any agent can write: no card is made from it. Put the text outside the room (default: $default)" }
+    return $full
+}
+
 $roomObject = Resolve-RelayRoom $Room
-if ($roomObject.IsClosed) { throw "The room $($roomObject.Id) is closed" }
+if (Test-Path -LiteralPath (Join-Path $roomObject.Canon 'CLOSED')) { throw "The room $($roomObject.Id) is closed" }
 
 if ($PSCmdlet.ParameterSetName -eq 'Resolve') {
     Complete-RelayOwnerCard -Room $roomObject -CardId $Resolve -Decision $Decision -Via 'session'
@@ -60,7 +75,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Resolve') {
     return
 }
 
-if (-not $DraftFile) { $DraftFile = Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $roomObject.Coordinator) 'draft.md' }
+$DraftFile = Resolve-TextFile $roomObject $DraftFile
 $text = (Read-RelayText $DraftFile).Trim()
 if (-not $text) { throw "There is nothing to ask: $DraftFile is missing or empty. Write the question there (line 1 = subject) and run this again." }
 $lines = @($text -split "`n")
@@ -72,4 +87,6 @@ if (-not $body) { $body = $subject }
 $id = Add-RelayOwnerCard -Room $roomObject -Subject $subject -Body $body -Re $Re
 Remove-Item -LiteralPath $DraftFile -Force -ErrorAction SilentlyContinue
 "CARD $id opened for the owner: $subject"
+'the text of the card, as recorded:'
+foreach ($line in @($body -split "`n")) { "  $line" }
 'NEXT: ask the owner in the session as well, then carry on with whatever does not depend on the answer.'

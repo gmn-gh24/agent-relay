@@ -1,6 +1,6 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
-import { applyFeedLine, clockOf, emptyView, splitOwnerText, statusOf, takeLines } from './feed'
+import { applyFeedLine, clockOf, emptyView, isCutText, reasonOf, splitOwnerText, statusOf, takeLines, textRows } from './feed'
 
 const SNAPSHOT = JSON.stringify({
   type: 'snapshot',
@@ -26,8 +26,42 @@ test('a snapshot becomes the view, and a card that waits on the owner is worth t
   expect(applied.view.messages).toHaveLength(1)
   expect(applied.view.cards).toHaveLength(1)
   expect(applied.view.forCoordinator).toBe(1)
-  expect(applied.events).toEqual([{ kind: 'card', subject: 'May Emma install the provider?' }])
+  expect(applied.events).toEqual([{ kind: 'up' }, { kind: 'card', subject: 'May Emma install the provider?' }])
   expect(statusOf(applied.view)).toBe('relay pester-on-training-vm | 1 waiting on you | 1 for the coordinator')
+})
+
+test('only a snapshot says that the room is up; an error line of the feed is kept as the reason it gave', () => {
+  const failed = applyFeedLine(emptyView('room'), JSON.stringify({ type: 'error', text: 'the share is gone' }))
+  expect(failed.view.note).toBe('the share is gone')
+  expect(failed.events).toEqual([{ kind: 'error', text: 'the share is gone' }])
+  expect(applyFeedLine(emptyView('room'), JSON.stringify({ type: 'tick' })).events).toHaveLength(0)
+  // The snapshot of a feed that was started again tells no card the view holds already
+  const first = applyFeedLine(emptyView('room'), SNAPSHOT)
+  expect(applyFeedLine(first.view, SNAPSHOT).events).toEqual([{ kind: 'up' }])
+})
+
+test('why a script ended is its message on one line, without the lines about where it was thrown', () => {
+  const thrown = [
+    'No room at C:\\work\\nothing: it is not in the room',
+    'index of this PC',
+    'At R:\\agent-relay\\skills\\agent-relay\\scripts\\RelayCommon.psm1:231 char:9',
+    '+         throw "No room at $text"',
+    '    + CategoryInfo          : OperationStopped: (...) [], RuntimeException',
+  ].join('\r\n')
+  expect(reasonOf(thrown)).toBe('No room at C:\\work\\nothing: it is not in the room index of this PC')
+  expect(reasonOf('')).toBe('')
+  expect(reasonOf(`first${String.fromCharCode(27)}[2J line`)).toBe('first [2J line')
+  expect(reasonOf('x'.repeat(400))).toHaveLength(304)
+})
+
+test('a card the feed cut is known by its mark, and a text takes the rows its wrapped lines need', () => {
+  expect(isCutText(`${'word '.repeat(120)}...`)).toBe(true)
+  expect(isCutText('She asks to install it.')).toBe(false)
+  expect(isCutText('It goes on...')).toBe(false)
+  expect(textRows('one line', 40)).toBe(1)
+  expect(textRows('x'.repeat(81), 40)).toBe(3)
+  expect(textRows('Line one\n\nLine three', 40)).toBe(3)
+  expect(textRows('anything', 0)).toBe(8)
 })
 
 test('a message is added once, an alarm is kept and told, a line that is no JSON changes nothing', () => {
@@ -143,4 +177,89 @@ test('the pane says how to bind a room while none is bound, on every surface tha
     expect(await ui.find({ type: 'Text', text: /No room is bound/ })).toBeDefined()
     await ui.unmount()
   }
+})
+
+test('a name that is no room of this PC is not bound, and the reason is said', async ($, on) => {
+  const asked: string[][] = []
+  on('process.run', (_$, e) => {
+    asked.push([...e.argv])
+
+    return { value: { exitCode: 1, stdout: '', stderr: 'No room named nothing in the room index\r\nof this PC\r\nAt R:\\x.psm1:1 char:1', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  const answer = await $.command.run({ command: 'relay', args: 'nothing' } as Parameters<typeof $.command.run>[0])
+  expect(answer.text).toBe('Not bound: No room named nothing in the room index of this PC')
+  // The look checks nothing in the room and beats no heart: it only asks whether the room is one
+  expect(asked[0]?.slice(-6)).toEqual(['-Room', 'nothing', '-Json', '-Once', '-NoHeartbeat', '-NoTamperCheck'])
+  const ui = await $.ui.mount({
+    plugin: 'agent-relay',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'relay',
+    props: { title: 'relay', isFocused: false, bodyColumns: 60, placement: 'inline', scroll: { offset: 0, bodyRows: 20 }, view: {} },
+  })
+  expect(await ui.find({ type: 'Text', text: /No room is bound/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a room that resolves is bound by its own id, a cut card says that there is more, and a feed that ends is started again', async ($, on) => {
+  const snapshot = JSON.stringify({
+    type: 'snapshot',
+    room: 'room-a',
+    job: 'A job',
+    agents: [],
+    messages: [],
+    waitingOnOwner: [{ id: 'card-0001', re: '', subject: 'May she?', text: `${'word '.repeat(120)}...` }],
+    waitingOnCoordinator: [],
+  })
+  on('process.run', () => ({ value: { exitCode: 0, stdout: `${snapshot}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  let spawned = 0
+  on('process.spawn', async function* () {
+    spawned += 1
+    yield { stream: 'stdout' as const, text: `${snapshot}\n` }
+
+    return { value: { code: 1, signal: null } }
+  })
+  const clock = mock.clock(on)
+  const told: string[] = []
+  const statuses: (string | undefined)[] = []
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', (_$, e) => {
+    statuses.push(e.text)
+
+    return { value: undefined }
+  })
+  on('ui.notify', (_$, e) => {
+    told.push(e.text)
+
+    return { value: { isSent: true as const, channel: 'terminal_bell' as const } }
+  })
+  const answer = await $.command.run({ command: 'relay', args: 'C:\\rooms\\room-a' } as Parameters<typeof $.command.run>[0])
+  expect(answer.text).toBe('Relay pane bound to room room-a.')
+  // The feed of this test ends as soon as it has printed its snapshot
+  await clock.advance(0)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({
+      plugin: 'agent-relay',
+      surface,
+      component: 'Pane',
+      requestId: 'relay',
+      props: { title: 'relay', isFocused: false, bodyColumns: 60, placement: 'inline', scroll: { offset: 0, bodyRows: 20 }, view: {} },
+    })
+    expect(await ui.find({ type: 'Text', text: /Your decision: May she\?/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /longer than what is shown here/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Starting it again in 5 seconds \(try 1 of 3\)/ })).toBeDefined()
+    await ui.unmount()
+  }
+
+  // The card was told once, when the room was bound: a feed that starts again does not tell it again
+  expect(told).toEqual(['room-a: your decision is needed: May she?'])
+  // The waits run out one after the other; then the owner is told where it cannot be missed
+  await clock.advance(5000)
+  await clock.advance(30000)
+  expect(told).toHaveLength(1)
+  await clock.advance(120000)
+  expect(told).toHaveLength(2)
+  expect(told[1]).toMatch(/^relay room-a: the feed has ended\. The tamper check and the coordinator's heartbeat have stopped with it\. \/relay room-a starts it again\.$/)
+  expect(statuses.at(-1)).toBe('relay room-a | THE FEED HAS ENDED')
+  expect(spawned).toBe(4)
 })

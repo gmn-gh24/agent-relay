@@ -26,7 +26,7 @@
     Id of the card the owner answers in words. Text is required.
 
 .PARAMETER TextFile
-    Read the text from this file instead of standard input.
+    Read the text from this file instead of standard input. A relative path is taken against the PowerShell location.
 
 .EXAMPLE
     'Use the staging share, not production.' | .\Send-RelayOwner.ps1 -Room 2026-10-10-docs -For emma
@@ -50,10 +50,14 @@ Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 
 $roomObject = Resolve-RelayRoom $Room
-if ($roomObject.IsClosed) { throw "The room $($roomObject.Id) is closed" }
+if (Test-Path -LiteralPath (Join-Path $roomObject.Canon 'CLOSED')) { throw "The room $($roomObject.Id) is closed" }
 
 $text = ''
-if ($TextFile) { $text = Read-RelayText $TextFile }
+if ($TextFile) {
+    # A relative path is taken against the PowerShell location, once
+    $TextFile = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine((Get-Location).ProviderPath, $TextFile))
+    $text = Read-RelayText $TextFile
+}
 elseif ([Console]::IsInputRedirected) {
     # Bytes, decoded here as UTF-8: the console's input code page must not get a say
     $stream = [Console]::OpenStandardInput()

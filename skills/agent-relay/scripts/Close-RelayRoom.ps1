@@ -9,9 +9,13 @@
     Before this, the coordinator sends its closing note to all and waits for each agent's bye (the bye says what
     slowed that agent down). The script refuses while an agent that has started has not said bye, unless -Force.
 
+    A room is closed when this PC says so: the CLOSED marker of its canonical copy. A CLOSED that anybody else puts into
+    the room closes nothing; the tamper check, which runs first here, moves it out.
+
     Closing writes TRANSCRIPT.md into the room, sets the CLOSED marker (the tools refuse a closed room from then
     on), saves the statistics and a zip of the whole room under the machine state folder, and marks the room
-    closed in the room index. The room folder itself stays where it is.
+    closed in the room index. The room folder itself stays where it is. If the zip could not be made, run this again
+    on the closed room: it makes the archive and says so.
 
     -ListClosed shows closed rooms whose folder still exists. -Remove deletes the folder of one closed room; it
     needs the archive to exist and asks for confirmation (-Confirm:$false to skip, -WhatIf to see only).
@@ -82,8 +86,42 @@ if ($PSCmdlet.ParameterSetName -eq 'Remove') {
     return
 }
 
+function Save-RoomArchive {
+    # The zip of the whole room under the machine state folder; $false (and an alarm) when it could not be made
+    param($RoomObject, [string]$Archive)
+    try {
+        if (-not (Test-Path -LiteralPath $archiveRoot)) { $null = New-Item -ItemType Directory -Path $archiveRoot -Force }
+        if (Test-Path -LiteralPath $Archive) { Remove-Item -LiteralPath $Archive -Force }
+        Compress-Archive -Path (Join-Path $RoomObject.Path '*') -DestinationPath $Archive -Force
+        return $true
+    }
+    catch {
+        Add-RelayAlarm $RoomObject "ARCHIVE failed: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 $roomObject = Resolve-RelayRoom $Room
-if ($roomObject.IsClosed) { "The room $($roomObject.Id) is already closed."; return }
+# The tamper pass comes first: what anybody but this PC wrote into the room is put right before anything is read
+foreach ($finding in @(Test-RelayTamper $roomObject -Repair)) {
+    $done = 'restored from the copy on this PC'
+    if ($finding.Kind -eq 'extra') { $done = 'it does not belong there and was moved out' }
+    if (-not $finding.Repaired) { $done = 'it could not be put right' }
+    ConvertTo-RelayPrintedLine "tamper check: $($finding.Relative) was $($finding.Kind): $done"
+}
+# Closed is what this PC says: the canonical CLOSED marker
+if (Test-Path -LiteralPath (Join-Path $roomObject.Canon 'CLOSED')) {
+    $closedArchive = Join-Path $archiveRoot "$($roomObject.Id).zip"
+    if (Test-Path -LiteralPath $closedArchive) { "The room $($roomObject.Id) is already closed."; return }
+    # Closed, but the archive of an earlier call failed: make it now
+    if (-not (Test-Path -LiteralPath $roomObject.Path)) { throw "The room $($roomObject.Id) is closed and has no archive, and its folder is gone: $($roomObject.Path)" }
+    if (Save-RoomArchive $roomObject $closedArchive) {
+        "The room $($roomObject.Id) was already closed; its archive was missing and is made now."
+        "archive: $closedArchive"
+    }
+    else { 'ARCHIVE FAILED again: the room folder is the only copy, do not remove it. Run this again when the reason is gone (see alarms.log of the room).' }
+    return
+}
 $board = Get-RelayBoard $roomObject
 $stillHere = @($board.agents | Where-Object { -not $_.isCoordinator -and $_.isIntroduced -and @('offline', 'retired') -notcontains $_.state })
 if ($stillHere.Count -gt 0 -and -not $Force) {
@@ -116,7 +154,7 @@ foreach ($agent in @($board.agents)) {
 $text.Add('')
 $text.Add('## Standing rules and owner decisions')
 $text.Add('')
-$rules = @(((Read-RelayText (Join-Path $roomObject.Path 'DECISIONS.md')) -split "`n") | Where-Object { $_ -match '^\s*\|' })
+$rules = @(((Read-RelayText (Join-Path $roomObject.Canon 'DECISIONS.md')) -split "`n") | Where-Object { $_ -match '^\s*\|' })
 if ($rules.Count -gt 2) { foreach ($rule in $rules) { $text.Add($rule) } } else { $text.Add('(none)') }
 $text.Add('')
 $text.Add('## Messages')
@@ -162,12 +200,8 @@ Write-RelayGuardedText $roomObject 'TRANSCRIPT.md' $transcript
 Write-RelayGuardedText $roomObject 'CLOSED' ("closed_utc: $closedUtc`nby: $($roomObject.Coordinator)`n")
 Write-RelayText (Join-Path $roomObject.Local 'stats.json') ((ConvertTo-Json -InputObject $stats -Depth 6) + "`n")
 
-if (-not (Test-Path -LiteralPath $archiveRoot)) { $null = New-Item -ItemType Directory -Path $archiveRoot -Force }
 $archive = Join-Path $archiveRoot "$($roomObject.Id).zip"
-if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
-$isArchived = $true
-try { Compress-Archive -Path (Join-Path $roomObject.Path '*') -DestinationPath $archive -Force }
-catch { $isArchived = $false; Add-RelayAlarm $roomObject "ARCHIVE failed: $($_.Exception.Message)" }
+$isArchived = Save-RoomArchive $roomObject $archive
 
 $index = New-Object System.Collections.Generic.List[object]
 foreach ($entry in @(Get-RelayRoomIndex)) {
@@ -178,7 +212,7 @@ Save-RelayRoomIndex $index.ToArray()
 
 "CLOSED room $($roomObject.Id)"
 "transcript: " + (Join-Path $roomObject.Path 'TRANSCRIPT.md')
-if ($isArchived) { "archive: $archive" } else { "ARCHIVE FAILED: the room folder is the only copy, do not remove it" }
+if ($isArchived) { "archive: $archive" } else { "ARCHIVE FAILED: the room folder is the only copy, do not remove it. Run this again on the closed room to make the archive." }
 "statistics: " + (Join-Path $roomObject.Local 'stats.json')
 if ($stillHere.Count -gt 0) { 'closed with -Force; no bye from: ' + ((@($stillHere | ForEach-Object { $_.name })) -join ', ') }
 'NEXT: run the retro (workflow "Improve"): Get-RelayStats.ps1, the byes, lessons.md.'

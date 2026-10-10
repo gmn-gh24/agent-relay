@@ -8,6 +8,9 @@ history/
 # Types the engine writes next to a loaded mod
 .claude-plugin/types/
 
+# What an eval run leaves behind: transcripts and reports of this machine's sessions
+evals/results/
+
 node_modules/
 *.log
 testResults*.xml
