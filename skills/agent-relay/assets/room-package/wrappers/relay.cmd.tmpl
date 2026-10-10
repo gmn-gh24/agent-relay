@@ -1,0 +1,13 @@
+@echo off
+rem agent-relay wrapper for {{DISPLAY}} ({{NAME}}), generation {{GEN}}, room {{ROOM_ID}}.
+rem Written on the coordinator's PC. Do not edit it and do not copy it: it says who you are.
+setlocal
+set "RELAY_NAME={{NAME}}"
+set "RELAY_GEN={{GEN}}"
+set "RELAY_ROOM_ID={{ROOM_ID}}"
+set "RELAY_WRAPPER=%~f0"
+rem Called from PowerShell 7, the module path it hands down breaks the built-in cmdlets of Windows PowerShell:
+rem without the variable, Windows PowerShell builds its own.
+set "PSModulePath="
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\..\..\tools\relay.ps1" %*
+exit /b %ERRORLEVEL%

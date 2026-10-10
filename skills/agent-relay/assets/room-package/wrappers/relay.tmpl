@@ -1,0 +1,10 @@
+#!/bin/sh
+# agent-relay wrapper for {{DISPLAY}} ({{NAME}}), generation {{GEN}}, room {{ROOM_ID}}.
+# Written on the coordinator's PC. Do not edit it and do not copy it: it says who you are.
+RELAY_NAME='{{NAME}}'
+RELAY_GEN='{{GEN}}'
+RELAY_ROOM_ID='{{ROOM_ID}}'
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+RELAY_WRAPPER="$here/relay"
+export RELAY_NAME RELAY_GEN RELAY_ROOM_ID RELAY_WRAPPER
+exec sh "$here/../../../tools/relay.sh" "$@"

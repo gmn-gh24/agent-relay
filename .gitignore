@@ -1,0 +1,13 @@
+# Machine state: known machines and shares, name registry, room index, canonical copies, owner log, archives
+.local/
+
+# The original 2026-10-09 channel, kept on this machine as a worked example. It names real machines, a share
+# and an address, so it stays out of git. Nothing in the plugin reads it.
+history/
+
+# Types the engine writes next to a loaded mod
+.claude-plugin/types/
+
+node_modules/
+*.log
+testResults*.xml

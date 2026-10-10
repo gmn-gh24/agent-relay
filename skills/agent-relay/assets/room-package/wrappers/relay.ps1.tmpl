@@ -1,0 +1,10 @@
+# agent-relay wrapper for {{DISPLAY}} ({{NAME}}), generation {{GEN}}, room {{ROOM_ID}}.
+# Written on the coordinator's PC. Do not edit it and do not copy it: it says who you are.
+# Started as: powershell -NoProfile -ExecutionPolicy Bypass -File <this file> <verb>
+# No cmd.exe is involved, so the caller's working folder is kept even when it is on a share.
+$env:RELAY_NAME = '{{NAME}}'
+$env:RELAY_GEN = '{{GEN}}'
+$env:RELAY_ROOM_ID = '{{ROOM_ID}}'
+$env:RELAY_WRAPPER = $PSCommandPath
+& (Join-Path $PSScriptRoot '..\..\..\tools\relay.ps1') @args
+exit $LASTEXITCODE

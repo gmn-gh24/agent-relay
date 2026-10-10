@@ -1,0 +1,9 @@
+# agent-relay: join room {{ROOM_ID}}. Gives the session that runs it a free seat and a name, then introduces it.
+# Written on the coordinator's PC. Do not edit it.
+# Started as: powershell -NoProfile -ExecutionPolicy Bypass -File <this file> <product> <model> <effort>
+$env:RELAY_NAME = ''
+$env:RELAY_GEN = ''
+$env:RELAY_ROOM_ID = '{{ROOM_ID}}'
+$env:RELAY_WRAPPER = $PSCommandPath
+& (Join-Path $PSScriptRoot 'tools\relay.ps1') join @args
+exit $LASTEXITCODE

@@ -1,0 +1,12 @@
+{
+  "name": "agent-relay",
+  "description": "The agent-relay plugin: one session coordinates coding agents on other machines through a shared folder.",
+  "owner": { "name": "gmn-gh24" },
+  "plugins": [
+    {
+      "name": "agent-relay",
+      "source": "./",
+      "description": "Coordinate any number of coding agents on this PC, on other machines over a shared folder, or over SSH, from one session."
+    }
+  ]
+}

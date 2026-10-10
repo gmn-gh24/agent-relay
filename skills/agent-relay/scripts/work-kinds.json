@@ -1,0 +1,112 @@
+{
+  "development": {
+    "label": "Writing or changing code, tests included",
+    "wants": "strong",
+    "method": [
+      "Read the code you are about to change, and its tests, before you change it. Match its style, naming and structure.",
+      "Make the smallest change that does the job. Add or update tests together with the change."
+    ],
+    "report": [
+      "**Result:** what is done, in one or two lines. Say plainly if something is not done.",
+      "**Evidence:** the checks you ran (tests, linter, build) and what they printed.",
+      "**Decisions I made:** judgment calls you took yourself, each with the option you did not take.",
+      "**Findings and suggestions:** what you noticed outside your task. You did not act on these."
+    ]
+  },
+  "run": {
+    "label": "Running a command or a script and sending back what it printed",
+    "wants": "light",
+    "method": [
+      "Run exactly what the task names, as it is written. You add nothing, fix nothing and interpret nothing: when it fails, the failure is the result.",
+      "Change nothing on the machine beyond what the command itself does."
+    ],
+    "report": [
+      "**Output:** what it printed, complete; for long output the path of the file that holds all of it, and the lines that matter.",
+      "**Exit code** of each command, and how long it took.",
+      "**What you changed on the machine:** nothing, or what the command changed."
+    ]
+  },
+  "testing": {
+    "label": "Running tests or trying something out",
+    "wants": "standard",
+    "method": [
+      "You observe and report. You do not fix what you test, and you do not change the thing under test, unless the task says so.",
+      "Note the state before you start, and leave the machine as you found it unless the task says otherwise."
+    ],
+    "report": [
+      "**Result:** pass or fail for each step, the first failure first.",
+      "**Evidence:** the exact commands, their exit codes and the lines that show the outcome; where the full logs are.",
+      "**What you changed on the machine**, and how you put it back.",
+      "**Decisions I made:** judgment calls you took yourself, each with the option you did not take.",
+      "**Findings and suggestions:** what you noticed outside your task. You did not act on these."
+    ]
+  },
+  "debugging": {
+    "label": "Finding the cause of a failure",
+    "wants": "strong",
+    "method": [
+      "Find the cause and prove it: a reproduction that fails because of it, and a variation that does not.",
+      "Propose the fix. Apply it only when the task says so."
+    ],
+    "report": [
+      "**Result:** the cause in one or two lines, or plainly that it is not found yet.",
+      "**Evidence:** the reproduction, what it printed, and the variation that rules out the other suspects.",
+      "**Proposed fix:** what to change and where; whether you applied it.",
+      "**Decisions I made:** judgment calls you took yourself, each with the option you did not take.",
+      "**Findings and suggestions:** what you noticed outside your task. You did not act on these."
+    ]
+  },
+  "research": {
+    "label": "Finding something out",
+    "wants": "standard",
+    "method": [
+      "Read only: you change nothing.",
+      "Keep apart what a source says and what you conclude from it. Prefer the primary source: the code, the official documentation, the output of a command."
+    ],
+    "report": [
+      "**Answer:** the short answer first.",
+      "**Sources:** each with its link or path, what it supports, and how sure you are. Mark what is your own inference.",
+      "**Still open:** what you could not find out or could not verify.",
+      "**Findings and suggestions:** what you noticed outside the question. You did not act on these."
+    ]
+  },
+  "documentation": {
+    "label": "Writing or updating documentation",
+    "wants": "standard",
+    "method": [
+      "Every statement you write is checked against the code or against a command you ran. Do not document what you did not verify.",
+      "Match the structure, tone and formatting of the documents already there."
+    ],
+    "report": [
+      "**Result:** the files you changed and what changed in each, in a line or two.",
+      "**Evidence:** what you checked each changed statement against.",
+      "**Decisions I made:** judgment calls you took yourself, each with the option you did not take.",
+      "**Findings and suggestions:** what you noticed outside your task, such as code that disagrees with its documentation. You did not act on these."
+    ]
+  },
+  "review": {
+    "label": "Reviewing somebody's work",
+    "wants": "strong",
+    "method": [
+      "Read only: you change nothing. Judge the work against its task and the standards named here, not against your taste.",
+      "For every finding give the place, a concrete failing case and how sure you are."
+    ],
+    "report": [
+      "**Verdict:** acceptable as it is, acceptable after the fixes below, or not acceptable.",
+      "**Findings:** the most serious first; each with its place, the failing case and how sure you are.",
+      "**Not checked:** what you did not look at.",
+      "**Suggestions:** improvements that are not defects."
+    ]
+  },
+  "other": {
+    "label": "Anything else",
+    "wants": "standard",
+    "method": [],
+    "report": [
+      "**Result:** what is done, in one or two lines. Say plainly if something is not done.",
+      "**Evidence:** the commands you ran and what they printed, or the files and sources that show it.",
+      "**Decisions I made:** judgment calls you took yourself, each with the option you did not take.",
+      "**Findings and suggestions:** what you noticed outside your task. You did not act on these."
+    ]
+  }
+}
