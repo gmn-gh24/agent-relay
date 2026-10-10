@@ -625,3 +625,103 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
         $help | Should -Not -Match 'are not touched'
     }
 }
+
+Describe 'Shared helpers of the module: fixed time stamps, strict reads, whole writes, links (round 5)' -Tag 'Guard' {
+
+    BeforeEach {
+        $case = New-RelayTestId
+        $root = Join-Path $TestDrive "helpers-$case"
+        $null = New-Item -ItemType Directory -Path $root -Force
+        $env:AGENT_RELAY_LOCAL = Join-Path $root 'local'
+    }
+
+    It 'writes a time stamp the same way in every culture, and reads it back' {
+        $saved = [System.Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            $time = New-Object DateTime 2026, 10, 10, 21, 47, 49, ([DateTimeKind]::Utc)
+            foreach ($name in 'fi-FI', 'th-TH', 'ar-SA', 'en-US') {
+                [System.Threading.Thread]::CurrentThread.CurrentCulture = New-Object System.Globalization.CultureInfo $name
+                Format-RelayUtc $time | Should -Be '2026-10-10T21:47:49Z'
+                Format-RelayUtc $time 'yyyyMMddTHHmmssZ' | Should -Be '20261010T214749Z'
+                (ConvertFrom-RelayUtc '2026-10-10T21:47:49Z') | Should -Be $time
+            }
+        }
+        finally { [System.Threading.Thread]::CurrentThread.CurrentCulture = $saved }
+        ConvertFrom-RelayUtc 'not a time' | Should -BeNullOrEmpty
+    }
+
+    It 'reads a relative path against the PowerShell location, not the working folder of the process' {
+        $here = Join-Path $root 'here'
+        $null = New-Item -ItemType Directory -Path $here -Force
+        [System.IO.File]::WriteAllText((Join-Path $here 'note.txt'), "from here`n")
+        Push-Location -LiteralPath $here
+        try {
+            Read-RelayText 'note.txt' | Should -Be "from here`n"
+            Write-RelayText 'written.txt' "written`n"
+            Get-RelayFileHash 'note.txt' | Should -Not -BeNullOrEmpty
+            Get-RelayNormalPath 'note.txt' | Should -Be (Join-Path $here 'note.txt')
+        }
+        finally { Pop-Location }
+        Test-Path -LiteralPath (Join-Path $here 'written.txt') | Should -BeTrue
+    }
+
+    It 'reads a missing file as empty, and refuses to call a file that cannot be read empty when told to be strict' {
+        Read-RelayTextStrict (Join-Path $root 'none.txt') | Should -Be ''
+        $locked = Join-Path $root 'locked.txt'
+        [System.IO.File]::WriteAllText($locked, "text`n")
+        $stream = [System.IO.File]::Open($locked, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+        try {
+            if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+                { Read-RelayTextStrict $locked } | Should -Throw '*Could not read*'
+                Read-RelayText $locked | Should -Be ''
+            }
+        }
+        finally { $stream.Dispose() }
+    }
+
+    It 'writes a whole file at once and leaves no temporary file behind' {
+        $path = Join-Path $root 'state.json'
+        Write-RelayTextAtomic $path "one`n"
+        Write-RelayTextAtomic $path "two`n"
+        [System.IO.File]::ReadAllText($path) | Should -Be "two`n"
+        @(Get-ChildItem -LiteralPath $root -Filter '*.tmp' -Force).Count | Should -Be 0
+    }
+
+    It 'never takes a room index it cannot parse for an empty one when it writes the index back' {
+        $null = New-Item -ItemType Directory -Path $env:AGENT_RELAY_LOCAL -Force
+        $index = Join-Path $env:AGENT_RELAY_LOCAL 'rooms.json'
+        [System.IO.File]::WriteAllText($index, '[{"id": "kept", "path": ')
+        @(Get-RelayRoomIndex).Count | Should -Be 0
+        { Update-RelayRoomIndex -Change { param($entries) $entries } } | Should -Throw '*cannot be parsed*'
+        [System.IO.File]::ReadAllText($index) | Should -Be '[{"id": "kept", "path": '
+    }
+
+    It 'changes the room index through one call and keeps every other entry' {
+        Save-RelayRoomIndex @([pscustomobject]@{ id = 'one'; path = (Join-Path $root 'one'); closed_utc = '' }, [pscustomobject]@{ id = 'two'; path = (Join-Path $root 'two'); closed_utc = '' })
+        Update-RelayRoomIndex -Change { param($entries) foreach ($entry in $entries) { if ($entry.id -eq 'two') { $entry.closed_utc = 'now' } }; $entries }
+        $after = @(Get-RelayRoomIndex)
+        @($after | ForEach-Object { $_.id }) | Should -Be @('one', 'two')
+        @($after | Where-Object { $_.id -eq 'two' })[0].closed_utc | Should -Be 'now'
+    }
+
+    It 'lists the files of a folder without entering a link, and removes a tree without touching what a link points at' {
+        $outside = Join-Path $root 'outside'
+        $null = New-Item -ItemType Directory -Path $outside -Force
+        [System.IO.File]::WriteAllText((Join-Path $outside 'precious.txt'), "keep`n")
+        $tree = Join-Path $root 'tree'
+        $null = New-Item -ItemType Directory -Path (Join-Path $tree 'sub') -Force
+        [System.IO.File]::WriteAllText((Join-Path $tree 'sub\a.txt'), "a`n")
+        $link = Join-Path $tree 'sub\elsewhere'
+        try { $null = New-Item -ItemType SymbolicLink -Path $link -Target $outside -ErrorAction Stop }
+        catch { $null = New-Item -ItemType Junction -Path $link -Target $outside }
+        Test-RelayLink $link | Should -BeTrue
+        Test-RelayLinkedPath -Root $tree -Path (Join-Path $link 'precious.txt') | Should -BeTrue
+        Test-RelayLinkedPath -Root $tree -Path (Join-Path $tree 'sub\a.txt') | Should -BeFalse
+        $listed = Get-RelayFileTree $tree
+        @($listed.Files | ForEach-Object { $_.Name }) | Should -Be @('a.txt')
+        @($listed.Links) | Should -Be @($link)
+        Remove-RelayTree $tree -Confirm:$false
+        Test-Path -LiteralPath $tree | Should -BeFalse
+        [System.IO.File]::ReadAllText((Join-Path $outside 'precious.txt')) | Should -Be "keep`n"
+    }
+}

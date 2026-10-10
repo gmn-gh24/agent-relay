@@ -13,10 +13,97 @@ $script:RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..
 $script:PackageRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\assets\room-package'))
 $script:NamePattern = '^[a-z][a-z0-9]{1,15}$'
 $script:HasDateKind = $null
+$script:Invariant = [System.Globalization.CultureInfo]::InvariantCulture
 
 #region Text and files
 
 function Get-RelayPackageRoot { return $script:PackageRoot }
+
+function Format-RelayUtc {
+    # A UTC time as text in a fixed form. Without the invariant culture the colon of the format is the culture's
+    # time separator (a dot in fi-FI) and the year that of the culture's calendar (2569 in th-TH).
+    param([DateTime]$Time = [DateTime]::UtcNow, [string]$Format = 'yyyy-MM-ddTHH:mm:ssZ')
+    return $Time.ToString($Format, $script:Invariant)
+}
+
+function ConvertFrom-RelayUtc {
+    # A time as Format-RelayUtc writes it (or another ISO 8601 form) as a UTC time; $null when the text is none
+    param([string]$Text)
+    $parsed = [DateTime]::MinValue
+    $style = [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal
+    if ([DateTime]::TryParse([string]$Text, $script:Invariant, $style, [ref]$parsed)) { return $parsed }
+    return $null
+}
+
+function ConvertTo-RelayDisplayName {
+    # An agent's name as people read it: the first letter in upper case
+    param([string]$Name)
+    if (-not $Name) { return '' }
+    return ($Name.Substring(0, 1).ToUpperInvariant() + $Name.Substring(1))
+}
+
+function Resolve-RelayFullPath {
+    # A path as .NET reads it: a relative one is taken against the PowerShell location, as a cmdlet would, not
+    # against the working folder of the process, which PowerShell does not move along
+    param([string]$Path)
+    if (-not $Path -or [System.IO.Path]::IsPathRooted($Path)) { return $Path }
+    return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
+function Test-RelayLink {
+    # True when the path is a link of the file system: a symbolic link or a junction. Any agent can make one in
+    # the room, and what lies behind it is not the room's.
+    param([string]$Path)
+    try { return ((([System.IO.File]::GetAttributes($Path)) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) }
+    catch { return $false }
+}
+
+function Test-RelayLinkedPath {
+    # True when the path, or a folder between it and the root, is a link. The root itself is not judged: where
+    # the owner keeps the rooms is the owner's choice.
+    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Path)
+    $top = Get-RelayNormalPath $Root
+    $current = Get-RelayNormalPath $Path
+    while ($current.Length -gt $top.Length -and $current.StartsWith($top, [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-RelayLink $current) { return $true }
+        $current = [System.IO.Path]::GetDirectoryName($current)
+        if (-not $current) { break }
+    }
+    return $false
+}
+
+function Get-RelayFileTree {
+    # Every file under a folder without entering a link: a linked folder or file is no part of the tree and is
+    # listed under Links instead. A folder that cannot be listed is an error.
+    param([Parameter(Mandatory)][string]$Path)
+    $files = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+    $links = New-Object System.Collections.Generic.List[string]
+    $pending = New-Object System.Collections.Generic.Stack[string]
+    $pending.Push((Resolve-RelayFullPath $Path))
+    while ($pending.Count -gt 0) {
+        $folder = New-Object System.IO.DirectoryInfo $pending.Pop()
+        foreach ($entry in $folder.GetFileSystemInfos()) {
+            if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { $links.Add($entry.FullName); continue }
+            if ($entry -is [System.IO.DirectoryInfo]) { $pending.Push($entry.FullName) }
+            else { $files.Add([System.IO.FileInfo]$entry) }
+        }
+    }
+    return [pscustomobject]@{ Files = @($files.ToArray()); Links = @($links.ToArray()) }
+}
+
+function Remove-RelayTree {
+    # Deletes a folder with everything in it, without following a link: each link is removed as a link first,
+    # so that nothing behind a junction is deleted (Windows PowerShell 5.1 would recurse into it)
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)][string]$Path)
+    $full = Resolve-RelayFullPath $Path
+    if (-not $PSCmdlet.ShouldProcess($full, 'Delete the folder and everything in it, links as links')) { return }
+    foreach ($link in @((Get-RelayFileTree $full).Links)) {
+        if ([System.IO.Directory]::Exists($link)) { [System.IO.Directory]::Delete($link, $false) }
+        else { [System.IO.File]::Delete($link) }
+    }
+    Remove-Item -LiteralPath $full -Recurse -Force
+}
 
 function Test-RelayWorkingCopy {
     # True when these scripts run from the git working copy of the plugin (a folder marketplace reads the plugin
@@ -38,35 +125,68 @@ function Get-RelayLocalRoot {
     return $root
 }
 
-function Read-RelayText {
+function Read-RelayTextStrict {
+    # A text file as UTF-8 with LF line ends; '' when it does not exist. A file that exists and cannot be read is
+    # an error, never an empty text: for whatever is read in order to be written back.
     param([string]$Path)
+    $full = Resolve-RelayFullPath $Path
+    $reason = ''
     for ($try = 0; $try -lt 6; $try++) {
         try {
-            if (-not [System.IO.File]::Exists($Path)) { return '' }
-            $text = $script:Utf8.GetString([System.IO.File]::ReadAllBytes($Path))
+            if (-not [System.IO.File]::Exists($full)) { return '' }
+            $text = $script:Utf8.GetString([System.IO.File]::ReadAllBytes($full))
             if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
             return ($text -replace "`r", '')
         }
-        catch { Start-Sleep -Milliseconds 150 }
+        catch { $reason = $_.Exception.Message; Start-Sleep -Milliseconds 150 }
     }
-    return ''
+    throw "Could not read ${Path}: $reason"
+}
+
+function Read-RelayText {
+    # As Read-RelayTextStrict, with '' also for a file that cannot be read right now: for what is only looked at
+    param([string]$Path)
+    try { return (Read-RelayTextStrict $Path) } catch { return '' }
 }
 
 function Write-RelayText {
-    # UTF-8 without BOM. LF line ends unless -Crlf (the cmd wrappers).
-    param([string]$Path, [string]$Text, [switch]$Crlf)
+    # UTF-8 without BOM (-Bom: with one, which Windows PowerShell 5.1 needs to read a script that is not ASCII).
+    # LF line ends unless -Crlf (the cmd wrappers).
+    param([string]$Path, [string]$Text, [switch]$Crlf, [switch]$Bom)
+    $Path = Resolve-RelayFullPath $Path
     $normalized = ($Text -replace "`r`n", "`n") -replace "`r", "`n"
     if ($Crlf) { $normalized = $normalized -replace "`n", "`r`n" }
+    $encoding = $script:Utf8
+    if ($Bom) { $encoding = New-Object System.Text.UTF8Encoding($true) }
     $folder = Split-Path -Parent $Path
     if ($folder -and -not (Test-Path -LiteralPath $folder)) { $null = New-Item -ItemType Directory -Path $folder -Force }
     for ($try = 0; ; $try++) {
-        try { [System.IO.File]::WriteAllText($Path, $normalized, $script:Utf8); return }
+        try { [System.IO.File]::WriteAllText($Path, $normalized, $encoding); return }
         catch { if ($try -ge 5) { throw }; Start-Sleep -Milliseconds 150 }
+    }
+}
+
+function Write-RelayTextAtomic {
+    # A whole file written so that a reader finds the old text or the new one, never a part: a temporary file
+    # beside it is moved over it. For this PC's own state (the room index, the name registry).
+    param([Parameter(Mandatory)][string]$Path, [string]$Text)
+    $Path = Resolve-RelayFullPath $Path
+    $temporary = '{0}.{1}.tmp' -f $Path, [guid]::NewGuid().ToString('N')
+    Write-RelayText $temporary $Text
+    try {
+        # [NullString]: PowerShell hands a plain $null over to a string parameter as an empty string
+        if ([System.IO.File]::Exists($Path)) { [System.IO.File]::Replace($temporary, $Path, [NullString]::Value) }
+        else { [System.IO.File]::Move($temporary, $Path) }
+    }
+    catch {
+        try { [System.IO.File]::Delete($temporary) } catch { $null = $_ }
+        throw
     }
 }
 
 function Add-RelayLine {
     param([string]$Path, [string]$Line)
+    $Path = Resolve-RelayFullPath $Path
     $folder = Split-Path -Parent $Path
     if ($folder -and -not (Test-Path -LiteralPath $folder)) { $null = New-Item -ItemType Directory -Path $folder -Force }
     for ($try = 0; ; $try++) {
@@ -154,6 +274,7 @@ function Get-RelayBytesHash {
 function Get-RelayFileHash {
     # Empty string when the file is missing or cannot be read right now
     param([string]$Path)
+    $Path = Resolve-RelayFullPath $Path
     for ($try = 0; $try -lt 4; $try++) {
         try {
             if (-not [System.IO.File]::Exists($Path)) { return '' }
@@ -162,11 +283,6 @@ function Get-RelayFileHash {
         catch { Start-Sleep -Milliseconds 150 }
     }
     return ''
-}
-
-function Get-RelayTextHash {
-    param([string]$Text)
-    return (Get-RelayBytesHash ($script:Utf8.GetBytes((($Text -replace "`r", '')).TrimEnd())))
 }
 
 function Get-RelayFileTimeUtc {
@@ -202,11 +318,18 @@ function ConvertFrom-RelayJson {
 }
 
 function Get-RelayRoomIndex {
+    # The rooms of this PC. -Strict: an index that exists and cannot be read or parsed is an error, for a caller
+    # that writes the index back; without it such an index lists no room.
+    param([switch]$Strict)
     $path = Join-Path (Get-RelayLocalRoot) 'rooms.json'
-    $text = Read-RelayText $path
+    if ($Strict) { $text = Read-RelayTextStrict $path } else { $text = Read-RelayText $path }
     if (-not $text.Trim()) { return @() }
     # Windows PowerShell hands a JSON array over as one object: piping it gives the entries in both editions
-    $parsed = ConvertFrom-RelayJson $text
+    try { $parsed = ConvertFrom-RelayJson $text }
+    catch {
+        if ($Strict) { throw "The room index of this PC cannot be parsed, it is not written over: $path ($($_.Exception.Message))" }
+        return @()
+    }
     return @($parsed | ForEach-Object { $_ })
 }
 
@@ -215,13 +338,34 @@ function Save-RelayRoomIndex {
     $json = '[]'
     foreach ($entry in @($Rooms)) { if ($null -ne $entry -and $null -ne $entry.PSObject.Properties['path'] -and [string]$entry.path) { $entry.path = Get-RelayNormalPath ([string]$entry.path) } }
     if (@($Rooms).Count -gt 0) { $json = ConvertTo-Json -InputObject @($Rooms) -Depth 6 }
-    Write-RelayText (Join-Path (Get-RelayLocalRoot) 'rooms.json') ($json + "`n")
+    Write-RelayTextAtomic (Join-Path (Get-RelayLocalRoot) 'rooms.json') ($json + "`n")
+}
+
+function Update-RelayRoomIndex {
+    # Reads the room index, hands its entries to -Change and saves the entries that come back: one caller at a
+    # time on this PC (a named mutex), and an index that cannot be read is an error, never an empty list.
+    param([Parameter(Mandatory)][scriptblock]$Change)
+    $local = Get-RelayLocalRoot
+    $mutexName = 'Local\agent-relay-index-' + (Get-RelayBytesHash ($script:Utf8.GetBytes((Get-RelayNormalPath $local).ToLowerInvariant()))).Substring(0, 16)
+    $mutex = New-Object System.Threading.Mutex($false, $mutexName)
+    $held = $false
+    try {
+        try { $held = $mutex.WaitOne(30000) } catch [System.Threading.AbandonedMutexException] { $held = $true }
+        if (-not $held) { throw 'Another script of this PC holds the room index: try again' }
+        $entries = @(Get-RelayRoomIndex -Strict)
+        $changed = @(& $Change $entries)
+        Save-RelayRoomIndex $changed
+    }
+    finally {
+        if ($held) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
+    }
 }
 
 function Get-RelayNormalPath {
     # The normal form of a path: the full path, no trailing separator (a root keeps its own)
     param([Parameter(Mandatory)][string]$Path)
-    $full = [System.IO.Path]::GetFullPath($Path)
+    $full = [System.IO.Path]::GetFullPath((Resolve-RelayFullPath $Path))
     $root = [System.IO.Path]::GetPathRoot($full)
     if ($full.Length -gt $root.Length) { $full = $full.TrimEnd('\', '/') }
     return $full
@@ -373,13 +517,6 @@ function Copy-RelayGuardedFile {
         $folder = Split-Path -Parent $target
         if (-not (Test-Path -LiteralPath $folder)) { $null = New-Item -ItemType Directory -Path $folder -Force }
         [System.IO.File]::WriteAllBytes($target, [System.IO.File]::ReadAllBytes($Source))
-    }
-}
-
-function Clear-RelayGuardedFile {
-    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Relative)
-    foreach ($target in (Join-Path $Room.Canon $Relative), (Join-Path $Room.Path $Relative)) {
-        if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
     }
 }
 
