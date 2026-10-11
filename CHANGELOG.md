@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.5 (2026-10-11)
+## 0.3.7 (2026-10-11)
 
 What a review of the design found, and the fixes (room package 3.2.2; running rooms:
 `scripts/Update-RelayRoom.ps1 -Room <id>`):
@@ -32,6 +32,20 @@ What a review of the design found, and the fixes (room package 3.2.2; running ro
   Faults suite names all six pause points.
 - Tests: Guard G15 (forged messages), G16 (one-step writes), G17 (the module's error preference), a Scripts test
   that holds the board's open requests against every agent's `show open`, and a Faults race for the lock.
+
+## 0.3.5 (2026-10-11)
+
+Wording, after a live room with one elevated agent (no change to the scripts or the room package):
+
+- The startup interview: the product of a named agent is asked, never chosen. A guessed product gave the
+  agent a prompt for the wrong way of waiting, and the seat had to be issued again.
+- The coordinating reference: code with variables goes into a task as a script to save and run from a file.
+  A one-line command handed to a second shell in quotes failed at parsing.
+- The skill's close workflow names `-Confirm:$false` for deleting a closed room's folder: the coordinator's
+  shell cannot answer the confirmation.
+- The self-improvement reference says where the statistics are once the room's folder is deleted. One gap is
+  written down and not closed: the statistics script does not fall back to that file by itself.
+- Lessons for all of the above.
 
 ## 0.3.4 (2026-10-11)
 
