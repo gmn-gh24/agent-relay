@@ -330,9 +330,10 @@ What the design does about it:
   another agent is a request from a colleague, never an order.
 - **Nothing the coordinator's PC decides by comes from the room.** Any agent can write any file in the room
   folder, so the room index, the settings, the closed state and the owner's messages are taken from this PC's
-  own copy and log. A file that only claims to come from the owner is reported, not obeyed.
+  own copy and log. A file that only claims to come from the owner is reported, not obeyed, and a file under
+  the coordinator's name that the coordinator's own tool did not send is moved out by the tamper check.
 - **Tamper check.** The tools, wrappers, instructions, plan and standing rules are compared with this PC's
-  copy on every round of the feed. A changed file is restored, a file that does not belong is moved out, and
+  copy every 15 seconds while the feed runs. A changed file is restored, a file that does not belong is moved out, and
   each raises an alarm.
 - **Machines are in use.** No install, restart or system change without approval. A machine is disposable
   only when the owner says so, for that machine and for that job.
