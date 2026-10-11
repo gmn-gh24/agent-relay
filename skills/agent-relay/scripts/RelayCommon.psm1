@@ -366,11 +366,39 @@ function ConvertTo-RelayJsonLine {
 
 function ConvertFrom-RelayJson {
     # JSON text as objects, with every time left as the text it was written as. PowerShell 7 turns such text into
-    # dates unless told otherwise (-DateKind, PowerShell 7.5 and later); Windows PowerShell never does.
+    # dates unless told otherwise (-DateKind, PowerShell 7.5 and later); Windows PowerShell never does. PowerShell
+    # 7.0 to 7.4 have no -DateKind: there the text is read with Json.NET, which their ConvertFrom-Json is built on,
+    # with its reading of dates turned off, and handed over in the shapes ConvertFrom-Json gives.
     param([string]$Text)
     if ($null -eq $script:HasDateKind) { $script:HasDateKind = (Get-Command -Name ConvertFrom-Json).Parameters.ContainsKey('DateKind') }
     if ($script:HasDateKind) { return (ConvertFrom-Json -InputObject $Text -DateKind String) }
-    return (ConvertFrom-Json -InputObject $Text)
+    if ($PSVersionTable.PSVersion.Major -lt 6) { return (ConvertFrom-Json -InputObject $Text) }
+    $reader = New-Object Newtonsoft.Json.JsonTextReader (New-Object System.IO.StringReader $Text)
+    $reader.DateParseHandling = [Newtonsoft.Json.DateParseHandling]::None
+    $reader.FloatParseHandling = [Newtonsoft.Json.FloatParseHandling]::Double
+    $token = [Newtonsoft.Json.Linq.JToken]::ReadFrom($reader)
+    # Text after the value is an error, as it is for ConvertFrom-Json
+    if ($reader.Read()) { throw "The JSON text holds more than one value" }
+    # An array is handed over item by item, as ConvertFrom-Json does without -NoEnumerate
+    return (ConvertFrom-RelayJsonToken $token)
+}
+
+function ConvertFrom-RelayJsonToken {
+    # One Json.NET token as ConvertFrom-Json of PowerShell 7 gives it: an object as a PSCustomObject with its
+    # properties in order, an array as object[], a whole number as Int64, a string as it was written. The kind is
+    # told by the .NET type: PowerShell reads $Token.Type of an object as its property named Type.
+    param([Parameter(Mandatory)]$Token)
+    if ($Token -is [Newtonsoft.Json.Linq.JObject]) {
+        $properties = [ordered]@{}
+        foreach ($property in $Token.Properties()) { $properties[$property.Name] = ConvertFrom-RelayJsonToken $property.Value }
+        return [pscustomobject]$properties
+    }
+    if ($Token -is [Newtonsoft.Json.Linq.JArray]) {
+        $items = New-Object System.Collections.Generic.List[object]
+        foreach ($item in $Token.Children()) { $items.Add((ConvertFrom-RelayJsonToken $item)) }
+        return , $items.ToArray()
+    }
+    return $Token.Value
 }
 
 function Get-RelayRoomIndex {
