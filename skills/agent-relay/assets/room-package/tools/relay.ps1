@@ -1842,23 +1842,52 @@ function Format-MemoryEntry {
     return ('{0} {1} [{2}] {3}' -f $Entry.Utc, (Get-PlainName $Entry.Author), $tags, $Entry.Text)
 }
 
+function Get-MemoryMark {
+    # Which entry an agent saw last: its time, its author and a short hash of its text. Line numbers are no part
+    # of it: an author's file drops its oldest lines at 200, and the entry stays the same entry.
+    param($Entry)
+    $hash = (ConvertTo-Sha256Hex ([System.Text.Encoding]::UTF8.GetBytes([string]$Entry.Text))).Substring(0, 12)
+    return ('{0} {1} {2}' -f $Entry.Utc, $Entry.Author, $hash)
+}
+
 function Show-NewMemory {
     # The room memory hint: one line with the number of entries and how many of the other agents' entries are new
     # to this agent, then the newest three of those, newest first; then they count as seen. Nothing when the room
     # remembers nothing. -Always (start): the line comes even when nothing is new.
+    # What was seen is the newest other agent's entry (memory_mark), not a count: a count stops growing once an
+    # author's file is at its 200 lines. "-" is a mark taken while there was no other agent's entry. A state
+    # with only the memory_seen count of an earlier tool cannot tell which entries those were: nothing older is
+    # announced, and the mark starts from here.
     param([switch]$Always)
     $all = @(Get-MemoryEntry)
     if ($all.Count -eq 0) { return }
     $others = @($all | Where-Object { $_.Author -ne $script:Me })
-    $seen = Get-Number (Get-State) 'memory_seen' 0
-    $new = [Math]::Max(0, $others.Count - $seen)
+    $state = Get-State
+    $mark = Get-Value $state 'memory_mark' ''
+    $new = $others.Count
+    if ($mark -ceq '-') { $new = $others.Count }
+    elseif ($mark) {
+        $new = 0
+        $parts = $mark.Split([char]' ')
+        $found = -1
+        for ($index = $others.Count - 1; $index -ge 0; $index--) {
+            if ([string]::Equals((Get-MemoryMark $others[$index]), $mark, [System.StringComparison]::Ordinal)) { $found = $index; break }
+        }
+        if ($found -ge 0) { $new = $others.Count - 1 - $found }
+        elseif ($parts.Count -eq 3) {
+            foreach ($entry in $others) { if ([string]::CompareOrdinal($entry.Utc, $parts[0]) -gt 0) { $new++ } }
+        }
+    }
+    elseif ((Get-Value $state 'memory_seen' '') -ne '') { $new = 0 }
     if ($new -gt 0 -or $Always) {
         Say ''
         Say "room memory: $($all.Count) entries, $new new - run: find <words> before you start or ask"
         $shown = [Math]::Min(3, $new)
         for ($index = $others.Count - 1; $index -ge $others.Count - $shown; $index--) { Say ('  ' + (Format-MemoryEntry $others[$index])) }
     }
-    if ($seen -ne $others.Count) { Save-StateValue 'memory_seen' ([string]$others.Count) }
+    $newMark = '-'
+    if ($others.Count -gt 0) { $newMark = Get-MemoryMark $others[$others.Count - 1] }
+    if (-not [string]::Equals($newMark, $mark, [System.StringComparison]::Ordinal)) { Save-StateValue 'memory_mark' $newMark }
 }
 
 function Invoke-Remember {
@@ -2983,9 +3012,10 @@ function Invoke-Send {
             Say "NEXT: read them. If your question is still open, run the same command again: $call ask"
             return 0
         }
-        Show-NewMemory
     }
     $draft = Read-Draft
+    # The memory hint counts its entries as seen: an ask stopped by an empty draft must not use it up
+    if ($Verb -eq 'ask' -and -not $script:IsCoordinator) { Show-NewMemory }
     $type = 'note'
     $expects = 'none'
     if ($Verb -eq 'ask') { $type = 'question'; $expects = 'reply' }

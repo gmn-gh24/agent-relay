@@ -175,7 +175,11 @@ function Expand-RoomArchive {
                 $null = [System.IO.Directory]::CreateDirectory($path)
                 continue
             }
-            $null = [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($path))
+            # The folders on the way are checked before any is made: making one through a link would make it
+            # wherever the link points
+            $folder = [System.IO.Path]::GetDirectoryName($path)
+            if (Test-RelayLinkedPath -Root $Target -Path $folder) { throw "the archive entry '$(ConvertTo-RelayHeaderText $relative)' would go through a link" }
+            $null = [System.IO.Directory]::CreateDirectory($folder)
             if (Test-RelayLinkedPath -Root $Target -Path $path) { throw "the archive entry '$(ConvertTo-RelayHeaderText $relative)' would go through a link" }
             $declared = [long]$entry.Length
             $written = [long]0
@@ -284,7 +288,9 @@ if (-not $probe.IsClosed) {
     if (-not $stamped) { throw (Format-Refusal "The room '$id' is not closed: there is nothing to reopen." "carry on in it, or close it with Close-RelayRoom.ps1 -Room $id.") }
     # The marker is gone and the index still says closed: a reopen that was cut short after the marker
     $roomObject = Resolve-RelayRoom $id
-    if (-not $PSCmdlet.ShouldProcess($id, 'Mark the reopened room open in the room index')) { return }
+    if (-not $PSCmdlet.ShouldProcess($id, 'Remove the CLOSED marker of the room and mark the reopened room open in the room index')) { return }
+    # The cut may have come between this PC's marker and the room's: the agents' tools go by the room's
+    Remove-RoomFile $roomObject 'CLOSED'
     Clear-ClosedStamp -Id $id
     Add-RelayLine (Join-Path $roomObject.Owner 'log') ("{0}`treopen`t{1}`tsession`tcompleted" -f (Format-RelayUtc), $stamped)
     "The room index of this PC marks the room $id open now: an earlier reopen was cut short."

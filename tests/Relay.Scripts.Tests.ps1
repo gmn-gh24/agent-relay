@@ -415,6 +415,42 @@ Describe 'Add-RelayAgent' -Tag 'Scripts' {
         (Invoke-RelayTool -Room $room -Agent 'zoe' -Engine $engine -Words @('start', 'p', 'm', 'e')).ExitCode | Should -Be 0
     }
 
+    It 'refuses to write a seat into a room whose package has no find or remember, until the room is updated' {
+        $object = Resolve-RelayRoom $id
+        $info = [ordered]@{}
+        foreach ($key in $object.Info.Keys) { $info[$key] = $object.Info[$key] }
+        $info['package'] = '3.1.2'
+        Write-RelayGuardedText $object 'ROOM' (ConvertTo-RelayKeyValueText $info)
+        $more = Join-Path $root 'old.json'
+        [System.IO.File]::WriteAllText($more, (ConvertTo-Json -Depth 6 @{ agents = @([ordered]@{ name = 'zoe'; role = 'writer' }) }))
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $more -NoClipboard } | Should -Throw '*ERROR: *package 3.1.2, older than 3.2.0*NEXT: run Update-RelayRoom.ps1*'
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'emma' -NoClipboard } | Should -Throw '*older than 3.2.0*'
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -OpenSeats 1 -NoClipboard } | Should -Throw '*older than 3.2.0*'
+        @(Get-RelayRoster (Resolve-RelayRoom $id)) | Should -Not -Contain 'zoe'
+        Get-RelayCanonicalGeneration (Resolve-RelayRoom $id) 'emma' | Should -Be 1
+        # What writes no instructions still works on such a room
+        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Control 'emma' -State pause
+        # A version, not a string: 3.10.0 is newer than 3.2.0
+        $info['package'] = '3.10.0'
+        Write-RelayGuardedText $object 'ROOM' (ConvertTo-RelayKeyValueText $info)
+        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $more -NoClipboard
+        (Get-Content -LiteralPath (Join-Path $room 'agents\zoe\ASSIGNMENT.md') -Raw) | Should -Match '`find <words>`'
+        (Get-Content -LiteralPath (Join-Path $room 'agents\zoe\ASSIGNMENT.md') -Raw) | Should -Match 'Run `remember`'
+    }
+
+    It 'adds a seat again once the room is updated to the current package' {
+        $object = Resolve-RelayRoom $id
+        $info = [ordered]@{}
+        foreach ($key in $object.Info.Keys) { $info[$key] = $object.Info[$key] }
+        $info['package'] = '3.1.2'
+        Write-RelayGuardedText $object 'ROOM' (ConvertTo-RelayKeyValueText $info)
+        $null = & (Join-Path $scripts 'Update-RelayRoom.ps1') -Room $id
+        (Get-RelayValue (Resolve-RelayRoom $id).Info 'package' '') | Should -Be ([System.IO.File]::ReadAllText((Join-Path (Get-RelayTestPath package) 'VERSION')).Trim())
+        $output = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'emma' -NoClipboard)
+        ($output -join "`n") | Should -Match 'REPLACED emma: generation 2'
+        (Get-Content -LiteralPath (Join-Path $room 'agents\emma\ASSIGNMENT.md') -Raw) | Should -Match '`find <words>`'
+    }
+
     It 'replaces a session with a new generation and can change its kind' {
         $output = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'emma' -Kind 'codex' -NoClipboard)
         ($output -join "`n") | Should -Match 'REPLACED emma: generation 2 \(codex\)'
@@ -965,6 +1001,7 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         finally { $held.Dispose() }
         $closed | Should -Match 'CLOSED room flow'
         $closed | Should -Match 'ARCHIVE FAILED'
+        $closed | Should -Match 'NEXT: run Close-RelayRoom\.ps1 -Room flow again until it names an archive; the shared folder is the only copy until then, so do not remove it, even if the owner chose delete\. Apply the promotions the owner approved'
         @(Get-ChildItem -LiteralPath (Join-Path $root 'local\archive') -File -ErrorAction SilentlyContinue).Count | Should -Be 0
         ((Get-Content -LiteralPath (Join-Path $object.Local 'alarms.log')) -join "`n") | Should -Match 'ARCHIVE failed: '
         ((& (Join-Path $scripts 'Close-RelayRoom.ps1') -ListClosed) -join "`n") | Should -Match 'flow  closed \S+  archive: NO'
@@ -1136,13 +1173,14 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         (ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $object.Local 'stats.json')))).memoryEntries | Should -Be 0
     }
 
-    It 'ends the close with the question for the owner: delete the shared folder or keep it, the room memory reviewed first' {
+    It 'ends the close with what is left of the owner''s answer, asked before the close: promotions, then delete or keep' {
         $closed = @(& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force)
         $next = [string]$closed[-1]
-        $next | Should -Match '^NEXT: review the room memory \(Get-RelayMemory\.ps1 -Room flow\)'
-        $next | Should -Match 'ask the owner whether to delete the shared folder \(the archive stays on this PC\) or keep it'
-        $next | Should -Match 'Close-RelayRoom\.ps1 -Remove flow'
+        $next | Should -Match '^NEXT: apply the promotions the owner approved \(Add-RelayLocalMemory\.ps1 for local notes, the Improve procedure for project lessons\)\. '
+        $next | Should -Match 'If the owner chose delete, run Close-RelayRoom\.ps1 -Remove flow \(the archive stays on this PC\); if keep, leave the folder\.'
         $next | Should -Match 'Get-RelayStats\.ps1, the byes, lessons\.md\.$'
+        # The memory review and the question to the owner come before Close-RelayRoom.ps1, not after it
+        $next | Should -Not -Match 'review the room memory|ask the owner'
     }
 
     It 'records in the room index what became of the folder: kept at the close, removed after -Remove' {
