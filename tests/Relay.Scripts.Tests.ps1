@@ -1452,6 +1452,13 @@ Describe 'Open seats' -Tag 'Scripts' {
         Get-RelayModelTier 'gemini-3-flash' | Should -Be 'light'
         Get-RelayModelTier 'Sonnet-5.5' | Should -Be 'standard'
         Get-RelayModelTier 'gemini-3' | Should -Be 'standard'
+        # Codex models do not carry the product's name, and the family word decides, not the generation in front of it
+        Get-RelayModelTier 'luna' | Should -Be 'standard'
+        Get-RelayModelTier 'gpt-6-luna' | Should -Be 'standard'
+        Get-RelayModelTier 'gpt-6-sol' | Should -Be 'strong'
+        Get-RelayModelTier 'gpt-6.1-sol' | Should -Be 'strong'
+        Get-RelayModelTier 'astra' | Should -Be 'strong'
+        Get-RelayModelTier 'terra' | Should -Be 'strong'
         Get-RelayModelTier 'opus-5.5' | Should -Be 'strong'
         Get-RelayModelTier 'gpt-6' | Should -Be 'strong'
         Get-RelayModelTier 'gemini-3-pro' | Should -Be 'strong'

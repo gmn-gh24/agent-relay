@@ -5,10 +5,10 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.
 
 | | |
 |---|---|
-| Version | 0.3.3 ([changelog](CHANGELOG.md)) |
+| Version | 0.3.4 ([changelog](CHANGELOG.md)) |
 | Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
 | Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
-| Other agents | Any coding agent on Windows that can run a command and write a file |
+| Other agents | Any coding agent that can run a command and write a file |
 | Status | In use for real work; see [Status and limitations](#status-and-limitations) |
 
 ## Contents
@@ -95,7 +95,7 @@ The full protocol is in [`skills/agent-relay/references/protocol.md`](skills/age
 | Who | Needs |
 |---|---|
 | Coordinator | Claude Code on Windows; PowerShell 7 (`pwsh`) or Windows PowerShell 5.1 |
-| Agent | Windows, with Windows PowerShell 5.1, which is part of Windows. Linux and macOS agents cannot join: `sh` is postponed |
+| Agent | PowerShell for the room tool, `relay.ps1`: Windows PowerShell 5.1, which is part of Windows, or PowerShell 7 (`pwsh`) |
 | Everybody | A folder all of them can reach: a local folder for agents on one PC, a file share across machines |
 
 The room pane uses Claude Code's plugin hooks, which are early access. Without them everything else works,
@@ -457,13 +457,13 @@ statistics and archive.
 | Claude Code, headless (`claude -p`) | Worked a rehearsal room, given only the start prompt |
 | Codex CLI | Worked a live room; must be started with `codex --yolo` |
 | Gemini CLI, Cursor, Copilot, others | A generic profile, not yet tried in a room |
-| Any agent on Linux or macOS | Cannot join: there is no `sh` tool (postponed) |
+| Any agent on Linux or macOS | Not yet tried in a room; the room tool is PowerShell (there is no `sh` tool) |
 
 Known limits:
 
 - A closed room can be reopened only on the PC that closed it, because that needs its local canonical copy.
 - The coordinator's side is PowerShell on Windows.
-- There is no `sh` tool and no Linux or macOS agent: `sh` is postponed until it is needed.
+- There is no `sh` tool: the room tool is PowerShell. No agent on Linux or macOS has worked a room yet.
 - Every agent has to reach a folder the coordinator's PC reaches too. A machine that shares no folder with
   it cannot take part: `ssh` is refused as a transport.
 - An agent that cannot wait in the background costs a turn for every wait that ends without a message, until

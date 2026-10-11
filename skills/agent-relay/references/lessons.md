@@ -483,3 +483,26 @@ last hour showed:
   kind's text, which a joining agent sees only after `join` has run. Changed: the join prompt itself says what
   to do when a command is refused, blocked or cannot start: change nothing, stop, tell the owner the exact
   error, and do not work around it.
+
+## 2026-10-11: a room for a job with SYSTEM and standard-user runs (a live room, as its coordinator reported it)
+
+- **"codex luna medium" was read as an agent called Luna.** The owner named what would join: product, model,
+  effort. The coordinator made a seat named Luna, which had to be retired and replaced. `luna` is a Codex
+  model, and the table of model names did not know it. Changed: the Codex family words are in
+  `scripts/model-tiers.json` (`luna` standard; `astra`, `sol`, `terra` strong), in a list of their own where
+  one must win over the generation in front of it: `gpt-6-luna` had sorted as strong by its `gpt-6`. The agent
+  kinds reference lists the Codex models and says that these three words are an introduction, never a name.
+- **The agent that took the seat said `gpt-6 xhigh`; it had been started as Luna at medium.** A generation
+  without a family, and an effort nobody set. Changed: the coordinating reference says to ask the owner what
+  the session was started with when a task depends on it, and to tell the owner when an introduction is not
+  what the owner announced. Not changed yet: the room does not hold what the owner announced for a seat's
+  model and effort, so the board cannot mark the mismatch as it does for the computer name.
+- **An agent started again elevated keeps its name.** Read the board's `rights:` line again before you trust
+  an earlier "not elevated". Reported from the same room and not reproduced here: a second session that
+  introduced itself under the name of a live agent replaced its card, and the board showed the wrong rights
+  for the real one. Not changed yet: such an introduction is neither refused nor marked ATTENTION.
+- **A job that runs as SYSTEM and as a standard user needs two seats on that machine.** One elevated agent
+  and one that is not, planned when the room is made. The coordinator offered a detour from the elevated agent
+  instead (a tool that starts a process with lower rights, or a UAC prompt for the owner). That is wrong for
+  the same reason as before: the room is there so that such work needs nobody's hands. Ask the owner for a
+  second agent. Not changed yet: the startup interview does not ask which accounts a job's runs need.
