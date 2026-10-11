@@ -152,12 +152,12 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         function Get-TreeSnapshot {
-            # Every file and folder under a folder with its time and size, one line each, sorted
+            # Every file under a folder with its time and size, and every folder by its name, one line each, sorted. A
+            # folder's own time is left out: Windows sets it a moment after a copy has filled it, on its own.
             param([string]$Path)
             $lines = foreach ($item in @(Get-ChildItem -LiteralPath $Path -Recurse -Force)) {
-                $size = 0
-                if (-not $item.PSIsContainer) { $size = $item.Length }
-                '{0}|{1}|{2}' -f $item.FullName, $item.LastWriteTimeUtc.Ticks, $size
+                if ($item.PSIsContainer) { '{0}|folder' -f $item.FullName }
+                else { '{0}|{1}|{2}' -f $item.FullName, $item.LastWriteTimeUtc.Ticks, $item.Length }
             }
             return (@($lines | Sort-Object) -join "`n")
         }
@@ -183,9 +183,9 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $work = Join-Path $root "gitaudit-$number"
             $null = New-Item -ItemType Directory -Path $work -Force
             [System.IO.File]::WriteAllText((Join-Path $work 'a.txt'), "a`n")
-            & git -C $work init --quiet 2>&1 | Out-Null
-            & git -C $work -c user.name=test -c user.email=test@example.invalid add -A 2>&1 | Out-Null
-            & git -C $work -c user.name=test -c user.email=test@example.invalid commit --quiet -m base 2>&1 | Out-Null
+            Invoke-TestGit -C $work init --quiet
+            Invoke-TestGit -C $work -c user.name=test -c user.email=test@example.invalid add -A
+            Invoke-TestGit -C $work -c user.name=test -c user.email=test@example.invalid commit --quiet -m base
             $agents = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $work; may = @('*') }) })
             $gitRoom = (New-RelayTestRoom -Root (Join-Path $root "gitroom-$number") -RoomId "gitaudit-$engine-$number" -Agents $agents).Path
             $null = Invoke-RelayTool -Room $gitRoom -Agent 'olivia' -Engine $engine -Words @('start', 'p', 'm', 'e')
@@ -1280,15 +1280,15 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $work = Join-Path $root "fsmonitor-$number"
             $null = New-Item -ItemType Directory -Path $work -Force
             [System.IO.File]::WriteAllText((Join-Path $work 'a.txt'), "a`n")
-            & git -C $work init --quiet 2>&1 | Out-Null
-            & git -C $work -c user.name=test -c user.email=test@example.invalid add -A 2>&1 | Out-Null
-            & git -C $work -c user.name=test -c user.email=test@example.invalid commit --quiet -m base 2>&1 | Out-Null
+            Invoke-TestGit -C $work init --quiet
+            Invoke-TestGit -C $work -c user.name=test -c user.email=test@example.invalid add -A
+            Invoke-TestGit -C $work -c user.name=test -c user.email=test@example.invalid commit --quiet -m base
             # A hook outside the work folder that leaves a mark when it runs (and fails, so git scans by itself)
             $marker = (Join-Path $root "fsmonitor-$number.ran") -replace '\\', '/'
             $hook = Join-Path $root "fsmonitor-$number.sh"
             [System.IO.File]::WriteAllText($hook, "#!/bin/sh`necho ran >> '$marker'`nexit 1`n")
             if (-not $onWindows) { & chmod +x $hook 2>&1 | Out-Null }
-            & git -C $work config core.fsmonitor ($hook -replace '\\', '/') 2>&1 | Out-Null
+            Invoke-TestGit -C $work config core.fsmonitor ($hook -replace '\\', '/')
             $agents = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $work; may = @('*') }) })
             $hookRoom = (New-RelayTestRoom -Root (Join-Path $root "fsmonitor-room-$number") -RoomId "fsmonitor-$engine-$number" -Agents $agents).Path
             foreach ($agent in 'olivia', 'emma') { (Invoke-RelayTool -Room $hookRoom -Agent $agent -Engine $engine -Words @('start', 'p', 'm', 'e')).ExitCode | Should -Be 0 }

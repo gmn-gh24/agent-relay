@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.2 (2026-10-11)
+
+What the first full CI run on Windows (PowerShell 7 and Windows PowerShell 5.1) found:
+
+- relay.ps1: a second `wait` stops waiting for the lease when neither a lease nor its lock is there twice in a
+  row: the agent's folder takes no new file, and no holder will ever give the lease back (it waited the whole
+  35 seconds for nothing). A lock held by a wait that is ending still gets the full patience.
+- Tests: git in the tests' own repositories ignores git for Windows' LF/CRLF warnings, which Windows
+  PowerShell 5.1 turns into errors (a new `Invoke-TestGit` helper); a tree snapshot no longer compares a
+  folder's own time, which Windows sets a moment after a copy; a wait is looked at until it listens instead of
+  for a fixed three seconds; the timing margins of the half-written-plan test fit a shared runner; the
+  graceful-stop test calls `kill` by its path, not an alias.
+- Package and relay.ps1 3.1.2.
+
 ## 0.2.1 (2026-10-11)
 
 The wait lease, after an agent in a live room was left without a wait while it believed it had one:
