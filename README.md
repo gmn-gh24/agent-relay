@@ -433,11 +433,12 @@ as it was in 0.1.1, without the fixes of 0.2.0, and it is not tested.
 | Claude Code, headless (`claude -p`) | Worked a rehearsal room, given only the start prompt |
 | Codex CLI | Worked a live room; must be started with full access |
 | Gemini CLI, Cursor, Copilot, others | A generic profile, not yet tried in a room |
+| Any agent on Linux or macOS | Not tried: no such machine is available. `relay.sh` is tested under `dash` from Git for Windows only. Testing on a real Linux or macOS machine is deferred until one is needed |
 
 Known limits:
 
 - The coordinator's side is PowerShell on Windows.
-- `relay.sh` (agents on Linux and macOS with `sh`) is deferred and not kept in step with `relay.ps1`.
+- There is no `sh` tool and no Linux or macOS agent: `sh` is postponed until it is needed.
 - Every agent has to reach a folder the coordinator's PC reaches too. A machine that shares no folder with
   it cannot take part: `ssh` is refused as a transport.
 - An agent that cannot wait in the background costs a turn for every wait that ends without a message, until
