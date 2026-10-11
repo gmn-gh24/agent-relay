@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+CI only (no change to the plugin):
+
+- The Windows gate runs as two jobs side by side, PowerShell 7 and Windows PowerShell 5.1, through the new
+  `tests/Invoke-AllTests.ps1 -Editions ps7|ps5`; each takes 15 to 20 minutes instead of one job of about 45.
+- A commit that changes only documents no test reads (the Markdown at the top, `SKILL.md`, `references/`,
+  `evals/`) leaves the Windows jobs out; the static and pane checks still run.
+- Pester is pinned (6.2.0) and kept in the Actions cache; PSScriptAnalyzer runs only in the Linux static job.
+- Tests: a child gate's standard error no longer ends a test under Windows PowerShell 5.1, and a tool's output
+  is waited for up to 30 seconds after the tool exits (the tab-title helper can hold the pipe a little longer).
+
 ## 0.3.0 (2026-10-11)
 
 Room memory, a reviewed close, and reopening a closed room:
