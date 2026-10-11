@@ -1,0 +1,74 @@
+# The test gate of agent-relay on every push to main, every pull request, and on demand.
+# Windows runs the whole gate: the room tool and the coordinator scripts under PowerShell 7 and Windows
+# PowerShell 5.1, with PSScriptAnalyzer. Linux runs the static checks and the pane's checks quickly.
+# relay.sh is deferred (owner decision): the gate runs no sh. The eval cases never run here: each run is a
+# paid session on the owner's account.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Static checks (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+      - name: Static checks of the gate
+        shell: pwsh
+        run: ./tests/Invoke-AllTests.ps1 -StaticOnly
+
+  pane:
+    name: Pane (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Validate the plugin
+        run: claude plugin validate .
+      - name: Test the pane
+        run: claude plugin test .
+
+  gate:
+    name: Gate (Windows, PowerShell 7 and 5.1)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pester 6 and PSScriptAnalyzer for PowerShell 7
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name Pester -MinimumVersion 6.0.0 -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+      - name: Install Pester 6 for Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name Pester -MinimumVersion 6.0.0 -Scope CurrentUser -Force -SkipPublisherCheck
+      - name: The whole gate (the pane is checked on Linux)
+        shell: pwsh
+        run: ./tests/Invoke-AllTests.ps1 -SkipPane
