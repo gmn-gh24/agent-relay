@@ -502,6 +502,7 @@ function Get-DeliveredSet {
 
 function Get-OpenRequest {
     # Tasks, questions and proposals in $Agent's inbox that no result or answer of $Agent names yet
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseLiteralInitializerForHashtable', '', Justification = 'Message ids are compared exactly: the table is built with the ordinal comparer, which a literal cannot take')]
     param([string]$Agent)
     $open = New-Object System.Collections.Generic.List[object]
     $closedBySender = @{}
@@ -530,6 +531,8 @@ function Get-OpenRequest {
 
 function Get-AwaitedReply {
     # What this agent asked of others and has no result or answer for yet
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseLiteralInitializerForHashtable', '', Justification = 'Message ids are compared exactly: the table is built with the ordinal comparer, which a literal cannot take')]
+    param()
     $awaited = New-Object System.Collections.Generic.List[object]
     $closed = New-Object System.Collections.Hashtable -ArgumentList ([System.StringComparer]::Ordinal)
     foreach ($entry in @(Get-InboxEntry $script:Me)) {
