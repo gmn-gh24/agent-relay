@@ -1011,3 +1011,80 @@ test('what a script wrote when it refused is shown in a toast as one line, witho
   expect(w.toasts.at(-1)).toBe('Not sent: The card [2J is gone 31m')
   await ui.unmount()
 })
+
+test('the session tools are refused while a room is bound, until the owner allows it in this session, in the dialog', async ($, on) => {
+  const w = world(on, { 'room-a': [roomSnapshot('room-a')] }, {}, { noPane: true })
+  // Beneath the plugin: the tools themselves, and the dialog the owner answers
+  const reached: string[] = []
+  on('tool.call', { tool: 'SendMessage' }, (_$, e) => {
+    reached.push(`SendMessage ${e.to}`)
+
+    return { result: 'delivered' }
+  })
+  on('tool.call', { tool: 'ListAgents' }, () => {
+    reached.push('ListAgents')
+
+    return { result: { listing: 'nobody' } }
+  })
+  let chosen = 'Refuse'
+  const asked: string[] = []
+  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+    const question = e.questions[0]?.question ?? ''
+    asked.push(question)
+
+    return { result: { questions: e.questions, answers: { [question]: chosen } } }
+  })
+  const send = () => $.tool.call({ tool: 'SendMessage', to: 'other-session', message: 'do the docs' })
+  const list = () => $.tool.call({ tool: 'ListAgents' })
+  // No room bound: the tools are the host's business
+  expect((await send()).deny).toBeUndefined()
+  expect((await list()).deny).toBeUndefined()
+  expect(reached).toEqual(['SendMessage other-session', 'ListAgents'])
+  expect((await relay($, 'outside on')).text).toBe('No room is bound, so nothing is refused: the session tools are allowed as they are.')
+  expect(asked).toEqual([])
+  // A room bound: refused, with the room and the way out named
+  expect((await relay($, 'room-a')).text).toBe('Relay pane bound to room room-a.')
+  await w.clock.settle()
+  expect((await send()).deny).toBe(
+    "SendMessage is refused: this session coordinates room room-a, and the room is its only channel to an agent. Reach an agent through your launcher's verbs; a session outside the room gets the join prompt. Only the owner can allow this, by typing /relay outside on.",
+  )
+  expect((await list()).deny).toMatch(/^ListAgents is refused: this session coordinates room room-a/)
+  expect(reached).toHaveLength(2)
+  // The owner is asked, and a refusal in the dialog changes nothing
+  expect((await relay($, 'outside on')).text).toBe('Not allowed: SendMessage and ListAgents stay refused while room room-a is bound.')
+  expect(asked).toEqual(["Allow this session's session-to-session tools (SendMessage, ListAgents) while room room-a is bound? The room is otherwise the coordinator's only channel to an agent."])
+  expect((await send()).deny).toMatch(/^SendMessage is refused/)
+  // Allowed in the dialog: through, until the owner says off
+  chosen = 'Allow'
+  expect((await relay($, 'outside on')).text).toBe("Allowed in this session until /relay outside off, /clear or the session ends: the owner's word. Have the coordinator record it with Add-RelayDecision.ps1 -Owner.")
+  expect((await send()).deny).toBeUndefined()
+  expect((await list()).deny).toBeUndefined()
+  expect(reached).toHaveLength(4)
+  expect((await relay($, 'outside off')).text).toBe('Session-to-session tools (SendMessage, ListAgents) are refused again while a room is bound.')
+  expect((await send()).deny).toMatch(/^SendMessage is refused/)
+  // Anything else under outside says the two forms; unbinding lifts the refusal, since nothing is coordinated here then
+  expect((await relay($, 'outside')).text).toBe('Type /relay outside on to allow SendMessage and ListAgents in this session while a room is bound, or /relay outside off to refuse them again.')
+  expect((await relay($, 'outside maybe')).text).toMatch(/^Type \/relay outside on/)
+  // A room whose id starts with the word is a room, not the switch
+  expect((await relay($, 'outside-room')).text).toBe('Not bound: No room named outside-room')
+  expect((await relay($, 'off')).text).toBe('The relay pane is unbound; its feed has stopped.')
+  expect((await send()).deny).toBeUndefined()
+  expect(reached).toHaveLength(5)
+})
+
+test('the owner\'s word on the session tools does not outlive the module: after a reload it is asked again', async ($, on) => {
+  const w = world(on, { 'room-a': [roomSnapshot('room-a')] }, {}, { noPane: true })
+  on('tool.call', { tool: 'SendMessage' }, () => ({ result: 'delivered' }))
+  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => ({ result: { questions: e.questions, answers: { [e.questions[0]?.question ?? '']: 'Allow' } } }))
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', () => ({ value: { command: 'relay' } }))
+  on('tool.register', () => ({ value: { tool: 'mcp__agent-relay__relay_bind' } }))
+  await relay($, 'room-a')
+  await w.clock.settle()
+  expect((await relay($, 'outside on')).text).toMatch(/^Allowed in this session/)
+  expect((await $.tool.call({ tool: 'SendMessage', to: 'other-session', message: 'x' })).deny).toBeUndefined()
+  // The module is loaded again in the same session: the room is still bound, the word is not
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await w.clock.settle()
+  expect((await $.tool.call({ tool: 'SendMessage', to: 'other-session', message: 'x' })).deny).toMatch(/^SendMessage is refused: this session coordinates room room-a/)
+})
