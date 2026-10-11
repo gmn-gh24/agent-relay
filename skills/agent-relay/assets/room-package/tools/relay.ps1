@@ -773,8 +773,19 @@ function Send-Message {
                 "expects: $Expects"
                 '---'
             ) -join "`n"
+            $text = (($header + "`n" + $Body.TrimEnd() + "`n") -replace "`r`n", "`n") -replace "`r", "`n"
             $temporary = Join-Path $inbox ('.{0}-{1}.tmp' -f $script:Me, [guid]::NewGuid().ToString('N'))
-            Write-Text $temporary ($header + "`n" + $Body.TrimEnd() + "`n")
+            Write-Text $temporary $text
+            if ($script:SentLog) {
+                # The record first, the message second: whenever the file is there, so is its line. The hash is of
+                # the bytes meant to be sent, never read back from the inbox, where any agent can swap the
+                # temporary file. A record that cannot be written means no message.
+                try { Add-Line $script:SentLog ("{0}`t{1}`t{2}" -f (Get-UtcStamp), $id, (ConvertTo-Sha256Hex ($script:Utf8.GetBytes($text)))) }
+                catch {
+                    Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+                    throw "could not write this PC's record of what the coordinator sends ($($script:SentLog)), so nothing was sent: $($_.Exception.Message)"
+                }
+            }
             $madeIt = $false
             try { [System.IO.File]::Move($temporary, $final); $madeIt = $true } catch { $madeIt = $false }
             if ($madeIt) {
@@ -3263,6 +3274,10 @@ if ($verb -eq 'join') {
 }
 
 $script:IsCoordinator = ($script:Me -eq $script:Coordinator)
+# The coordinator's launcher names this PC's record of what the coordinator sends: the tamper check moves out a
+# message under the coordinator's name that is not on it. Nobody else keeps one.
+$script:SentLog = ''
+if ($script:IsCoordinator -and $env:RELAY_SENT_LOG) { $script:SentLog = [string]$env:RELAY_SENT_LOG }
 $script:MyDir = Get-AgentDir $script:Me
 if (-not (Test-Path -LiteralPath $script:MyDir)) { Exit-WithError "there is no agent '$($script:Me)' in room $($script:RoomId)" 'use the wrapper you were given; do not copy one from another agent' }
 $script:Seat = Read-KeyValue (Join-Path $script:MyDir 'seat')

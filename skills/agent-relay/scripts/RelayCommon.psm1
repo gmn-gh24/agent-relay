@@ -629,6 +629,67 @@ function Get-RelayGuardedFile {
     return @($list | Sort-Object)
 }
 
+function Get-RelaySentLogPath {
+    # This PC's record of every message the coordinator's tool sent: utc, id and the hash of the file's bytes,
+    # tab-separated, one line per message, written by the tool before the message is moved into place
+    param([Parameter(Mandatory)]$Room)
+    return (Join-Path $Room.Local 'sent.log')
+}
+
+function Get-RelayCoordinatorMessageFile {
+    # Every message file under the coordinator's name in every inbox of the room, retired agents' too, by the name
+    # the room tool reads (<coordinator>-<number>.md, exactly). A link on the way to one, or one that is a link,
+    # is listed as a link (IsLink) and never entered.
+    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Coordinator)
+    $files = New-Object System.Collections.Generic.List[object]
+    if (-not (Get-RelayProperty $Room 'Canon' '')) { return @() }
+    $pattern = '^' + [regex]::Escape($Coordinator) + '-([0-9]{4,6})\.md$'
+    foreach ($agent in @(Get-RelayRoster $Room -IncludeRetired)) {
+        $inbox = Join-Path (Join-Path (Join-Path $Room.Path 'agents') $agent) 'inbox'
+        $link = Get-RelayLinkInPath -Root $Room.Path -Path $inbox
+        if ($link) { $files.Add([pscustomobject]@{ Path = $link; Id = ''; IsLink = $true }); continue }
+        if (-not [System.IO.Directory]::Exists($inbox)) { continue }
+        foreach ($file in @(Get-ChildItem -LiteralPath $inbox -File -Force -Filter "$Coordinator-*.md" -ErrorAction Stop)) {
+            if ($file.Name -cnotmatch $pattern) { continue }
+            $id = '{0}-{1}-{2}' -f $Coordinator, $agent, $Matches[1]
+            $files.Add([pscustomobject]@{ Path = $file.FullName; Id = $id; IsLink = (Test-RelayLink $file.FullName) })
+        }
+    }
+    return @($files.ToArray())
+}
+
+function Read-RelaySentLog {
+    # The record of what the coordinator's tool sent, as a set of 'id hash' keys compared exactly. A record that
+    # exists and cannot be read is an error, never an empty record: it would make every message a forgery.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseLiteralInitializerForHashtable', '', Justification = 'Ids and hashes are compared exactly: the table is built with the ordinal comparer, which a literal cannot take')]
+    param([Parameter(Mandatory)]$Room)
+    $sent = New-Object System.Collections.Hashtable -ArgumentList ([System.StringComparer]::Ordinal)
+    foreach ($line in ((Read-RelayTextStrict (Get-RelaySentLogPath $Room)) -split "`n")) {
+        $parts = @($line -split "`t")
+        if ($parts.Count -ge 3 -and $parts[1] -and $parts[2]) { $sent["$($parts[1]) $($parts[2])"] = $true }
+    }
+    return $sent
+}
+
+function Initialize-RelaySentLog {
+    # Starts the record once, before the launcher that writes to it: the messages under the coordinator's name
+    # that are in the room by then count as sent, because nothing told them apart before. A record that is
+    # there already is kept as it is.
+    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Coordinator)
+    $path = Get-RelaySentLogPath $Room
+    if ([System.IO.File]::Exists($path)) { return }
+    $stamp = Format-RelayUtc
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($file in @(Get-RelayCoordinatorMessageFile $Room $Coordinator)) {
+        if ($file.IsLink) { continue }
+        $hash = Get-RelayFileHash $file.Path
+        if ($hash) { $lines.Add("$stamp`t$($file.Id)`t$hash`tbefore the record") }
+    }
+    $text = ''
+    if ($lines.Count -gt 0) { $text = ($lines.ToArray() -join "`n") + "`n" }
+    Write-RelayTextAtomic $path $text
+}
+
 function Add-RelayAlarm {
     param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Text)
     Add-RelayLine (Join-Path $Room.Local 'alarms.log') ('{0} {1}' -f (Format-RelayUtc), (ConvertTo-RelayHeaderText $Text))
@@ -640,6 +701,7 @@ function Format-RelayTamperFinding {
     if ($Finding.Kind -eq 'link') { return "$($Finding.Relative) is a link in the room (a symbolic link or a junction): nothing behind it was read, restored or moved; the owner must remove the link" }
     $done = 'restored from the copy on this PC'
     if ($Finding.Kind -eq 'extra') { $done = 'it does not belong there and was moved out' }
+    if ($Finding.Kind -eq 'forged') { $done = "a message under the coordinator's name that its tool did not send, moved out" }
     if (-not $Finding.Repaired) { $done = 'it could not be put right' }
     return "$($Finding.Relative) was $($Finding.Kind): $done"
 }
@@ -773,11 +835,46 @@ function Test-RelayTamper {
             catch { $findings.Add([pscustomobject]@{ Relative = $relative; Kind = 'extra'; Repaired = $false; Reason = $_.Exception.Message }) }
         }
     }
+
+    # Messages under the coordinator's name that its tool did not send: any agent can write such a file into
+    # another agent's inbox. The files are listed before the record is read, and the tool writes a message's line
+    # before the message appears, so every message it sent that this pass sees is on the record. A room without
+    # a record (one whose launcher was written before there was one) is not judged.
+    if ($Room.Coordinator -and [System.IO.File]::Exists((Get-RelaySentLogPath $Room))) {
+        $messageFiles = @()
+        $sent = $null
+        try {
+            $messageFiles = @(Get-RelayCoordinatorMessageFile $Room $Room.Coordinator)
+            if ($messageFiles.Count -gt 0) { $sent = Read-RelaySentLog $Room }
+        }
+        catch { Add-RelayAlarm $Room ("TAMPER check could not compare the coordinator's messages with its record: {0}" -f $_.Exception.Message) }
+        if ($null -ne $sent) {
+            $roomPrefix = $Room.Path.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+            foreach ($file in $messageFiles) {
+                if ($file.IsLink) { & $addLink $file.Path; continue }
+                $relative = $file.Path
+                if ($file.Path.StartsWith($roomPrefix, [System.StringComparison]::OrdinalIgnoreCase)) { $relative = ($file.Path.Substring($roomPrefix.Length) -replace '\\', '/') }
+                # A file that cannot be read right now is nothing known: it is asked about again in the next pass
+                $hash = Get-RelayFileHash $file.Path
+                if (-not $hash -or $sent.ContainsKey("$($file.Id) $hash")) { continue }
+                try {
+                    if ($Repair) {
+                        $keep = Join-Path $quarantine ('{0}-{1}' -f (Format-RelayUtc -Format 'yyyyMMddTHHmmssZ'), ($relative -replace '[\\/]', '_'))
+                        if (-not (Test-Path -LiteralPath $quarantine)) { $null = New-Item -ItemType Directory -Path $quarantine -Force }
+                        Move-Item -LiteralPath $file.Path -Destination $keep -Force -ErrorAction Stop
+                    }
+                    $findings.Add([pscustomobject]@{ Relative = $relative; Kind = 'forged'; Repaired = [bool]$Repair; Reason = '' })
+                }
+                catch { $findings.Add([pscustomobject]@{ Relative = $relative; Kind = 'forged'; Repaired = $false; Reason = $_.Exception.Message }) }
+            }
+        }
+    }
+
     foreach ($finding in $findings) {
         if ($finding.Kind -eq 'link') { Add-RelayAlarm $Room ("TAMPER link in the room, not followed: {0}" -f $finding.Relative); continue }
         $action = 'found'
         if ($finding.Repaired) { $action = 'restored' }
-        if ($finding.Repaired -and $finding.Kind -eq 'extra') { $action = 'moved out' }
+        if ($finding.Repaired -and @('extra', 'forged') -contains $finding.Kind) { $action = 'moved out' }
         if ($finding.Reason) { Add-RelayAlarm $Room ("TAMPER {0} could not restore: {1}: {2}" -f $finding.Kind, $finding.Relative, $finding.Reason) }
         else { Add-RelayAlarm $Room ("TAMPER {0} {1}: {2}" -f $finding.Kind, $action, $finding.Relative) }
     }
@@ -2035,6 +2132,8 @@ function Write-RelayLauncher {
         # The room folder inside single quotes: every quote of it doubled
         ROOM_PATH_PS = $quoted.Substring(1, $quoted.Length - 2)
     }
+    # The launcher tells the tool to keep the record of what the coordinator sends: the record comes first
+    Initialize-RelaySentLog $Room $Name
     Write-RelayText (Join-Path $Room.Local 'relay.cmd') (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\coordinator.cmd.tmpl') $values) -Crlf
     Write-RelayText (Join-Path $Room.Local 'relay.ps1') (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\coordinator.ps1.tmpl') $values) -Bom
 }

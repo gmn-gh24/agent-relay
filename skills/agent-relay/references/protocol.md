@@ -253,7 +253,8 @@ guarded files too.
 `%LOCALAPPDATA%\agent-relay` for an installed copy (`AGENT_RELAY_LOCAL` overrides both). It holds
 `rooms.json` (the room index), `names.json` (which machine and role has which name), `machines.json` (known
 shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `prompts/`, `quarantine/`,
-`alarms.log`, `stats.json`, the coordinator's launcher (`relay.ps1`, `relay.cmd`) and its `draft.md`;
+`alarms.log`, `stats.json`, `sent.log` (what the coordinator's tool sent), the coordinator's launcher
+(`relay.ps1`, `relay.cmd`) and its `draft.md`;
 `archive/` holds one zip per closed room. None of it is in git.
 
 ## Limits
@@ -261,7 +262,13 @@ shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `pr
 - Scope is kept by instruction, self-audit, tamper check and your review. It is not a sandbox.
 - An agent that can write to the room can forge a message file. What limits the damage: sender and receiver
   come from the file's place, the "never" lists, the single path of authority through the coordinator, the
-  owner's log on this PC, and the tamper check.
+  owner's log on this PC, and the tamper check. A message under the coordinator's name counts only when the
+  coordinator's own tool sent it: the launcher on this PC has the tool write the id and the hash of every
+  message it sends into `sent.log` before the message appears, and the tamper pass moves out (alarm `TAMPER
+  forged moved out: ...`) every file under the coordinator's name that is not on it, or whose bytes changed.
+  An agent whose wait is running can still read a forgery in the seconds before the next pass; the alarm says
+  which one. A room whose launcher was written before the record starts it with the next `Update-RelayRoom.ps1`,
+  which counts the coordinator's messages already in the room as sent.
 - A wait that outlives its session keeps the lease: no new wait starts for that agent until the old process
   ends or the agent is replaced (`Add-RelayAgent.ps1 -Replace <name>`). A new wait of the same session waits for
   it for 35 seconds and then says which process holds it.
