@@ -26,11 +26,11 @@ the tool reads the rest off the machine, so it is not the agent's opinion.
 Tell the owner about each arrival in one line: name, product, model and effort, machine, elevated or not,
 shell. The owner should never have to ask what is in the room.
 
-- Rights come in four kinds, and the board's `rights:` line sorts the agents by them:
-  `elevated` (administrator, SYSTEM or root: it can do administrator work alone), `not elevated, can elevate
+- Rights come in three kinds, and the board's `rights:` line sorts the agents by them:
+  `elevated` (administrator or SYSTEM: it can do administrator work alone), `not elevated, can elevate
   (UAC prompt)` (an administrator account that is not elevated: administrator work needs the owner to answer a
-  prompt on that machine), `not elevated, no administrator rights` (elevating takes another account's
-  credentials), and on Linux `not root`, with the group that may allow sudo when there is one.
+  prompt on that machine), and `not elevated, no administrator rights` (elevating takes another account's
+  credentials).
 - **Hand work to an agent that can do it alone.** Before a task goes out, match what it needs (administrator
   rights, a shell, a machine, a product) against the introductions. When the owner asks for "an elevated
   agent" and the board says `elevated: NOBODY`, stop there: tell the owner that no agent in the room is
@@ -57,8 +57,8 @@ Three questions, in this order, for every task before it goes out. The board ans
 
 1. **Can it do the task alone?** Rights, shell, machine, product (see Introductions). An agent that cannot
    is not a candidate, however good its model. That includes checking its own work: an agent whose machine
-   has no `sh` cannot run a test under `sh` (its introduction lists the shells its machine has). Give such a
-   check to an agent that has the engine, or say in the task that you run it and when.
+   has no PowerShell 7 cannot run a test under `pwsh` (its introduction lists the shells its machine has). Give
+   such a check to an agent that has the engine, or say in the task that you run it and when.
 2. **Is its model the right strength?** The lightest model that does a job well gets it:
 
    | Work | Goes to |

@@ -1,9 +1,9 @@
 #Requires -Version 5.1
 
 <#
-    Dot-sourced by the Pester suites. Runs the room tools as real child processes, one engine at a time:
-    ps7 (PowerShell 7), ps5 (Windows PowerShell 5.1) and sh (relay.sh under dash from Git for Windows).
-    Works when the suite itself runs under either PowerShell edition. ASCII only.
+    Dot-sourced by the Pester suites. Runs the room tool relay.ps1 as real child processes, one engine at a
+    time: ps7 (PowerShell 7) and ps5 (Windows PowerShell 5.1). There is no sh engine: sh is postponed by the
+    owner. Works when the suite itself runs under either PowerShell edition. ASCII only.
 #>
 
 function Get-RelayTestPath {
@@ -18,21 +18,6 @@ function Get-RelayTestPath {
     }
 }
 
-function Get-RelayTestDash {
-    # dash.exe of Git for Windows, or an empty string
-    $git = Get-Command git -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -ne $git) {
-        $candidate = Join-Path (Split-Path -Parent (Split-Path -Parent $git.Source)) 'usr\bin\dash.exe'
-        if (Test-Path -LiteralPath $candidate) { return $candidate }
-    }
-    $fallback = 'C:\Program Files\Git\usr\bin\dash.exe'
-    if (Test-Path -LiteralPath $fallback) { return $fallback }
-    # Linux and macOS: the system's dash
-    $system = Get-Command dash -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -ne $system) { return $system.Source }
-    return ''
-}
-
 function Get-RelayTestPwsh {
     if ($PSVersionTable.PSVersion.Major -ge 6) { return (Get-Process -Id $PID).Path }
     $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe'
@@ -43,12 +28,11 @@ function Get-RelayTestPwsh {
 }
 
 function Get-RelayTestEngine {
-    # The engines this machine can run. RELAY_TEST_ENGINES (for example "sh" or "ps7,ps5") narrows the list.
+    # The engines this machine can run. RELAY_TEST_ENGINES (for example "ps7" or "ps7,ps5") narrows the list.
     $engines = New-Object System.Collections.Generic.List[string]
     if (Get-RelayTestPwsh) { $engines.Add('ps7') }
     # Windows PowerShell exists only on Windows
     if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { $engines.Add('ps5') }
-    if (Get-RelayTestDash) { $engines.Add('sh') }
     if ($env:RELAY_TEST_ENGINES) {
         $wanted = @(([string]$env:RELAY_TEST_ENGINES) -split '[,; ]+' | Where-Object { $_ })
         return @($engines | Where-Object { $wanted -contains $_ })
@@ -87,18 +71,11 @@ function Start-RelayTool {
         switch ($Engine) {
             'ps7' { $shell = Get-RelayTestPwsh; $prefix = @('-NoProfile', '-NonInteractive') }
             'ps5' { $shell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'; $prefix = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass') }
-            'sh' { $shell = Get-RelayTestDash; $prefix = @() }
             default { throw "Unknown engine '$Engine'" }
         }
         $startInfo.FileName = $shell
-        if ($Engine -eq 'sh') {
-            $line = "'" + ($shell -replace '\\', '/') + "' '" + ((Join-Path $Room 'tools\relay.sh') -replace '\\', '/') + "' " + (@($Words) -join ' ')
-            foreach ($item in '-c', $line) { $arguments.Add($item) }
-        }
-        else {
-            $line = "& '$shell' " + ($prefix -join ' ') + " -File '" + (Join-Path $Room 'tools\relay.ps1') + "' " + (@($Words) -join ' ') + '; exit $LASTEXITCODE'
-            foreach ($item in ($prefix + @('-Command', $line))) { $arguments.Add($item) }
-        }
+        $line = "& '$shell' " + ($prefix -join ' ') + " -File '" + (Join-Path $Room 'tools\relay.ps1') + "' " + (@($Words) -join ' ') + '; exit $LASTEXITCODE'
+        foreach ($item in ($prefix + @('-Command', $line))) { $arguments.Add($item) }
     }
     else {
     switch ($Engine) {
@@ -109,10 +86,6 @@ function Start-RelayTool {
         'ps5' {
             $startInfo.FileName = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
             foreach ($item in '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Room 'tools\relay.ps1')) { $arguments.Add($item) }
-        }
-        'sh' {
-            $startInfo.FileName = Get-RelayTestDash
-            $arguments.Add(((Join-Path $Room 'tools\relay.sh') -replace '\\', '/'))
         }
         default { throw "Unknown engine '$Engine'" }
     }
@@ -138,7 +111,6 @@ function Start-RelayTool {
     # The suite runs in somebody's terminal: its tab keeps its title unless a test asks for the naming
     $variables['RELAY_NO_TITLE'] = '1'
     if ($Engine -eq 'ps5' -and $variables.ContainsKey('PSModulePath')) { $variables.Remove('PSModulePath') }
-    if ($Engine -eq 'sh') { $variables['PATH'] = (Split-Path -Parent (Get-RelayTestDash)) + [System.IO.Path]::PathSeparator + $variables['PATH'] }
     foreach ($key in $Environment.Keys) { $variables[[string]$key] = [string]$Environment[$key] }
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo

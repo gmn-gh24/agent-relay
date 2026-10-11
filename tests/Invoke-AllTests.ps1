@@ -14,9 +14,7 @@
     3. Pester 6: the room tools under PowerShell 7 and Windows PowerShell 5.1, one run per test file and engine,
        and the coordinator-side scripts under both PowerShell editions.
 
-    relay.sh is deferred (owner decision) and NOT TESTED: the gate runs neither the syntax check of dash nor
-    any sh run, and its result says so. The sh support of the test helpers stays, for a run by hand:
-    tests\Invoke-Suite.ps1 -Path <tool test file> -Engines sh -Label <any word>.
+    sh: none (postponed). There is no sh tool and no sh engine.
 
     Windows PowerShell 5.1 exists only on Windows. Elsewhere the gate says that ps5 is not available on this OS
     and runs ps7 alone; on Windows a missing Windows PowerShell fails the gate.
@@ -43,8 +41,8 @@
     How many Pester runs go side by side (6).
 
 .PARAMETER ShellRuns
-    Deprecated and ignored: sh is deferred and the gate starts no sh runs. Kept so that an older command line
-    still works.
+    Deprecated and ignored: there is no sh tool (postponed) and the gate starts no sh runs. Kept so that an
+    older command line still works.
 
 .PARAMETER SkipAnalyzer
     Leaves out PSScriptAnalyzer. Without this switch a machine that does not have it fails the gate; with it,
@@ -90,9 +88,8 @@ $untested = New-Object System.Collections.Generic.List[string]
 $started = Get-Date
 $onWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
 
-if ($PSBoundParameters.ContainsKey('ShellRuns')) { "note: -ShellRuns $ShellRuns is ignored: sh is deferred and the gate starts no sh runs" }
-'sh: relay.sh is deferred (owner decision) and NOT TESTED: no syntax check under dash, no sh runs'
-$untested.Add('relay.sh NOT TESTED: sh is deferred (owner decision)')
+if ($PSBoundParameters.ContainsKey('ShellRuns')) { "note: -ShellRuns $ShellRuns is ignored: there is no sh tool and the gate starts no sh runs" }
+'sh: none (postponed)'
 
 function Invoke-GateCommand {
     # Exit code and output, standard error included, of a program the gate starts

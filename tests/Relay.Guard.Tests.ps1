@@ -230,25 +230,21 @@ Describe 'Quoting what is put into a command line for somebody to paste (G1)' -T
 
     It 'quotes the call lines for the shell they are for' {
         (Get-RelayCallLine -RoomPath "C:\it's here\room" -Name 'emma' -Generation '1' -Shell 'powershell') | Should -Be "powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\it''s here\room\agents\emma\g1\relay.ps1'"
-        (Get-RelayCallLine -RoomPath "/home/it's/room" -Name 'emma' -Generation '1' -Shell 'sh') | Should -Be "sh '/home/it'\''s/room/agents/emma/g1/relay'"
         (Get-RelayCallLine -RoomPath "C:\it's here\room" -Name 'emma' -Generation '1' -Shell 'bash') | Should -Be "powershell -NoProfile -ExecutionPolicy Bypass -File 'C:/it'\''s here/room/agents/emma/g1/relay.ps1'"
         (Get-RelayCallLine -RoomPath 'C:\plain\room' -Name 'emma' -Generation '1' -Shell 'cmd') | Should -Be '"C:\plain\room\agents\emma\g1\relay.cmd"'
-        (Get-RelayCallLine -RoomPath '/home/plain/room' -Name 'emma' -Generation '1' -Shell 'sh') | Should -Be 'sh /home/plain/room/agents/emma/g1/relay'
     }
 
     It 'refuses a call line for a folder with a double quote or a line break' {
         { Get-RelayCallLine -RoomPath 'C:\a"b\room' -Name 'emma' -Generation '1' -Shell 'powershell' } | Should -Throw '*double quote or a line break*'
         { Get-RelayCallLine -RoomPath "C:\a`nb\room" -Name 'emma' -Generation '1' -Shell 'cmd' } | Should -Throw '*double quote or a line break*'
-        { Get-RelayCallLine -RoomPath '/a"b' -Name 'emma' -Generation '1' -Shell 'sh' } | Should -Throw '*double quote or a line break*'
+        { Get-RelayCallLine -RoomPath 'C:\a"b\room' -Name 'emma' -Generation '1' -Shell 'bash' } | Should -Throw '*double quote or a line break*'
     }
 
-    It 'writes the start prompt of a Linux seat with the path quoted for sh, and drops the Git Bash sentence for a quoted PowerShell path' {
+    It 'drops the Git Bash sentence from the start prompt for a quoted PowerShell path' {
         $agents = @(
-            [ordered]@{ name = 'emma'; role = 'tester'; kind = 'claude-code'; transport = 'share'; os = 'linux'; room_path = "/home/it's/room" },
             [ordered]@{ name = 'jack'; role = 'reviewer'; kind = 'claude-code'; transport = 'share'; room_path = "\\fileserver\it's\room" }
         )
         $created = New-RelayTestRoom -Root $root -RoomId "quote-$case" -Agents $agents
-        ([string]$created.Prompts['emma']) | Should -Match ([regex]::Escape("sh '/home/it'\''s/room/agents/emma/g1/relay' start <product> <model> <effort>"))
         $jack = [string]$created.Prompts['jack']
         $jack | Should -Match ([regex]::Escape("-File '\\fileserver\it''s\room\agents\jack\g1\relay.ps1' start <product> <model> <effort>"))
         $jack | Should -Not -Match 'Git Bash'

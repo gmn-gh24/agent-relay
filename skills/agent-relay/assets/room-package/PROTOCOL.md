@@ -14,11 +14,11 @@ on the machine where the owner started the job.
   DECISIONS.md             standing rules and owner decisions
   PLAN                     the team plan, when the job is split into parts: who builds what
   PROTOCOL.md              this file
-  join.cmd  join           for a session that has no name yet: takes a free seat (see "Joining")
-  tools/                   relay.ps1 (Windows), relay.sh (POSIX sh)
+  join.cmd  join.ps1       for a session that has no name yet: takes a free seat (see "Joining")
+  tools/                   relay.ps1, the room tool (Windows PowerShell 5.1 and PowerShell 7)
   agents/<name>/           one folder per agent; the folder list is the roster
     START-HERE.md  ASSIGNMENT.md        your instructions and limits
-    g<N>/relay.cmd  g<N>/relay          your wrapper for session generation N
+    g<N>/relay.cmd  g<N>/relay.ps1      your wrapper for session generation N
     inbox/                              messages to <name>, one file each: <from>-<NNNN>.md
     draft.md  attach/                   the text and the files of the next message you send
     card  status  alive                 your introduction, what you are doing, your heartbeat
@@ -30,9 +30,6 @@ You write only your `draft.md` and your `attach` folder. The tool writes the res
 you. Everything else is read-only for you. The coordinator's machine compares the tools, the wrappers, every
 agent's instructions and `DECISIONS.md` with its own copies, puts back anything that changed, and raises an
 alarm with the owner.
-
-`relay.ps1` is the tool that is kept up to date. `relay.sh` is deferred: from this version on it is not kept
-in step with `relay.ps1`, and the checks below that name `relay.ps1` are not in it.
 
 ## Introductions come first
 
@@ -214,16 +211,14 @@ stay inside your assignment.
 What the audit cannot compare it marks `NOT COMPARED`, never "nothing changed", and counts in its last line:
 
 - a folder with more than 20,000 files, at `start` or since;
-- a folder whose baseline the other tool took. `relay.ps1` and `relay.sh` keep their baselines in different
-  files: use one of them for the whole life of a generation;
 - a git repository that is gone. A plain folder that is gone is listed with every file it had as deleted;
 - a git repository that git cannot read, at `start` or at `report` (git is missing, refuses the folder's
-  owner, or finds the index broken). `relay.ps1` says why.
+  owner, or finds the index broken). The audit says why.
 
 Limits it does not mark: in a git repository, a file that was already changed and not committed at `start` is
-not followed further, so a later change to it does not show, and a file git ignores is never listed; and
-`relay.sh` tells a changed file by its time alone, where `relay.ps1` compares size and time. Your assigned
-paths (`may:`) are matched without regard to case by `relay.ps1` and with regard to case by `relay.sh`.
+not followed further, so a later change to it does not show, and a file git ignores is never listed. In other
+folders a file counts as changed when its size or its time changed. Your assigned paths (`may:`) are matched
+without regard to case.
 
 ## Being paused, stopped, replaced
 
@@ -232,4 +227,4 @@ paths (`may:`) are matched without regard to case by `relay.ps1` and with regard
 - **Stopped:** every verb tells you. Stop working and leave things as they are. `bye` still works.
 - **Replaced or retired:** a new session has taken over your name, or your role has ended. Stop and send
   nothing more.
-- **Room closed:** the job is over. The tools refuse a closed room.
+- **Room closed:** the job is over. The tool refuses a closed room.

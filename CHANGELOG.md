@@ -3,10 +3,21 @@
 ## 0.2.0 (2026-10-11)
 
 A full review of the plugin by five independent readers (each tool, the module, the scripts, the pane and the
-gate), and the fixes, each with a test that fails without it. Owner decisions: `relay.sh` is deferred (frozen as
-in 0.1.1, out of the gate, no longer kept in step with `relay.ps1`); text an agent wrote loses its control
-characters when printed, and nothing else about the output changes; the case rule of `may:` patterns differs
-between the two tools and is documented.
+gate), and the fixes, each with a test that fails without it. Owner decisions: sh is postponed, so `relay.sh`,
+the sh wrappers and the sh line of the join prompt are removed (see below); text an agent wrote loses its
+control characters when printed, and nothing else about the output changes; `may:` patterns are matched without
+regard to case, and that is documented.
+
+sh is removed (postponed by the owner; it is built and tested if and when it is needed):
+
+- The room package no longer holds `relay.sh` or the templates of the sh wrappers. A new room gets no
+  `tools/relay.sh`, no `join` and no `agents/<name>/g<N>/relay`; the join prompt has no line for Linux or
+  macOS, and `Update-RelayRoom` no longer writes the sh wrappers. Agents on Linux or macOS cannot join until
+  sh is built. A room made earlier keeps the sh files its canonical copy holds; nothing migrates them.
+- Agents run on Windows only: an answers entry with an `os` other than `windows`, or with `shell: sh`, is
+  refused with a message that says sh is postponed; `agent-kinds.json` has no Linux shell. `ssh` stays refused.
+- `relay.ps1` lost its sh call format and its reading of a baseline taken by `relay.sh`; the rights a Linux
+  card gave (`root`, `sudo`) are no longer sorted on the board.
 
 Nothing the coordinator's PC decides by comes from the room, again:
 
@@ -67,12 +78,13 @@ The pane:
 
 The test gate:
 
-- No sh runs and no dash check (deferred, and it says so); Windows PowerShell 5.1 only on Windows.
+- No sh engine: the test helpers, the suites and `Test-RelayPackage` run `relay.ps1` under PowerShell 7 and
+  Windows PowerShell 5.1 only; Windows PowerShell 5.1 only on Windows.
 - A failing `BeforeAll` or `AfterAll`, a file that does not load, a path that names nothing and a run in which
   no test ran fail it (`Relay.Gate.Tests.ps1`). Every test file must be listed; the ASCII and line-end check
   reads what git tracks; the PowerShell wrapper templates are parsed; the pane's validate and tests are steps.
   `-SkipAnalyzer` and `-SkipPane` run the rest where PSScriptAnalyzer or Claude Code is missing.
-- The suites run on Linux and macOS under PowerShell 7 (dash found there, ps5 offered only on Windows).
+- The suites run on Linux and macOS under PowerShell 7 (ps5 offered only on Windows).
 - Eval cases: the must-load cases can fail now, each with an outcome grader.
 
 ## 0.1.1 (2026-10-10)

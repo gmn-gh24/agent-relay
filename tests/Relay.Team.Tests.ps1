@@ -2,8 +2,9 @@
 
 <#
     The verbs team and progress, the changed-plan banner and the help lines, the same cases for every engine:
-    relay.ps1 under PowerShell 7 and under Windows PowerShell 5.1, relay.sh under dash. Written from sections 1 to
-    5 of work\team-plan\SPEC.md and from nothing else. Every tool call is a real child process. Pester 6. ASCII only.
+    relay.ps1 under PowerShell 7 and under Windows PowerShell 5.1. Written from sections 1 to 5 of
+    work\team-plan\SPEC.md and from nothing else. Every tool call is a real child process. Pester 6. ASCII only.
+    The plans in it are sample data: a part named tool-sh or a note that names relay.sh is text, not a tool.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester: a variable set in BeforeAll or BeforeEach is read in the It blocks')]
@@ -724,17 +725,8 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             # Consistent with a second between each of three reads (two seconds more than a call that does not wait).
             # It does not count the reads: that would need the tool to say when it reads. The upper bound can fail by scheduling alone.
             $extra = $measuredSeconds - $baseSeconds
-            if ($engine -eq 'sh') {
-                # One call takes seconds under dash on Windows and varies by about a second: two sleeps cannot be told from
-                # three there. This shows that the tool read the plan again (more than 0.8 s) and did not hang (4.5 s). That
-                # it reads three times and not four is pinned on the PowerShell engines.
-                $extra | Should -BeGreaterThan 0.8
-                $extra | Should -BeLessThan 4.5
-            }
-            else {
-                $extra | Should -BeGreaterThan 1.6
-                $extra | Should -BeLessThan 2.9
-            }
+            $extra | Should -BeGreaterThan 1.6
+            $extra | Should -BeLessThan 2.9
             (Read-TeamKeyValue (Join-Path $room 'agents\jack\state')).ContainsKey('plan_seen') | Should -BeFalse
         }
 

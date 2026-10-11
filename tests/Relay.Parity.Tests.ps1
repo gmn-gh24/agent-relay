@@ -1,13 +1,12 @@
 #Requires -Version 5.1
 
 <#
-    Lines and orders that relay.ps1 and relay.sh must print in the same way (ROUND2.md: F10, F11, F14, F15, F16),
-    the same cases for every engine: relay.ps1 under PowerShell 7 and under Windows PowerShell 5.1, relay.sh under
-    dash. A literal expected line in a test is what makes the engines print the same thing. Written from
-    work\team-plan\ROUND2.md. Every tool call is a real child process. Pester 6. ASCII only.
+    Lines and orders that relay.ps1 must print exactly (ROUND2.md: F10, F11, F15, F16), the same cases for every
+    engine: relay.ps1 under PowerShell 7 and under Windows PowerShell 5.1. A literal expected line in a test is
+    what makes the engines print the same thing. Written from work\team-plan\ROUND2.md. Every tool call is a real
+    child process. Pester 6. ASCII only.
 
-    The round-5 context adds the culture of the machine. relay.sh is frozen from that round on: a case that only
-    relay.ps1 was fixed for skips itself under sh.
+    The round-5 context adds the culture of the machine.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester: a variable set in BeforeAll or BeforeEach is read in the It blocks')]
@@ -121,10 +120,10 @@ Describe 'Parity on <Engine>' -Tag 'Parity' -ForEach $engineCases {
             $named = ($last -replace '^\(line 1 = subject\)\. Files to attach go into ', '' -replace ' before you send\.$', '')
             $normal = ($named -replace '/', '\').TrimEnd('\').ToLowerInvariant()
             $wanted = (Join-Path $room 'agents\emma\attach').TrimEnd('\').ToLowerInvariant()
-            # Under sh, and with a short (8.3) temp folder name, only the part from the room folder on can be known;
-            # a wrong folder above the room cannot be seen by this test
-            if ($engine -eq 'sh' -or $room.Contains('~')) {
-                # dash names the temp folder its own way (/tmp): from the room folder on, and an absolute path
+            # With a short (8.3) temp folder name, only the part from the room folder on can be known; a wrong
+            # folder above the room cannot be seen by this test
+            if ($room.Contains('~')) {
+                # From the room folder on, and an absolute path
                 $named | Should -Match '^(/|[A-Za-z]:)'
                 $normal.EndsWith('\' + (Split-Path -Leaf $room).ToLowerInvariant() + '\agents\emma\attach') | Should -BeTrue
             }
@@ -137,38 +136,9 @@ Describe 'Parity on <Engine>' -Tag 'Parity' -ForEach $engineCases {
         }
     }
 
-    Context 'F14: a baseline of the other tool is not compared' {
-        It 'says so in the heading and in the summary, and lists nothing for the folder' {
-            $work = Join-Path $root ('work-' + (New-RelayTestId))
-            $null = New-Item -ItemType Directory -Path $work -Force
-            Write-ParityFile (Join-Path $work 'one.txt') "one`n"
-            Use-ParityScope $work
-            $baseline = Join-Path $room 'agents\emma\baseline'
-            if ($engine -eq 'sh') {
-                Test-Path -LiteralPath (Join-Path $baseline 'g1-root1.list') | Should -BeTrue
-                foreach ($name in 'g1-root1.list', 'g1-root1.marker') { [System.IO.File]::Delete((Join-Path $baseline $name)) }
-                Write-ParityFile (Join-Path $baseline 'g1-root1.manifest') "one.txt`t4|1`n"
-            }
-            else {
-                Test-Path -LiteralPath (Join-Path $baseline 'g1-root1.manifest') | Should -BeTrue
-                [System.IO.File]::Delete((Join-Path $baseline 'g1-root1.manifest'))
-                Write-ParityFile (Join-Path $baseline 'g1-root1.list') "one.txt`n"
-                Write-ParityFile (Join-Path $baseline 'g1-root1.marker') ''
-            }
-            Write-ParityFile (Join-Path $work 'new.txt') "new`n"
-            $report = Send-ParityReport
-            $report.ExitCode | Should -Be 0
-            $audit = Read-ParityAudit $report
-            $lines = Get-ParityLine $audit
-            $lines | Should -Contain "root: $work (the baseline was taken by the other tool: NOT COMPARED)"
-            $lines[$lines.Count - 1] | Should -BeExactly 'self-audit: 0 changed since start, 0 OUTSIDE the assigned paths, 1 folder(s) NOT COMPARED'
-            $audit | Should -Not -Match 'new\.txt|one\.txt|nothing changed|assigned paths: '
-        }
-    }
-
     Context 'F15: a folder that has grown past the limit is not compared' {
         It 'says NOT COMPARED, lists no old file as deleted, and counts the folder as not compared' {
-            # The limit of both tools is 20000 files; this makes 20100 (a few seconds, more with a scanner on every file)
+            # The limit of the tool is 20000 files; this makes 20100 (a few seconds, more with a scanner on every file)
             $work = Join-Path $root ('big-' + (New-RelayTestId))
             $null = New-Item -ItemType Directory -Path $work -Force
             foreach ($name in 'a.txt', 'b.txt', 'c.txt') { Write-ParityFile (Join-Path $work $name) "$name`n" }
@@ -219,7 +189,7 @@ Describe 'Parity on <Engine>' -Tag 'Parity' -ForEach $engineCases {
         }
 
         It 'prints whole minutes rounded down in the line about a silent coordinator: 633 seconds' {
-            # relay.sh is not asked to match this line by ROUND2.md word for word, only the number: 10.55 minutes is 10
+            # Whole minutes, rounded down: 10.55 minutes is 10
             [System.IO.File]::SetLastWriteTimeUtc((Join-Path $room 'agents\olivia\alive'), [DateTime]::UtcNow.AddSeconds(-633))
             $result = Invoke-Parity 'emma' @('check')
             $result.Output | Should -Match '(?m)^=== the coordinator has given no sign of life for 10 minutes ===$'
@@ -296,7 +266,6 @@ Describe 'Parity on <Engine>' -Tag 'Parity' -ForEach $engineCases {
         }
 
         It 'writes its times in the same form whatever the culture of the machine (Thai: another calendar)' {
-            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
             # .NET takes the culture from these on Linux and macOS; on Windows the test asks nothing of the culture
             $thai = @{ LC_ALL = 'th_TH.UTF-8'; LC_MESSAGES = 'th_TH.UTF-8'; LANG = 'th_TH.UTF-8' }
             Write-ParityFile (Join-Path $room 'agents\emma\draft.md') "In Thai`n`nThe time stays Gregorian."
@@ -309,7 +278,6 @@ Describe 'Parity on <Engine>' -Tag 'Parity' -ForEach $engineCases {
         }
 
         It 'lists the agents in byte order whatever the culture of the machine (Danish: aa after z)' {
-            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
             $number = New-RelayTestId
             $agents = @(
                 [ordered]@{ name = 'zed'; role = 'tester'; kind = 'generic'; transport = 'same-pc' },

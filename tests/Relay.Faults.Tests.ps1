@@ -3,8 +3,8 @@
 <#
     Round 2 of the team-plan job: one context per fault F1 to F6 of work\team-plan\ROUND2.md. Every test fails against
     the room tool as it was before the fixes and passes against the fixed one. The same cases run for every engine:
-    relay.ps1 under PowerShell 7 and under Windows PowerShell 5.1, relay.sh under dash. Every tool call is a real child
-    process. Pester 6. ASCII only.
+    relay.ps1 under PowerShell 7 and under Windows PowerShell 5.1. Every tool call is a real child process. Pester 6.
+    ASCII only.
 
     Faults that need no schedule are forced from outside: a message file that is empty, has no type or is held open, a
     number range filled with folders, a deleted work folder, a proposals file written back by hand, a claim or a lock
@@ -17,9 +17,8 @@
     A test that needs the hook skips itself while the source of the tool does not contain the text RELAY_PAUSE_AT.
     RELAY_FAULTS_RUN_HOOK_TESTS=1 runs them anyway (to see them fail against a tool without the hook).
 
-    The R contexts are the round-5 fixes of relay.ps1. relay.sh is frozen from that round on, so they skip
-    themselves under sh. A link they need is a symbolic link, or a junction on Windows; where this account may
-    make neither, the test skips itself and says so.
+    The R contexts are the round-5 fixes of relay.ps1. A link they need is a symbolic link, or a junction on
+    Windows; where this account may make neither, the test skips itself and says so.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester: a variable set in BeforeAll or BeforeEach is read in the It blocks')]
@@ -43,19 +42,14 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
         # The coordinator has read the three introductions: every test starts with nothing new anywhere
         $null = Invoke-RelayTool -Room $template -Agent 'olivia' -Engine $engine -Words @('check')
-        $toolFile = 'relay.ps1'
-        if ($engine -eq 'sh') { $toolFile = 'relay.sh' }
-        $toolSource = [System.IO.File]::ReadAllText((Join-Path $template "tools\$toolFile"))
+        $toolSource = [System.IO.File]::ReadAllText((Join-Path $template 'tools\relay.ps1'))
         $onWindows = ($env:OS -eq 'Windows_NT')
-        # relay.sh under dash on Windows needs seconds for what the other engines do in a fraction of one: a time
-        # factor for waits and limits (per engine), and the length of a tool minute (the same for all engines)
-        $slow = ($engine -eq 'sh')
-        # A minute of 15 seconds on every engine: a loaded machine makes any of them slow, and "young" has to hold at the first look
+        # A time factor for waits and limits, and the length of a tool minute: 15 seconds on every engine, as a
+        # loaded machine makes any of them slow, and "young" has to hold at the first look
         $pace = 1
         $shortMinute = 15
         $waitMinute = 15
         $lockWait = 2.5
-        if ($slow) { $pace = 3; $lockWait = 1.8 }
 
         function Get-ReadableMessage {
             # A valid message file as a sender's tool would leave it
@@ -76,12 +70,11 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         function Write-Marker {
-            # A claim or a lock by hand: relay.ps1 creates a file, relay.sh a directory (mkdir); aged by $AgeSeconds
+            # A claim or a lock by hand: a file, as the tool creates it; aged by $AgeSeconds
             param([string]$Path, [int]$AgeSeconds = 0, [switch]$Held)
-            if ($engine -eq 'sh') { $null = New-Item -ItemType Directory -Path $Path -Force }
-            else { [System.IO.File]::WriteAllText($Path, "held by a test`n") }
+            [System.IO.File]::WriteAllText($Path, "held by a test`n")
             if ($AgeSeconds -gt 0) { (Get-Item -LiteralPath $Path -Force).LastWriteTimeUtc = [DateTime]::UtcNow.AddSeconds(-$AgeSeconds) }
-            # Held: fresh however long the call takes to look at it. A time in the future is not old for a tool that takes the age as now minus the file time (both tools do, as far as I know: not verified for a room on a share with another clock)
+            # Held: fresh however long the call takes to look at it. A time in the future is not old for a tool that takes the age as now minus the file time (the tool does, as far as I know: not verified for a room on a share with another clock)
             if ($Held) { (Get-Item -LiteralPath $Path -Force).LastWriteTimeUtc = [DateTime]::UtcNow.AddSeconds(120) }
         }
 
@@ -102,7 +95,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         function Wait-Listening {
-            # A wait that was started is listening once its status says so; slow engines take their time
+            # A wait that was started is listening once its status says so; a slow machine takes its time
             param([string]$Room, [string]$Agent = 'emma')
             $until = [DateTime]::UtcNow.AddSeconds(40 * $pace)
             $path = Join-Path $Room "agents\$Agent\status"
@@ -136,13 +129,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $folder = Join-Path $Room 'pause'
             $null = New-Item -ItemType Directory -Path $folder -Force
             return @{ RELAY_PAUSE_AT = $Point; RELAY_PAUSE_DIR = $folder }
-        }
-
-        function Skip-ForFrozenSh {
-            # relay.sh is frozen (owner decision, round 5): a fix made in relay.ps1 alone is not asked of it
-            if ($engine -ne 'sh') { return $false }
-            Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'
-            return $true
         }
 
         function New-TestLink {
@@ -590,9 +576,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $null = New-Item -ItemType Directory -Path (Join-Path $f5Work 'src'), (Join-Path $f5Work 'docs') -Force
             [System.IO.File]::WriteAllText((Join-Path $f5Work 'src\a.txt'), "a`n")
             [System.IO.File]::WriteAllText((Join-Path $f5Work 'docs\readme.txt'), "readme`n")
-            $f5ForTool = $f5Work
-            if ($engine -eq 'sh') { $f5ForTool = $f5Work -replace '\\', '/' }
-            $f5Agents = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $f5ForTool; may = @('src/*') }) })
+            $f5Agents = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $f5Work; may = @('src/*') }) })
             $f5Room = (New-RelayTestRoom -Root (Join-Path $root "f5-$f5Number") -RoomId "f5-$engine-$f5Number" -Agents $f5Agents).Path
             foreach ($agent in 'olivia', 'emma') { $null = Invoke-RelayTool -Room $f5Room -Agent $agent -Engine $engine -Words @('start', 'p', 'm', 'e') }
             $null = Send-RelayTestMessage -Room $f5Room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Work`n`nWork in the folder."
@@ -622,7 +606,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         It 'says in the heading line of the folder that it is gone, once' {
             $heading = @($f5Audit -split "`n" | Where-Object { $_ -like 'root: *' })
             $heading.Count | Should -Be 1
-            $heading[0] | Should -BeExactly "root: $f5ForTool (files; the folder is gone, every file of the baseline is listed as deleted)"
+            $heading[0] | Should -BeExactly "root: $f5Work (files; the folder is gone, every file of the baseline is listed as deleted)"
         }
 
         It 'says so for a git folder that is gone, with its baseline commit, and does not compare it' {
@@ -631,9 +615,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $gitWork = Join-Path $root "gitwork-$gitNumber"
             $null = New-Item -ItemType Directory -Path $gitWork -Force
             [System.IO.File]::WriteAllText((Join-Path $gitWork 'a.txt'), "a`n")
-            $gitForTool = $gitWork
-            if ($engine -eq 'sh') { $gitForTool = $gitWork.Replace([string][char]92, '/') }
-            $gitAgents = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $gitForTool; may = @('*') }) })
+            $gitAgents = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $gitWork; may = @('*') }) })
             $gitRoom = (New-RelayTestRoom -Root (Join-Path $root "git-$gitNumber") -RoomId "git-$engine-$gitNumber" -Agents $gitAgents).Path
             foreach ($agent in 'olivia', 'emma') { $null = Invoke-RelayTool -Room $gitRoom -Agent $agent -Engine $engine -Words @('start', 'p', 'm', 'e') }
             $baseline = Join-Path $gitRoom 'agents\emma\baseline'
@@ -650,7 +632,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $audit = (Get-Content -LiteralPath (Join-Path $gitRoom ('files\' + $gitId + '\self-audit.txt')) -Raw) -replace "`r", ''
             $heading = @($audit -split "`n" | Where-Object { $_ -like 'root: *' })
             $heading.Count | Should -Be 1
-            $heading[0] | Should -BeExactly "root: $gitForTool (git, baseline $commit; the folder is gone: NOT COMPARED)"
+            $heading[0] | Should -BeExactly "root: $gitWork (git, baseline $commit; the folder is gone: NOT COMPARED)"
             $report.Output | Should -Match 'NOT COMPARED'
         }
     }
@@ -768,7 +750,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             if (Test-Path -LiteralPath $proposals) { $noted = [System.IO.File]::ReadAllText($proposals) }
             $noted | Should -Not -Match 'emma-olivia-0002'
             # Not later either, when the lock is gone and the tool looks again
-            if ($engine -eq 'sh') { [System.IO.Directory]::Delete($lock, $true) } else { [System.IO.File]::Delete($lock) }
+            [System.IO.File]::Delete($lock)
             $null = Invoke-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('check')
             $null = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -TimeoutSeconds (60 * $pace)
             $later = ''
@@ -829,18 +811,14 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $f8Work = Join-Path $root "work-$f8Number"
             $null = New-Item -ItemType Directory -Path $f8Work -Force
             [System.IO.File]::WriteAllText((Join-Path $f8Work 'before.txt'), "old baseline`n")
-            $f8ForTool = $f8Work
-            if ($engine -eq 'sh') { $f8ForTool = $f8Work -replace '\\', '/' }
-            $f8Agents = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $f8ForTool; may = @('*') }) })
+            $f8Agents = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $f8Work; may = @('*') }) })
             $f8Room = (New-RelayTestRoom -Root (Join-Path $root "f8-$f8Number") -RoomId "f8-$engine-$f8Number" -Agents $f8Agents).Path
             foreach ($agent in 'olivia', 'emma') { $null = Invoke-RelayTool -Room $f8Room -Agent $agent -Engine $engine -Words @('start', 'p', 'm', 'e') }
             $assignment = Join-Path $f8Room 'agents\emma\ASSIGNMENT.md'
             [System.IO.File]::AppendAllText($assignment, "`nA new limit that has to be shown.`n")
             $null = Send-RelayTestMessage -Room $f8Room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "New work`n`nDo it."
-            # The baseline of a plain folder: relay.ps1 keeps a .manifest, relay.sh a .list (with a .marker next to it)
-            $baselineKind = 'manifest'
-            if ($engine -eq 'sh') { $baselineKind = 'list' }
-            $manifest = Join-Path $f8Room ('agents\emma\baseline\g1-root1.' + $baselineKind)
+            # The baseline of a plain folder is a .manifest
+            $manifest = Join-Path $f8Room 'agents\emma\baseline\g1-root1.manifest'
             Test-Path -LiteralPath $manifest | Should -BeTrue
             $stream = [System.IO.File]::Open($manifest, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
             try { $null = Invoke-RelayTool -Room $f8Room -Agent 'emma' -Engine $engine -Words @('check') -TimeoutSeconds (60 * $pace) }
@@ -908,14 +886,12 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $outside = Join-Path $root ('outside-' + (New-RelayTestId))
             $null = New-Item -ItemType Directory -Path $outside -Force
             Copy-Item -LiteralPath (Join-Path $room 'tools') -Destination (Join-Path $outside 'tools') -Recurse -Force
-            $roomForTool = $room
-            if ($engine -eq 'sh') { $roomForTool = $room.Replace([string][char]92, '/') }
             $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "From the room`n`nSeen from outside."
-            $seen = Invoke-RelayTool -Room $outside -Agent 'emma' -Engine $engine -Words @('check') -Environment @{ RELAY_ROOM = $roomForTool } -TimeoutSeconds (60 * $pace)
+            $seen = Invoke-RelayTool -Room $outside -Agent 'emma' -Engine $engine -Words @('check') -Environment @{ RELAY_ROOM = $room } -TimeoutSeconds (60 * $pace)
             $seen.ExitCode | Should -Be 0
             $seen.Output | Should -Match 'Seen from outside\.'
             Set-RelayTestDraft -Room $room -Agent 'emma' -Text "Sent from outside`n`nInto the room."
-            $sent = Invoke-RelayTool -Room $outside -Agent 'emma' -Engine $engine -Words @('note') -Environment @{ RELAY_ROOM = $roomForTool } -TimeoutSeconds (60 * $pace)
+            $sent = Invoke-RelayTool -Room $outside -Agent 'emma' -Engine $engine -Words @('note') -Environment @{ RELAY_ROOM = $room } -TimeoutSeconds (60 * $pace)
             $sent.ExitCode | Should -Be 0
             $sent.Output | Should -Match 'SENT emma-olivia-0002 '
             @(Get-RelayTestInbox -Room $room -Agent 'olivia' -From 'emma') | Should -Contain 'emma-0002.md'
@@ -925,21 +901,13 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         It 'never takes its own place when RELAY_ROOM names a folder without a ROOM file: the room is not reachable' {
             $empty = Join-Path $root ('empty-' + (New-RelayTestId))
             $null = New-Item -ItemType Directory -Path $empty -Force
-            $emptyForTool = $empty
-            if ($engine -eq 'sh') { $emptyForTool = $empty.Replace([string][char]92, '/') }
-            $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -Environment @{ RELAY_ROOM = $emptyForTool } -TimeoutSeconds (60 * $pace)
-            if ($engine -eq 'sh') {
-                # relay.sh is frozen (round 5) and still takes its own place
-                $result.ExitCode | Should -Be 3
-                return
-            }
+            $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -Environment @{ RELAY_ROOM = $empty } -TimeoutSeconds (60 * $pace)
             $result.ExitCode | Should -Be 2
             $result.Output | Should -Match ('(?m)^ERROR: the room is not reachable: ' + [regex]::Escape($empty) + '$')
             @(Get-ChildItem -LiteralPath $empty -Force).Count | Should -Be 0
         }
 
         It 'writes nothing next to the tool of the launcher (this PC''s copy) while the room it names cannot be reached' {
-            if (Skip-ForFrozenSh) { return }
             # The launcher runs the tool in this PC's canonical copy, which holds a ROOM file and agent folders of
             # its own: a room that is briefly unreachable must not make the tool work on that copy instead
             $canon = Join-Path $root ('canon-' + (New-RelayTestId))
@@ -1068,21 +1036,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
     }
 
-    Context 'H4: relay.sh checks what it writes' {
-        It 'ends a call at its start when no temporary folder can be made (relay.sh); the other engines do not use one' {
-            $notAFolder = Join-Path $room 'agents\emma\not-a-folder'
-            [System.IO.File]::WriteAllText($notAFolder, "a file where a folder is wanted`n")
-            $forTool = $notAFolder
-            if ($engine -eq 'sh') { $forTool = $notAFolder.Replace([string][char]92, '/') }
-            $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -Environment @{ TMPDIR = $forTool } -TimeoutSeconds (60 * $pace)
-            if ($engine -eq 'sh') {
-                $result.ExitCode | Should -Not -Be 3
-                $result.Output | Should -Match 'could not create a temporary folder under'
-            }
-            else { $result.ExitCode | Should -Be 3 }
-        }
-    }
-
     Context 'H5: a proposal is announced as due only when the note says due' {
         It 'announces nothing while proposals.lock is held, and announces it once when the lock is free' {
             $longAgo = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - 1000
@@ -1093,7 +1046,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $locked = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -TimeoutSeconds (60 * $pace)
             $locked.ExitCode | Should -Be 3
             $locked.Output | Should -Not -Match 'no objection'
-            if ($engine -eq 'sh') { [System.IO.Directory]::Delete($lock, $true) } else { [System.IO.File]::Delete($lock) }
+            [System.IO.File]::Delete($lock)
             $free = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -TimeoutSeconds (60 * $pace)
             $free.ExitCode | Should -Be 0
             $free.Output | Should -Match 'no objection to your proposal emma-olivia-0002'
@@ -1271,7 +1224,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
 
     Context 'R3: a git folder that git cannot read is NOT COMPARED, never "nothing changed"' {
         It 'says so, with the reason, when git status fails at report time' -Tag 'MaySkip' {
-            if (Skip-ForFrozenSh) { return }
             if ($null -eq (Get-Command git -ErrorAction SilentlyContinue)) { Set-ItResult -Skipped -Because 'git is not installed'; return }
             $made = New-GitAuditRoom
             Set-BrokenIndex $made.Work
@@ -1283,7 +1235,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         It 'says so, with the reason, when git could not read the folder at start' -Tag 'MaySkip' {
-            if (Skip-ForFrozenSh) { return }
             if ($null -eq (Get-Command git -ErrorAction SilentlyContinue)) { Set-ItResult -Skipped -Because 'git is not installed'; return }
             $made = New-GitAuditRoom -Break
             Test-Path -LiteralPath (Join-Path $made.Room 'agents\emma\baseline\g1-root1.git-failed') | Should -BeTrue
@@ -1296,7 +1247,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         It 'runs no fsmonitor command that the repository''s own config names' -Tag 'MaySkip' {
-            if (Skip-ForFrozenSh) { return }
             if ($null -eq (Get-Command git -ErrorAction SilentlyContinue)) { Set-ItResult -Skipped -Because 'git is not installed'; return }
             $number = New-RelayTestId
             $work = Join-Path $root "fsmonitor-$number"
@@ -1325,7 +1275,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
 
     Context 'R4: nothing is read or written through a link in the agent''s own folder' {
         It 'refuses a draft that is a link, sends nothing of what it points at and leaves both alone' -Tag 'MaySkip' {
-            if (Skip-ForFrozenSh) { return }
             $private = Join-Path $root ('private-' + (New-RelayTestId) + '.txt')
             [System.IO.File]::WriteAllText($private, "Private`n`nmachine example.invalid login me password not-for-the-room`n")
             $draft = Join-Path $room 'agents\emma\draft.md'
@@ -1346,7 +1295,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         It 'writes nothing through a link that stands where a file of its own folder is' -Tag 'MaySkip' {
-            if (Skip-ForFrozenSh) { return }
             $victim = Join-Path $root ('victim-' + (New-RelayTestId) + '.txt')
             [System.IO.File]::WriteAllText($victim, "untouched`n")
             foreach ($name in 'status', 'journal') {
@@ -1360,7 +1308,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         It 'removes a left-over claim that is a link as a link, never what it points at' -Tag 'MaySkip' {
-            if (Skip-ForFrozenSh) { return }
             $target = Join-Path $root ('claimed-' + (New-RelayTestId))
             $null = New-Item -ItemType Directory -Path $target -Force
             [System.IO.File]::WriteAllText((Join-Path $target 'keep.txt'), "keep`n")
@@ -1375,7 +1322,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         It 'sends nothing and moves nothing when the attach folder holds a link' -Tag 'MaySkip' {
-            if (Skip-ForFrozenSh) { return }
             $outside = Join-Path $root ('outside-' + (New-RelayTestId))
             $null = New-Item -ItemType Directory -Path $outside -Force
             [System.IO.File]::WriteAllText((Join-Path $outside 'theirs.txt'), "not this agent's to send`n")
@@ -1403,7 +1349,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
 
     Context 'R5: listing the attachments never stands in the way of a delivery' {
         It 'delivers a message whose attachment folder cannot be listed in full, and counts what it can list' -Tag 'MaySkip' {
-            if (Skip-ForFrozenSh) { return }
             $files = Join-Path $room 'files\olivia-emma-0001'
             $sub = Join-Path $files 'sub'
             $null = New-Item -ItemType Directory -Path $sub -Force
@@ -1450,7 +1395,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             @{ Name = 'UTF-16 BE'; Encoding = 'BigEndianUnicode' }
             @{ Name = 'UTF-32 LE'; Encoding = 'UTF32' }
         ) {
-            if (Skip-ForFrozenSh) { return }
             $token = 'gh' + 'p_' + ('a1B2c3D4e5F6' * 3)
             # Windows PowerShell 5.1 writes UTF-16 with a byte order mark for > and Out-File
             [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\draft.md'), "The token`n`nHere it is: $token`n", [System.Text.Encoding]::$Encoding)
@@ -1461,7 +1405,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         It 'takes the subject and the text of a UTF-16 draft as written' {
-            if (Skip-ForFrozenSh) { return }
             $subject = 'Gr' + [char]0x00FC + [char]0x00DF + 'e from UTF-16'
             [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\draft.md'), "$subject`n`nThe text.`n", [System.Text.Encoding]::Unicode)
             $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('note') -TimeoutSeconds (60 * $pace)
@@ -1474,7 +1417,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         It 'refuses a draft that still holds NUL characters' {
-            if (Skip-ForFrozenSh) { return }
             Set-RelayTestDraft -Room $room -Agent 'emma' -Text ("A subject`n`nBefore" + [char]0 + 'after')
             $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('note') -TimeoutSeconds (60 * $pace)
             $result.ExitCode | Should -Be 1
@@ -1485,7 +1427,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
 
     Context 'R8: what cannot be read is no changed assignment' {
         It 'keeps its baseline and says nothing of a new assignment while its state cannot be read' {
-            if (Skip-ForFrozenSh) { return }
             $assignment = Join-Path $room 'agents\emma\ASSIGNMENT.md'
             [System.IO.File]::AppendAllText($assignment, "`nOne more line from the coordinator.`n")
             # Bytes on disk that give no key: the tool takes that for a state it could not read at this moment
@@ -1500,7 +1441,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         It 'keeps its baseline and says nothing of a new assignment while the assignment cannot be read' {
-            if (Skip-ForFrozenSh) { return }
             if (-not $onWindows) { Set-ItResult -Skipped -Because 'a file cannot be held open without sharing on this system'; return }
             $assignment = Join-Path $room 'agents\emma\ASSIGNMENT.md'
             $before = Get-TreeSnapshot (Join-Path $room 'agents\emma\baseline')
@@ -1515,7 +1455,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         }
 
         It 'stops, and delivers nothing, when the old baseline cannot be taken away for a new assignment' {
-            if (Skip-ForFrozenSh) { return }
             # A folder where the marker of the old baseline is: it cannot be removed as a file
             $marker = Join-Path $room 'agents\emma\baseline\g1.done'
             if (Test-Path -LiteralPath $marker) { [System.IO.File]::Delete($marker) }
@@ -1534,7 +1473,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
 
     Context 'R10: a damaged line of the proposals note' {
         It 'passes over a line whose minutes are no number, in check and in propose' {
-            if (Skip-ForFrozenSh) { return }
             [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\proposals'), "emma-olivia-0007 five - open`n")
             $check = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -TimeoutSeconds (60 * $pace)
             $check.ExitCode | Should -Be 3
@@ -1547,7 +1485,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
 
     Context 'R15: paused or resumed is said once' {
         It 'says paused only once it could note it, and then only once' {
-            if (Skip-ForFrozenSh) { return }
             [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\state'), "no key in here`n")
             [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\control'), "state: pause`n")
             $unnoted = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -TimeoutSeconds (60 * $pace)
@@ -1567,7 +1504,6 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
 
     Context 'R17: the state is written inside its own lock' {
         It 'writes no state while another call holds state.lock, and writes it once the lock is free' {
-            if (Skip-ForFrozenSh) { return }
             $seen = Get-StateValue -Room $room -Agent 'emma' -Key 'rules_seen'
             [System.IO.File]::AppendAllText((Join-Path $room 'DECISIONS.md'), "`n- A rule for the lock test.`n")
             $lock = Join-Path $room 'agents\emma\state.lock'

@@ -453,7 +453,7 @@ function Test-RelayPowerShellQuote {
 }
 
 function ConvertTo-RelayShellLiteral {
-    # Text as an sh string in single quotes: a single quote ends the string, is written escaped, and the string goes on
+    # Text as a Git Bash string in single quotes: a single quote ends the string, is written escaped, and the string goes on
     param([Parameter(Mandatory)][string]$Text)
     return ("'" + $Text.Replace("'", "'\''") + "'")
 }
@@ -1291,14 +1291,14 @@ function Get-RelayAgentState {
 
 function Get-RelayRightsKind {
     # What an agent's introduction says about its rights, as one of four words the coordinator hands out work
-    # by: elevated (it can do administrator work itself), can-elevate (it can, when the owner answers a prompt
-    # or it may use sudo), none, unknown (not introduced, or a card that does not say)
+    # by: elevated (it can do administrator work itself), can-elevate (it can, when the owner answers a
+    # prompt), none, unknown (not introduced, or a card that does not say)
     param([string]$Elevation)
     $text = ([string]$Elevation).Trim().ToLowerInvariant()
     if (-not $text) { return 'unknown' }
-    if ($text -eq 'system' -or $text -eq 'root' -or $text -eq 'administrator' -or $text -like 'elevated*') { return 'elevated' }
-    if ($text -like '*can elevate*' -or $text -like '*sudo*') { return 'can-elevate' }
-    if ($text -like 'not elevated*' -or $text -like 'not root*') { return 'none' }
+    if ($text -eq 'system' -or $text -eq 'administrator' -or $text -like 'elevated*') { return 'elevated' }
+    if ($text -like '*can elevate*') { return 'can-elevate' }
+    if ($text -like 'not elevated*') { return 'none' }
     return 'unknown'
 }
 
@@ -1658,12 +1658,6 @@ function Get-RelayCallLine {
         if ($Shell -eq 'bash') { $wrapper = $wrapper -replace '\\', '/'; return ('powershell -NoProfile -ExecutionPolicy Bypass -File ' + (ConvertTo-RelayShellLiteral $wrapper)) }
         return ('powershell -NoProfile -ExecutionPolicy Bypass -File ' + (ConvertTo-RelayPowerShellLiteral $wrapper))
     }
-    if ($Shell -eq 'sh') {
-        $wrapper = "$base/agents/$Name/g$Generation/relay"
-        # A leading ~ only expands outside quotes
-        if ($wrapper -match '^[A-Za-z0-9_./~-]+$') { return "sh $wrapper" }
-        return ('sh ' + (ConvertTo-RelayShellLiteral $wrapper))
-    }
     $wrapper = "$base\agents\$Name\g$Generation\relay.cmd"
     if ($Shell -eq 'cmd') { return '"' + $wrapper + '"' }
     # PowerShell and Git Bash start the .ps1 wrapper with powershell -File: no cmd.exe in between, so the
@@ -1711,12 +1705,13 @@ function ConvertTo-RelaySeatSpec {
     $transport = [string](Get-RelayProperty $Agent 'transport' 'same-pc')
     if (@('same-pc', 'share', 'ssh') -notcontains $transport) { throw "Transport '$transport' is not one of same-pc, share, ssh" }
     if ($transport -eq 'ssh') { throw 'the SSH bridge is not built yet: use share or same-pc' }
+    # Agents run on Windows only: Linux and macOS agents need the sh tool, which the owner has postponed
     $os = [string](Get-RelayProperty $Agent 'os' '')
-    if (-not $os) { $os = 'windows'; if ($transport -eq 'ssh') { $os = 'linux' } }
-    if (@('windows', 'linux') -notcontains $os) { throw "OS '$os' is not one of windows, linux" }
-    $shell = [string](Get-RelayProperty $Agent 'shell' (Get-RelayProperty $kind.shell $os 'powershell'))
-    if ($os -eq 'linux') { $shell = 'sh' }
-    if (@('powershell', 'cmd', 'bash', 'sh') -notcontains $shell) { throw "Shell '$shell' is not one of powershell, cmd, bash, sh" }
+    if (-not $os) { $os = 'windows' }
+    if ($os -ne 'windows') { throw "OS '$os' is refused: agents run on Windows only (Linux and macOS agents and sh are postponed)" }
+    $shell = [string](Get-RelayProperty $Agent 'shell' (Get-RelayProperty $kind.shell 'windows' 'powershell'))
+    if ($shell -eq 'sh') { throw "Shell 'sh' is refused: sh is postponed (use powershell, cmd or bash, the Git Bash of Windows)" }
+    if (@('powershell', 'cmd', 'bash') -notcontains $shell) { throw "Shell '$shell' is not one of powershell, cmd, bash" }
     $wake = [string](Get-RelayProperty $Agent 'wake' $kind.wake)
     if (@('background', 'loop', 'manual') -notcontains $wake) { throw "Wake mode '$wake' is not one of background, loop, manual" }
     $roomPath = [string](Get-RelayProperty $Agent 'room_path' '')
@@ -1789,7 +1784,7 @@ function Get-RelayStartPrompt {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][System.Collections.IDictionary]$Spec, [int]$Generation = 1, [string]$Launcher = '')
     $display = ConvertTo-RelayDisplayName $Name
     # For PowerShell the path is written with forward slashes: the same line then works in Git Bash too. Not for
-    # a path with a character PowerShell takes for a single quote: quoted for sh, it would end the string there.
+    # a path with a character PowerShell takes for a single quote: quoted for Git Bash, it would end the string there.
     $shell = [string]$Spec['shell']
     $isDual = ($shell -eq 'powershell' -and -not (Test-RelayPowerShellQuote ([string]$Spec['room_path'])) -and -not $Launcher)
     if ($isDual) { $shell = 'bash' }
@@ -1824,8 +1819,6 @@ function Add-RelayAgentSeat {
     $launcher = ''
     if ($IsCoordinator) { $launcher = $Room.Local }
     $call = Get-RelayCallLine -RoomPath $Spec['room_path'] -Name $Name -Generation ([string]$Generation) -Shell $Spec['shell'] -Launcher $launcher
-    $separator = '\'
-    if ($Spec['os'] -eq 'linux') { $separator = '/' }
     # An open seat: nobody is named for it. The agent that takes it with join says what it is, and its tool
     # fills in what depends on that (how it is called, how it waits, where its draft is).
     $isOpen = ($Spec.Contains('open') -and [bool]$Spec['open'])
@@ -1877,8 +1870,8 @@ function Add-RelayAgentSeat {
     $waitLine = 'Run it as a background command: its exit wakes you.'
     if ($Spec['wake'] -eq 'loop') { $waitLine = "It returns within $($Spec['wait_minutes']) minute(s); when it says nothing arrived, run it again." }
     if ($Spec['wake'] -eq 'manual') { $waitLine = 'Do not wait: run `check` when the owner tells you to look.' }
-    $agentFolder = $Spec['room_path'].TrimEnd('\', '/') + $separator + 'agents' + $separator + $Name
-    $draftText = $agentFolder + $separator + 'draft.md'
+    $agentFolder = $Spec['room_path'].TrimEnd('\', '/') + '\agents\' + $Name
+    $draftText = $agentFolder + '\draft.md'
     # A draft kept in the working folder carries the agent's name: two agents may share that folder
     $draftName = ([string]$Spec['draft']).Replace('{name}', $Name)
     if ($draftName) { $draftText = "$draftName   (in your working folder)" }
@@ -1925,7 +1918,7 @@ function Add-RelayAgentSeat {
         COORDINATOR_DISPLAY = $coordinatorDisplay
         CALL                = $call
         DRAFT               = $draftText
-        ATTACH              = ($agentFolder + $separator + 'attach')
+        ATTACH              = ($agentFolder + '\attach')
         WAIT_LINE           = $waitLine
         ROLE                = $Spec['role']
         TASK                = $Spec['task']
@@ -2013,12 +2006,12 @@ function Write-RelayKindTable {
 }
 
 function Write-RelayJoinWrapper {
-    # The room's join commands, one per way of calling: join.ps1 (powershell -File), join.cmd, join (sh)
+    # The room's join commands, one per way of calling: join.ps1 (powershell -File, from PowerShell or Git Bash)
+    # and join.cmd
     param([Parameter(Mandatory)]$Room)
     $values = @{ ROOM_ID = $Room.Id }
     Write-RelayGuardedText $Room 'join.cmd' (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\join.cmd.tmpl') $values) -Crlf
     Write-RelayGuardedText $Room 'join.ps1' (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\join.ps1.tmpl') $values)
-    Write-RelayGuardedText $Room 'join' (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\join.tmpl') $values)
 }
 
 function Write-RelaySeatWrapper {
@@ -2031,7 +2024,6 @@ function Write-RelaySeatWrapper {
     $values = @{ DISPLAY = (ConvertTo-RelayDisplayName $Name); NAME = $Name; GEN = $number; ROOM_ID = $Room.Id }
     Write-RelayGuardedText $Room "agents/$Name/g$number/relay.cmd" (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\relay.cmd.tmpl') $values) -Crlf
     Write-RelayGuardedText $Room "agents/$Name/g$number/relay.ps1" (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\relay.ps1.tmpl') $values)
-    Write-RelayGuardedText $Room "agents/$Name/g$number/relay" (Expand-RelayTemplate (Read-RelayTemplate 'wrappers\relay.tmpl') $values)
 }
 
 function Get-RelayJoinPrompt {
@@ -2041,8 +2033,6 @@ function Get-RelayJoinPrompt {
     $base = (Get-RelayReachPath $Room).TrimEnd('\', '/')
     Assert-RelayPastePath $base 'The room folder'
     $forward = $base -replace '\\', '/'
-    $shellFolder = $forward
-    if ($base.StartsWith('\\', [System.StringComparison]::Ordinal) -or $base -match '^[A-Za-z]:') { $shellFolder = '<this folder as your machine reaches it>' }
     $lines = @(
         'You are asked to join a work room: a shared folder through which several coding agents work on one job for the same owner. Another agent, the coordinator, hands out the tasks and answers questions.'
         ''
@@ -2052,7 +2042,6 @@ function Get-RelayJoinPrompt {
         ''
         "   Windows, PowerShell (Windows PowerShell or pwsh) or Git Bash:  powershell -NoProfile -ExecutionPolicy Bypass -File $(ConvertTo-RelayPowerShellLiteral "$forward/join.ps1") <product> <model> <effort>"
         "   Windows, cmd:                                                  `"$base\join.cmd`" <product> <model> <effort>"
-        "   Linux or macOS, sh:                                            sh $(ConvertTo-RelayShellLiteral "$shellFolder/join") <product> <model> <effort>"
         ''
         '2. The command gives you a name and introduces you to the coordinator: what kind of agent you are, the computer and its address, the user, whether you run elevated, and your shell. It reads these off the machine; you add nothing. Then it prints your instructions and your own command. From then on use only that command; do not run join a second time.'
         ''
@@ -2149,10 +2138,10 @@ function Update-RelayRoomPackage {
     $hasJoin = Test-Path -LiteralPath (Join-Path $Room.Canon 'join.cmd')
     $roster = @(Get-RelayRoster $Room -IncludeRetired)
     $generated = New-Object System.Collections.Generic.List[string]
-    foreach ($relative in 'tools/kinds', 'join.cmd', 'join.ps1', 'join') { $generated.Add($relative) }
+    foreach ($relative in 'tools/kinds', 'join.cmd', 'join.ps1') { $generated.Add($relative) }
     foreach ($name in $roster) {
         $generation = (Read-RelayText (Join-Path $Room.Canon "agents/$name/gen")).Trim()
-        foreach ($wrapper in 'relay.cmd', 'relay.ps1', 'relay') { $generated.Add("agents/$name/g$generation/$wrapper") }
+        foreach ($wrapper in 'relay.cmd', 'relay.ps1') { $generated.Add("agents/$name/g$generation/$wrapper") }
     }
     $before = (@($generated | ForEach-Object { Get-RelayFileHash (Join-Path $Room.Canon $_) }) -join '|')
     if ($PSCmdlet.ShouldProcess("$($Room.Id): tools/kinds, the join wrappers and every agent's wrappers", 'Write again from the plugin package')) {
@@ -2219,7 +2208,7 @@ function Switch-RelaySeatKind {
     $Spec['park_after'] = [int]$profileOfKind.park_after
     $Spec['draft'] = [string]$profileOfKind.draft
     $Spec['prompt_extra'] = [string]$profileOfKind.prompt_extra
-    if ($Spec['os'] -ne 'linux') { $Spec['shell'] = [string](Get-RelayProperty $profileOfKind.shell 'windows' 'powershell') }
+    $Spec['shell'] = [string](Get-RelayProperty $profileOfKind.shell 'windows' 'powershell')
     return $Spec
 }
 

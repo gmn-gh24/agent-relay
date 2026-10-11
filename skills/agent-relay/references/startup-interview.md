@@ -77,7 +77,7 @@ For each named agent:
 |---|---|---|
 | What is its part of the job? | `role` | `agent` |
 | What kind of work is it? | `work` | `other`; one of `development`, `run`, `testing`, `debugging`, `research`, `documentation`, `review`, `other` |
-| Which machine? | `machine` | this PC |
+| Which machine? | `machine` | this PC. Agents run on Windows: a Linux or macOS machine cannot take part (`sh` is postponed; an `os` other than `windows`, or `shell` `sh`, is refused) |
 | May that machine be changed? | `machine_care` | `in-use`; `disposable` only on the owner's word for this job |
 | Anything to know about that machine? | `machine_notes` | none |
 | Which computer name should its introduction show? | `computer` | not checked |

@@ -8,7 +8,7 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.
 | Version | 0.2.0 ([changelog](CHANGELOG.md)) |
 | Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
 | Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
-| Other agents | Any coding agent that can run a command and write a file, on Windows, Linux or macOS |
+| Other agents | Any coding agent on Windows that can run a command and write a file |
 | Status | In use for real work; see [Status and limitations](#status-and-limitations) |
 
 ## Contents
@@ -65,8 +65,8 @@ this plugin, only one prompt to paste and one command to run.
 +---------------------------+      +--------------------------------+      +--------------------------+
 | Claude Code + agent-relay |      | agents/<name>/  inbox, status, |      | Claude Code, Codex CLI,  |
 |                           | <--> |                 instructions   | <--> | or any other agent       |
-| skill      what to do     |      | tools/          relay.ps1,     |      |                          |
-| scripts    rooms, board   |      |                 relay.sh       |      | one prompt to paste      |
+| skill      what to do     |      | tools/          relay.ps1      |      |                          |
+| scripts    rooms, board   |      | join.cmd/.ps1   join a seat    |      | one prompt to paste      |
 | pane       live view      |      | DECISIONS.md    standing rules |      | one command to run       |
 | .local/    canonical copy |      | PLAN            who builds what|      | no plugin needed         |
 +---------------------------+      +--------------------------------+      +--------------------------+
@@ -82,10 +82,9 @@ this plugin, only one prompt to paste and one command to run.
 | Board | One printed view of the room: agents, plan, open requests, what waits on whom. |
 | Feed | The live stream of the room. It drives the pane, runs the tamper check and shows the coordinator alive. |
 
-Two tools in the room do everything an agent needs: `relay.ps1` (Windows PowerShell 5.1 and PowerShell 7) and
-`relay.sh` (POSIX `sh`, no extra packages). `relay.sh` is deferred: it ships as it was in 0.1.1, is no longer
-tested or kept in step with `relay.ps1`, and lacks the fixes of 0.2.0 (see [Status and
-limitations](#status-and-limitations)). Every output ends with a `NEXT:` line that
+One tool in the room does everything an agent needs: `relay.ps1` (Windows PowerShell 5.1 and PowerShell 7),
+called from PowerShell, cmd or Git Bash through the agent's own wrapper. There is no `sh` tool: `sh` is
+postponed (see [Status and limitations](#status-and-limitations)). Every output ends with a `NEXT:` line that
 says what to do, so an agent with little context still knows its next step. Message text is never typed on a
 command line: it is written into a draft file, and the verbs take single plain words.
 
@@ -96,8 +95,7 @@ The full protocol is in [`skills/agent-relay/references/protocol.md`](skills/age
 | Who | Needs |
 |---|---|
 | Coordinator | Claude Code on Windows; PowerShell 7 (`pwsh`) or Windows PowerShell 5.1 |
-| Agent on Windows | Windows PowerShell 5.1, which is part of Windows |
-| Agent on Linux or macOS | `sh` (`relay.sh` is deferred: see Status and limitations) |
+| Agent | Windows, with Windows PowerShell 5.1, which is part of Windows. Linux and macOS agents cannot join: `sh` is postponed |
 | Everybody | A folder all of them can reach: a local folder for agents on one PC, a file share across machines |
 
 The room pane uses Claude Code's plugin hooks, which are early access. Without them everything else works,
@@ -253,7 +251,7 @@ full help (`Get-Help <script> -Full`).
 | `Get-RelayStats.ps1` | Reply times, repeated questions and other numbers of a room |
 | `Close-RelayRoom.ps1` | Closes a room; lists closed rooms; removes the folder of one that has an archive |
 | `Update-RelayRoom.ps1` | Brings a running room up to the tools and instructions of this version |
-| `Test-RelayPackage.ps1` | Conformance run: both tools on three engines against one room |
+| `Test-RelayPackage.ps1` | Conformance run: `relay.ps1` on PowerShell 7 and Windows PowerShell 5.1 against one room |
 
 ### Agent verbs
 
@@ -332,7 +330,7 @@ Give an agent an account with the rights its task needs and no more.
 |---|---|---|
 | An agent cannot join: "the room is not reachable" | Its machine cannot open the room folder: no rights on the share, or it runs as SYSTEM | Fix the access on that machine. The prompt already carries the server's address instead of its name |
 | Codex CLI cannot start any command | Its sandbox | Start it with full access: `codex --sandbox danger-full-access` |
-| A script from a share is refused | The machine's execution policy is set by Group Policy | Put the room where that machine trusts scripts, or use `relay.sh` from Git Bash |
+| A script from a share is refused | The machine's execution policy is set by Group Policy | Put the room where that machine trusts scripts |
 | `/relay <id>` says "Not bound" | The id is not a room of this PC, or the look at the room was interrupted | `Get-RelayRooms.ps1` lists the rooms; run the command again |
 | The pane says the feed has ended | The feed stopped three times in a row | `/relay <id>` starts it again; its message names the reason |
 | "another wait is already running" | The agent's own background wait, or the wait of a session that just ended | Do nothing in the first case; in the second, run `wait` again after 30 seconds |
@@ -382,7 +380,7 @@ pwsh -NoProfile -File tests\Invoke-AllTests.ps1
 | Room tools | Four test files, each on PowerShell 7 and Windows PowerShell 5.1 |
 | Coordinator scripts | Five test files on both PowerShell editions |
 
-`relay.sh` is deferred: the gate runs no `sh` and says so. A test file that fails to load, a failing
+There is no `sh` tool and no `sh` test (postponed). A test file that fails to load, a failing
 `BeforeAll` or `AfterAll`, a path that names nothing and a run in which no test ran all fail the gate.
 `-StaticOnly` runs the first stage alone; `-SkipAnalyzer` and `-SkipPane` run the rest where PSScriptAnalyzer
 or Claude Code is missing, and the result says what was not tested. One file on one engine takes a few
@@ -414,8 +412,8 @@ your account; `--no-publish` keeps its report on this PC.
 ### Conventions
 
 - PowerShell that also runs on Windows PowerShell 5.1; ASCII only; LF line ends.
-- `relay.ps1` changes with a test on both PowerShell editions. `relay.sh` is deferred and frozen: it is not
-  changed until the sh implementation is taken up again.
+- `relay.ps1` changes with a test on both PowerShell editions. There is no `sh` tool: `sh` is postponed by the
+  owner and is built and tested only if and when it is needed.
 - Every fix comes with a test that fails without it.
 - No real machine, share or account name in a committed file.
 - Every release has an entry in [CHANGELOG.md](CHANGELOG.md).
@@ -424,8 +422,7 @@ your account; `--no-publish` keeps its report on this PC.
 
 Built and in use: protocol 3, the room tool `relay.ps1`, named agents and open seats, the team plan, the board,
 the feed, the pane, the owner's messages and cards, standing rules, the tamper check, closing with transcript,
-statistics and archive. `relay.sh` is deferred: it still ships in every room for agents on Linux and macOS,
-as it was in 0.1.1, without the fixes of 0.2.0, and it is not tested.
+statistics and archive.
 
 | Agent | Status |
 |---|---|
@@ -433,7 +430,7 @@ as it was in 0.1.1, without the fixes of 0.2.0, and it is not tested.
 | Claude Code, headless (`claude -p`) | Worked a rehearsal room, given only the start prompt |
 | Codex CLI | Worked a live room; must be started with full access |
 | Gemini CLI, Cursor, Copilot, others | A generic profile, not yet tried in a room |
-| Any agent on Linux or macOS | Not tried: no such machine is available. `relay.sh` is tested under `dash` from Git for Windows only. Testing on a real Linux or macOS machine is deferred until one is needed |
+| Any agent on Linux or macOS | Cannot join: there is no `sh` tool (postponed) |
 
 Known limits:
 
