@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.1 (2026-10-11)
+
+Agent names repeated from room to room on one PC (no change to the room package):
+
+- The name registry remembered every open seat under one key (`(open seat)|seat 1`), and the coordinator and a
+  seat on this PC under this PC's name, so every room made on one PC got the same names (`olivia`, `emma`,
+  ...), and two rooms open at the same time shared them. Now only a seat on a named other machine keeps its
+  name across jobs. An open seat, a seat on this PC and the coordinator draw a fresh name for each room: the
+  pool in a shuffled order, away from the names every open room of this PC holds and from the last 20 names
+  handed out (`recent` in `names.json`). The keys an older version wrote for open seats and this PC are
+  dropped at the next draw; those of named machines stay.
+  A name the owner chose is never refused because a drawn name of the same batch took its letter first: the
+  letters of the wanted names of a batch are kept free for them.
+- Tests: the Scripts suite pins fresh names across two open rooms and after a close, the shuffled order, what
+  is remembered and what is dropped, and the numbered names of a room beyond the pool.
+- CLAUDE.md: where a cloud (Linux) session gets `pwsh`, Pester and PSScriptAnalyzer from when the PowerShell
+  Gallery is blocked, and how the gate runs there.
 ## 0.4.0 (2026-10-11)
 
 The coordinator speaks to agents through the room only (no change to the room package):

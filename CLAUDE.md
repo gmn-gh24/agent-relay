@@ -44,6 +44,19 @@ claude plugin eval . --no-publish   # the skill's cases in evals/; each run is a
   say which files changed and what to look at, and put the RESULT lines the owner sends back in the PR's Gate
   section. What a session can run itself, it runs first: `-StaticOnly` (on Linux too, with PSScriptAnalyzer).
 - Iterate with `-StaticOnly` plus the one affected file on the one affected engine; run the whole gate before a commit.
+- Cloud (Linux) sessions: the proxy blocks the PowerShell Gallery (`Install-Module` fails), nuget.org and
+  github.com release assets and git reads are open. Put each module under
+  `~/.local/share/powershell/Modules/<Name>/<version>/`:
+  - `pwsh`: the `powershell-<v>-linux-x64.tar.gz` of a PowerShell GitHub release, unpacked anywhere, `chmod +x`.
+  - Pester: `https://api.nuget.org/v3-flatcontainer/pester/<v>/pester.<v>.nupkg` (a zip; the module files are
+    under `tools/`).
+  - PSScriptAnalyzer is on neither. The VS Code PowerShell extension bundles it:
+    `https://github.com/PowerShell/vscode-powershell/releases/download/v<tag>/powershell-<tag>.vsix` (a zip,
+    `git ls-remote --tags https://github.com/PowerShell/vscode-powershell` lists the tags; take a stable one),
+    module under `extension/modules/PSScriptAnalyzer/<v>/`.
+  A Linux session can run `-StaticOnly` with the analyzer and the `ps7` suites for a first look (a few tests expect
+  Windows paths or `cmd.exe` and fail there), and smoke-test a module change directly with `Import-Module`; the
+  gate's result is the owner's Windows run, as above.
 
 ## Architecture
 

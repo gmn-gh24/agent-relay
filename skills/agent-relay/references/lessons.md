@@ -52,6 +52,11 @@ decisions; a closing message from every agent.
   facts, and are offered, never assumed.
 - **A room has no upper limit of agents.** The name pool ran out at its length. Changed: after the pool, the
   same names with a number.
+- **Every room on one PC got the same names.** The registry that keeps a machine and role's name across jobs
+  keyed every open seat as `(open seat)|seat 1` and the coordinator and this PC's seats under this PC's name,
+  so two rooms open side by side both had `olivia` and `emma`. Changed: only a named other machine is
+  remembered; the rest draw from a shuffled pool, away from the names of this PC's open rooms and the last 20
+  handed out.
 - **Status claims drift ahead of tests.** Agent kinds were marked "tested" from measurements of what a product
   can do, before any had worked a room. Changed: the status says what was actually done.
 - **PowerShell 7 reads JSON times as dates.** A time stored as text came back as a date and printed in the
