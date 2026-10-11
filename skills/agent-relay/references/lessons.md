@@ -463,3 +463,23 @@ last hour showed:
 - **What held:** stop at the first unexpected result with a precise question, a short pass or fail table per
   report, one folder with the files under test and their hashes for the agent to confirm, fixes returned between
   rounds. Seven requests, all answered, none asked twice, no owner card.
+
+## 2026-10-11: how the owner starts the agents (the owner's word, after several live rooms)
+
+- **Full access was not enough for Codex CLI.** The lesson of 2026-10-10 said to start it with
+  `codex --sandbox danger-full-access`. That lifts the sandbox and leaves the approvals on: the remote agent
+  kept asking its user, and some commands stayed blocked. Changed: Codex CLI is started with `codex --yolo`
+  (`codex exec --yolo` headless); the note the scripts print, the Codex start prompt, the skill, the agent
+  kinds reference and the README say so.
+- **Claude Code asks too, and nobody had written what to do about it.** For a room without questions and
+  interruptions the owner starts it with `claude --dangerously-skip-permissions`. Without it the room works,
+  and the owner answers the prompts on that machine. Changed: a note for seats of both Claude Code kinds, and
+  the same places as above.
+- **The risk is the owner's, and so is the sentence about it.** Both flags switch the product's own guard off.
+  The coordinator says so to the owner in one line, and only when the job is risky, with the advice to use a
+  virtual machine or a throwaway computer. Nothing about it goes to an agent: not in the join prompt, a start
+  prompt, a task or an assignment (a test holds the prompts to that).
+- **An agent in a sandbox never got as far as its instructions.** The hint for a blocked command was in the
+  kind's text, which a joining agent sees only after `join` has run. Changed: the join prompt itself says what
+  to do when a command is refused, blocked or cannot start: change nothing, stop, tell the owner the exact
+  error, and do not work around it.

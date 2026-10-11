@@ -7,6 +7,7 @@
     "shell": { "windows": "powershell" },
     "draft": "",
     "prompt_extra": "When a NEXT line tells you to wait, start that command as a background command and end your turn: its exit is what wakes you. Do not run it in the foreground and do not poll its output.",
+    "coordinator_note": "NOTE: Claude Code asks its user before commands; for a room without interruptions the owner starts it with claude --dangerously-skip-permissions",
     "status": "profile checked by the test suite; worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10)"
   },
   "claude-code-headless": {
@@ -17,6 +18,7 @@
     "shell": { "windows": "powershell" },
     "draft": "",
     "prompt_extra": "Run the wait command in the foreground with a command time limit of 10 minutes (timeout 600000). When it says nothing arrived, run it again.",
+    "coordinator_note": "NOTE: Claude Code asks its user before commands; for a room without interruptions the owner starts it with claude --dangerously-skip-permissions",
     "status": "worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10)"
   },
   "codex": {
@@ -26,9 +28,9 @@
     "park_after": 4,
     "shell": { "windows": "powershell" },
     "draft": "relay-draft-{name}.md",
-    "prompt_extra": "The wait command runs for up to 4 minutes. Start it, then keep waiting on that same running command until it exits; do not start a second one. When it says nothing arrived, run it again. You need full access for this job: if the command above is refused or cannot start, change nothing, stop, and tell your user to start you again with full access.",
-    "coordinator_note": "NOTE: start Codex with full access (codex --sandbox danger-full-access): in its sandbox it cannot run the room's commands",
-    "status": "worked a live room on Windows as one remote agent (2026-10-10): must be started with full access, reports exit code 1 for a wait that timed out, parks after four idle waits"
+    "prompt_extra": "The wait command runs for up to 4 minutes. Start it, then keep waiting on that same running command until it exits; do not start a second one. When it says nothing arrived, run it again. If the command above is refused or cannot start, change nothing, stop, and tell your user to start you again with codex --yolo.",
+    "coordinator_note": "NOTE: start Codex with codex --yolo: without it Codex keeps asking its user and its sandbox blocks the room's commands",
+    "status": "worked a live room on Windows as one remote agent (2026-10-10): must be started with codex --yolo, reports exit code 1 for a wait that timed out, parks after four idle waits"
   },
   "gemini": {
     "label": "Gemini CLI",

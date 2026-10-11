@@ -2096,7 +2096,7 @@ function Get-RelayJoinPrompt {
         ''
         '3. Every output ends with a NEXT: line. Do what it says. Your first task arrives as a message.'
         ''
-        'Until a task arrives, change nothing on this machine: it is in use, not a test machine. Stay inside what a task assigns and ask before anything beyond it. Never type message text on the command line: the output tells you which file to write it into. If the command cannot reach the room folder: check once whether the folder exists, then stop and tell your owner the exact error. Do not try other paths unless your owner gives you one.'
+        'Until a task arrives, change nothing on this machine: it is in use, not a test machine. Stay inside what a task assigns and ask before anything beyond it. Never type message text on the command line: the output tells you which file to write it into. If a command is refused, blocked or cannot start, or cannot reach the room folder: check once whether the folder exists, then change nothing, stop and tell your owner the exact error. Do not work around it and do not try other paths unless your owner gives you one.'
     )
     return ($lines -join "`n") + "`n"
 }

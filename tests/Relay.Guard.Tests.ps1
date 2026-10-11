@@ -666,20 +666,25 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
         (Get-Content -LiteralPath (Join-Path $room 'agents\emma\START-HERE.md') -Raw) | Should -Match 'Sending uses the file up: write a new one\s+for every message\.'
     }
 
-    It 'prints a note for a seat of kind codex when an agent is added or replaced, and for no other kind' {
-        $line = 'NOTE: start Codex with full access (codex --sandbox danger-full-access): in its sandbox it cannot run the room''s commands'
+    It 'prints how the owner starts the product for a seat of kind codex or claude-code when an agent is added or replaced, and nothing for a kind without a note' {
+        $line = 'NOTE: start Codex with codex --yolo: without it Codex keeps asking its user and its sandbox blocks the room''s commands'
+        $claude = 'NOTE: Claude Code asks its user before commands; for a room without interruptions the owner starts it with claude --dangerously-skip-permissions'
         $answers = Join-Path $root 'codex.json'
-        [System.IO.File]::WriteAllText($answers, (ConvertTo-Json -Depth 6 @{ agents = @([ordered]@{ name = 'gina'; role = 'builder'; kind = 'codex' }, [ordered]@{ name = 'lena'; role = 'writer' }) }))
+        [System.IO.File]::WriteAllText($answers, (ConvertTo-Json -Depth 6 @{ agents = @([ordered]@{ name = 'gina'; role = 'builder'; kind = 'codex' }, [ordered]@{ name = 'lena'; role = 'writer' }, [ordered]@{ name = 'nora'; role = 'tester'; kind = 'claude-code' }, [ordered]@{ name = 'vera'; role = 'tester'; kind = 'claude-code-headless' }) }))
         $added = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $answers -NoClipboard)
         @($added | Where-Object { $_ -eq $line }).Count | Should -Be 1
+        # Two kinds of Claude Code share one note: each kind prints it once
+        @($added | Where-Object { $_ -eq $claude }).Count | Should -Be 2
         $replaced = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'gina' -NoClipboard)
         @($replaced | Where-Object { $_ -eq $line }).Count | Should -Be 1
         $other = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'lena' -NoClipboard)
-        @($other | Where-Object { $_ -eq $line }).Count | Should -Be 0
+        @($other | Where-Object { $_ -match '^NOTE: (start Codex|Claude Code)' }).Count | Should -Be 0
+        # What the owner is told about the risk is the coordinator's to say, never the scripts' or a prompt's
+        (@($added) -join "`n") | Should -Not -Match 'virtual machine|throwaway|\brisk'
     }
 
     It 'prints the note for a codex seat when a room is made' {
-        $line = 'NOTE: start Codex with full access (codex --sandbox danger-full-access): in its sandbox it cannot run the room''s commands'
+        $line = 'NOTE: start Codex with codex --yolo: without it Codex keeps asking its user and its sandbox blocks the room''s commands'
         $answers = Join-Path $root 'codex-room.json'
         [System.IO.File]::WriteAllText($answers, (ConvertTo-Json -Depth 6 @{ job = 'Codex room'; room_id = "cx-$case"; rooms_root = (Join-Path $root 'cxrooms'); agents = @([ordered]@{ name = 'cora'; role = 'builder'; kind = 'codex' }, [ordered]@{ name = 'dana'; role = 'writer' }) }))
         $made = @(& (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $answers -NoClipboard)

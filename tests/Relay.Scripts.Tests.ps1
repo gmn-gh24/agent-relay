@@ -190,7 +190,9 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $codex = [string]$created.Prompts['jack']
         $codex | Should -Match 'keep waiting on that same running command'
         # In its sandbox Codex CLI cannot run the room's commands: its prompt says what to do when they are refused
-        $codex | Should -Match 'tell your user to start you again with full access'
+        $codex | Should -Match 'tell your user to start you again with codex --yolo'
+        # The risk of a start without the product's guard is told to the owner, never to an agent
+        foreach ($prompt in $share, $codex) { $prompt | Should -Not -Match 'virtual machine|throwaway|\brisk|dangerously' }
         $seat = Read-RelayKeyValue (Join-Path $created.Path 'agents\jack\seat')
         $seat['wake'] | Should -Be 'loop'
         $seat['wait_minutes'] | Should -Be '4'
@@ -1262,7 +1264,7 @@ Describe 'Open seats' -Tag 'Scripts' {
         $kinds['claude-code.wake'] | Should -Be 'background'
         $kinds['codex.wait_minutes'] | Should -Be '4'
         $kinds['codex.draft'] | Should -Be 'relay-draft-{name}.md'
-        $kinds['codex.hint'] | Should -Match 'You need full access for this job'
+        $kinds['codex.hint'] | Should -Match 'start you again with codex --yolo'
         $kinds['generic.wake'] | Should -Be 'loop'
         $kinds['generic.hint'] | Should -Match 'run it again'
 
@@ -1273,7 +1275,11 @@ Describe 'Open seats' -Tag 'Scripts' {
         $created.JoinPrompt | Should -Match 'your agent product as exactly as you know it \(claude-code-cli, codex-cli, codex-app,'
         $created.JoinPrompt | Should -Match 'your reasoning effort setting if your session or its configuration shows one'
         $created.JoinPrompt | Should -Match 'what kind of agent you are, the computer and its address, the user, whether you run elevated, and your shell'
-        $created.JoinPrompt | Should -Match 'Do not try other paths unless your owner gives you one'
+        $created.JoinPrompt | Should -Match 'Do not work around it and do not try other paths unless your owner gives you one'
+        # An agent in a sandbox cannot run join at all: the prompt itself says what to do then, and names no product
+        $created.JoinPrompt | Should -Match 'If a command is refused, blocked or cannot start, or cannot reach the room folder: check once whether the folder exists, then change nothing, stop and tell your owner the exact error'
+        # The risk of a start without the product's guard is told to the owner, never to an agent
+        $created.JoinPrompt | Should -Not -Match 'virtual machine|throwaway|\brisk|yolo|dangerously'
         # Two ways to join, both on Windows: no line for Linux or macOS, no sh
         @($created.JoinPrompt -split "`n" | Where-Object { $_ -match '^   Windows, ' }).Count | Should -Be 2
         $created.JoinPrompt | Should -Not -Match 'Linux|macOS|\bsh\b'

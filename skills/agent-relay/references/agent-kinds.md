@@ -2,17 +2,18 @@
 
 `scripts/agent-kinds.json` is the source: per kind, how it waits (`wake`, `wait_minutes`, `park_after`),
 where its draft file is, one sentence about waiting that goes into its prompt, and for some kinds a
-`coordinator_note`: one line the scripts print once when a seat of that kind is added (Codex: start it with
-full access). A kind that is not in the file is refused. A named agent gets its kind
+`coordinator_note`: one line the scripts print once when a seat of that kind is added (how the owner starts
+that product: see "Starting an agent without its own guard"). A kind that is not in the file is refused. A
+named agent gets its kind
 in the answers file. An agent from the join prompt names its product; the room tool maps that to a kind
 (`tools/kinds`): an exact kind name first, then any product containing `codex`, `gemini`, `cursor`, `copilot`
 or `claude`, otherwise `generic`.
 
 | Kind | Waits | Status |
 |---|---|---|
-| `claude-code` | `background`: `wait` runs as a background command with no limit; its exit wakes the session | worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10) |
+| `claude-code` | `background`: `wait` runs as a background command with no limit; its exit wakes the session; asks its user before commands unless started with `--dangerously-skip-permissions` | worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10) |
 | `claude-code-headless` | `loop`, 9 minutes, parks after 3 idle waits; needs a command time limit of 10 minutes | worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10) |
-| `codex` | `loop`, 4 minutes, parks after 4; draft is `relay-draft-<name>.md` in its working folder; **must be started with full access** | worked a live room on Windows as one remote agent (2026-10-10) |
+| `codex` | `loop`, 4 minutes, parks after 4; draft is `relay-draft-<name>.md` in its working folder; **must be started with `codex --yolo`** | worked a live room on Windows as one remote agent (2026-10-10) |
 | `gemini` | `loop`, 1 minute, parks after 10 | untested: generic profile |
 | `cursor` | `loop`, 1 minute, parks after 10 | untested: generic profile |
 | `copilot` | `loop`, 1 minute, parks after 10 | untested: generic profile |
@@ -40,9 +41,33 @@ A wait that timed out exits with code 3, but do not build on the number: a shell
 `powershell -Command` hands back 1 for every code that is not 0 (seen with Codex CLI, reproduced by hand).
 The prompts therefore tell an agent to go by the text ("nothing arrived") and the `NEXT:` line.
 
+## Starting an agent without its own guard
+
+Each product has a guard of its own: it asks its user before a command, or runs commands in a sandbox. In a
+room that guard stops the work: the agent's user is asked on that machine again and again, and a sandbox
+blocks the room's commands. The owner starts the agents, so say this when you hand over a prompt:
+
+| Product | Start it with | When |
+|---|---|---|
+| Codex CLI | `codex --yolo` (headless: `codex exec --yolo`) | always: without it the agent cannot work in a room |
+| Claude Code | `claude --dangerously-skip-permissions` | when the owner wants a room without questions and interruptions; without it the room works, and the owner answers the prompts on that machine |
+
+- **The risk, in one line, when the job is risky.** These flags switch the product's own guard off: the agent
+  runs every command without asking, with the rights of its account. For a job that installs, removes,
+  changes the system or the registry, or runs code that is not trusted, recommend a virtual machine or a
+  throwaway computer. For an ordinary job (reading, running tests, editing inside a repository) name the
+  flag and leave it there: no lecture.
+- **This is said to the owner, never to an agent.** It does not go into a prompt, a task or an assignment. An
+  agent that reads about risk asks more and does less; what an agent may do is in its assignment.
+- **It changes nothing else.** A machine is still in use unless the owner declared it disposable for this
+  job, and the assignment's limits hold whatever the agent was started with.
+
 ## Notes per product
 
-**Claude Code.** Has a background mode for commands and is woken when one ends. On Windows its shell tool is
+**Claude Code.** Started as it is, it asks its user before commands it has no permission for, on its own
+machine: the room works, but each such prompt waits for the owner there. For a room without interruptions the
+owner starts it with `claude --dangerously-skip-permissions` (see above).
+Has a background mode for commands and is woken when one ends. On Windows its shell tool is
 Git Bash, and it may also have a PowerShell tool; the prompts carry both spellings. Its file tool can write
 anywhere it is allowed to, so the draft stays in its agent folder. It runs each command on a hidden console of
 its own, not on the tab's, and it writes the tab's title itself: a generated title, or the session's name once
@@ -58,10 +83,13 @@ command time limit. It needs its shell and file tools allowed and the room folde
 effort setting; for a named seat nothing depends on that. Started with `--setting-sources project` it has
 neither the owner's own instructions nor this plugin, which is what a stand-in for a remote agent should be.
 
-**Codex CLI.** It must be started with full access to work in a room: `codex --sandbox danger-full-access`
-(for a headless run `codex exec --sandbox danger-full-access`), or Full Access in the permissions menu of a
-running session. That is the owner's decision for that machine, so say it when you hand over the prompt, and
-it is in the agent's own start prompt as well. Without it: in its workspace-write sandbox it cannot reach a
+**Codex CLI.** It must be started with `codex --yolo` to work in a room (for a headless run
+`codex exec --yolo`; the flag's full name is `--dangerously-bypass-approvals-and-sandbox`, and `--help` does
+not list the short one). Full access alone (`codex --sandbox danger-full-access`, or Full Access in the
+permissions menu) lifts the sandbox but leaves the approvals on: the agent keeps asking its user and some
+commands stay blocked. That is the owner's decision for that machine, so say it when you hand over the
+prompt; the agent's own start prompt tells it to stop and ask for it. Without it: in its workspace-write
+sandbox it cannot reach a
 network share, its file tool writes only inside its workspace, and on Windows the sandbox can refuse to start
 any command at all, also for a room on the same disk (`helper_unknown_error: setup refresh had errors`, seen
 2026-10-10); with approvals switched off, the join command is refused outright. The agent reports the refusal
@@ -87,4 +115,5 @@ off before a minute, lower `wait_minutes` for its seat (answers field) or switch
 | the agent types message text after the verb | habit | the tool refuses anything but single words and says where the draft goes |
 | the agent's wait is killed by its own time limit | `wait_minutes` too long for that product | shorter wait, or `manual` |
 | the agent cannot write its draft | its file tool is confined to its workspace | a draft in its working folder (`draft` in the kind or the answers) |
+| the agent keeps asking its user, or a command is blocked | the product's own guard: approvals or a sandbox | the owner starts it again: `codex --yolo`, `claude --dangerously-skip-permissions` |
 | "the room is not reachable" | sandbox, rights on the share, or a different path on that machine | see `transports.md` |

@@ -47,8 +47,13 @@ Four rules hold in every workflow:
 4. Introduce yourself: `<your command> start claude-code <model> <effort>`.
 5. Give the owner the prompts and say which one is on the clipboard. The join prompt is pasted into as many
    agents as there are free seats; add seats with `scripts/Add-RelayAgent.ps1 -OpenSeats <n>`. Say with it
-   what a product needs to run the room's commands: Codex CLI must be started with full access
-   (`references/agent-kinds.md`).
+   how each product is started: Codex CLI with `codex --yolo`, always (without it the agent keeps asking its
+   user and its sandbox blocks the room's commands); Claude Code with
+   `claude --dangerously-skip-permissions` when the owner wants a room without questions and interruptions.
+   Both switch the product's own guard off. When the job is risky (installs, removals, system or registry
+   changes, code that is not trusted), add one line for the owner: use a virtual machine or a throwaway
+   computer for it. That line is for the owner only: it never goes into a prompt, a task or an assignment
+   (`references/agent-kinds.md`, "Starting an agent without its own guard").
 6. Show the room: bind the chat window if the `relay_bind` tool exists, otherwise tell the owner to run
    `scripts/Watch-RelayFeed.ps1 -Room <id> -Follow` in a terminal. One of the two must run: it is also the
    tamper check and your heartbeat.
