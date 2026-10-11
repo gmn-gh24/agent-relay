@@ -125,7 +125,8 @@ changes the team plan (who builds which part) and opens the lines the plan impli
 ## 6. Close
 
 1. Send a closing note to all: what was achieved, and a request that each agent `remember`s its last durable
-   findings and then says `bye` with what slowed it down.
+   findings and then runs its `bye` verb (name the verb: a note titled bye does not count) with what slowed
+   it down.
 2. Wait for the byes. `scripts/Close-RelayRoom.ps1 -Room <id>` refuses while one is missing; `-Force` is for
    agents that cannot answer any more.
 3. Curate the memory: run `scripts/Get-RelayMemory.ps1 -Room <id>`. Check each candidate against evidence.

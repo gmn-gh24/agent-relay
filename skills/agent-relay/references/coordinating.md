@@ -135,7 +135,11 @@ what is not part of it, and what to send back. One task per message. Long materi
 `work` folder or as an attachment (put the files into your `attach` folder before you send), with the message
 pointing at it.
 
-When "done when" cannot be reached without a change that the assignment lists under "ask first", decide it
+When "done when" cannot be reached without a change that the assignment lists under "never", the task cannot
+carry the approval: the agent will ask its owner, every time, and it is right to. Re-assign first (`-Assign`
+with the wider `may` or `propose_ok`), then send. Better, foresee it at assignment time: a test job on a
+disposable machine will need uninstalls, registry writes and files outside the work folder before it ends.
+When the change is one the assignment lists under "ask first", decide it
 before you send: approve that one change in the task itself, or record it as a standing rule first. Three
 agents of a rehearsal each came back for the same approval, and two of them said afterwards that the task
 could have carried it. And when a report's self-audit shows a change outside the assigned paths that you

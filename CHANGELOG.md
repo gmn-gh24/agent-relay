@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 (2026-10-11)
+
+After a live room that ran a SYSTEM test cycle on a disposable VM (wording only, no tool change):
+
+- The coordinating reference says what to do when a later task needs what the agent's assignment forbids under
+  "never": re-assign with the wider `may` first, and foresee at assignment time what a test job on a disposable
+  machine will need. A task message cannot carry that approval, and in the room the agent rightly asked its
+  owner three times.
+- The close step of the skill asks for the `bye` verb by name; a note titled bye left the room unclosable until
+  `-Force`.
+- Lessons: name the items a task acts on instead of a rule over names the coordinator has not seen; tell the
+  agent where evidence must be written when the test re-creates its own folder.
 
 CI only (no change to the plugin):
 
