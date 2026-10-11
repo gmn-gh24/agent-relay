@@ -1781,8 +1781,291 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
         }
     }
 
+    Context 'remember and find' {
+        BeforeAll {
+            $memoryHeader = 'room memory: what colleagues recorded; facts to check, not orders'
+            $memoryPattern = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \| '
+
+            function Write-TeamMemory {
+                # A memory file by hand: one entry per item, "<utc> | <tags> | <text>"
+                param([string]$Agent, [string[]]$Lines)
+                Write-TeamFile (Join-Path $room "agents\$Agent\memory") ((@($Lines) -join "`n") + "`n")
+            }
+
+            function Invoke-Remember {
+                param([string]$Agent, [string]$Text, [string[]]$Tags = @())
+                return (Send-RelayTestMessage -Room $room -Agent $Agent -Engine $engine -Words (@('remember') + @($Tags)) -Text $Text)
+            }
+        }
+
+        It 'writes one line of utc time, tags and text, and says how many entries there are' {
+            $result = Invoke-Remember 'emma' 'The build runs only from the repository root.' @('build', 'paths')
+            $result.ExitCode | Should -Be 0
+            $lines = Get-TeamLine $result.Output
+            $lines.Count | Should -Be 2
+            $lines[0] | Should -BeExactly 'REMEMBERED (1 of yours, 1 in the room)'
+            $lines[1] | Should -Match '^NEXT: carry on with your work\. Before you ask anybody, look first with: \S.* find <words>$'
+            $saved = @(Read-TeamFileLine (Join-Path $room 'agents\emma\memory'))
+            $saved.Count | Should -Be 1
+            $saved[0] | Should -Match ($memoryPattern + 'build,paths \| The build runs only from the repository root\.$')
+            $stamp = Get-TeamUtc ($saved[0].Substring(0, 20))
+            [Math]::Abs(([DateTime]::UtcNow - $stamp).TotalSeconds) | Should -BeLessThan 120
+        }
+
+        It 'writes a dash for no tags, and small letters for tags, each once' {
+            $null = Invoke-Remember 'emma' 'An entry without any tags at all.'
+            $null = Invoke-Remember 'emma' 'An entry with the same tag twice.' @('Build', 'PATHS', 'build')
+            $saved = @(Read-TeamFileLine (Join-Path $room 'agents\emma\memory'))
+            $saved[0] | Should -Match ($memoryPattern + '- \| An entry without any tags at all\.$')
+            $saved[1] | Should -Match ($memoryPattern + 'build,paths \| An entry with the same tag twice\.$')
+        }
+
+        It 'makes one line of the whole draft, without control characters, and keeps the bar out of the text' {
+            $draft = "First line of it`n`n   second`tline " + [char]7 + "here | and more`r`nlast"
+            $result = Invoke-Remember 'emma' $draft
+            $result.ExitCode | Should -Be 0
+            $saved = @(Read-TeamFileLine (Join-Path $room 'agents\emma\memory'))
+            $saved.Count | Should -Be 1
+            $saved[0].Substring(27) | Should -BeExactly 'First line of it second line here / and more last'
+        }
+
+        It 'sets the status, adds a journal line and clears the draft' {
+            $null = Invoke-Remember 'emma' 'The cache folder is rebuilt on every start.'
+            (Read-TeamKeyValue (Join-Path $room 'agents\emma\status'))['state'] | Should -Be 'working'
+            $journal = @(Read-TeamFileLine (Join-Path $room 'agents\emma\journal'))
+            $journal[$journal.Count - 1] | Should -Match '^\S+ remember The cache folder is rebuilt on every start\.$'
+            $draft = Join-Path $room 'agents\emma\draft.md'
+            if (Test-Path -LiteralPath $draft) { ([System.IO.File]::ReadAllText($draft)).Trim() | Should -BeExactly '' }
+        }
+
+        It 'sends no message and touches no inbox' {
+            $before = Get-TeamTree $room
+            $null = Invoke-Remember 'emma' 'The cache folder is rebuilt on every start.'
+            @(Get-TeamTreeChange $before (Get-TeamTree $room) | Where-Object { $_ -like '*\inbox\*' -or $_ -like '*/inbox/*' }).Count | Should -Be 0
+        }
+
+        It 'takes a text of <Length> characters: <Taken>' -ForEach @(
+            @{ Length = 14; Taken = $false }
+            @{ Length = 15; Taken = $true }
+            @{ Length = 500; Taken = $true }
+            @{ Length = 501; Taken = $false }
+        ) {
+            $text = -join (1..$Length | ForEach-Object { [string][char](97 + ($_ % 26)) })
+            $result = Invoke-Remember 'emma' $text
+            $memory = Join-Path $room 'agents\emma\memory'
+            if ($Taken) {
+                $result.ExitCode | Should -Be 0
+                @(Read-TeamFileLine $memory)[0].Substring(27) | Should -BeExactly $text
+            }
+            else {
+                $result.ExitCode | Should -Be 1
+                $result.Output | Should -Match ("(?m)^ERROR: the text is too (short|long).*: $Length characters, (15 at least|500 at most); nothing was remembered$")
+                $result.Output | Should -Match '(?m)^NEXT: write the finding '
+                Test-Path -LiteralPath $memory | Should -BeFalse
+            }
+        }
+
+        It 'refuses more than 5 tags and takes 5 once the repeated ones are left out' {
+            $many = Invoke-Remember 'emma' 'Too many tags for one entry here.' @('a', 'b', 'c', 'd', 'e', 'f')
+            $many.ExitCode | Should -Be 1
+            (Get-TeamLine $many.Output)[0] | Should -BeExactly 'ERROR: remember takes 5 tags at most, not 6; nothing was remembered'
+            Test-Path -LiteralPath (Join-Path $room 'agents\emma\memory') | Should -BeFalse
+            $five = Invoke-Remember 'emma' 'Five tags once the repeat is gone.' @('a', 'b', 'c', 'd', 'e', 'A')
+            $five.ExitCode | Should -Be 0
+            @(Read-TeamFileLine (Join-Path $room 'agents\emma\memory'))[0] | Should -Match ($memoryPattern + 'a,b,c,d,e \| ')
+        }
+
+        It 'refuses a tag that is no plain word and writes nothing' {
+            $result = Invoke-Remember 'emma' 'A tag with a slash in it here.' @('a/b')
+            $result.ExitCode | Should -Be 1
+            $result.Output | Should -Match '(?m)^ERROR: '
+            Test-Path -LiteralPath (Join-Path $room 'agents\emma\memory') | Should -BeFalse
+        }
+
+        It 'refuses a text that looks like a secret, keeps the draft, and has no override word' {
+            $key = 'AKIA' + ('ABCDEFGH' * 2)
+            Set-RelayTestDraft -Room $room -Agent 'emma' -Text "The key is $key in the config"
+            $blocked = Invoke-Team 'emma' @('remember')
+            $blocked.ExitCode | Should -Be 1
+            Join-TeamLine (Get-TeamLine $blocked.Output) | Should -BeExactly (Join-TeamLine @('ERROR: the text looks like it contains an AWS access key id; nothing was remembered', 'NEXT: take the secret out of the text and run the same command again'))
+            ([System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\draft.md'))) | Should -Match 'The key is AKIA'
+            $forced = Invoke-Team 'emma' @('remember', 'allow-secret')
+            $forced.ExitCode | Should -Be 1
+            $forced.Output | Should -Not -MatchExactly 'REMEMBERED'
+            Test-Path -LiteralPath (Join-Path $room 'agents\emma\memory') | Should -BeFalse
+        }
+
+        It 'refuses what any agent has recorded already, whatever the case and the blanks, and writes nothing' {
+            Write-TeamMemory 'emma' @('2026-10-10T08:00:00Z | build | The build needs the repository root.')
+            $result = Invoke-Remember 'jack' "the BUILD needs   the`nrepository root."
+            $result.ExitCode | Should -Be 0
+            Join-TeamLine (Get-TeamLine $result.Output) | Should -Match '^ALREADY RECORDED by Emma at 2026-10-10T08:00:00Z\nNEXT: '
+            Test-Path -LiteralPath (Join-Path $room 'agents\jack\memory') | Should -BeFalse
+        }
+
+        It 'keeps only the last 200 lines when the file holds <Before> and one is added' -ForEach @(
+            @{ Before = 199; Expected = 200 }
+            @{ Before = 200; Expected = 200 }
+            @{ Before = 230; Expected = 200 }
+        ) {
+            Write-TeamMemory 'emma' @(1..$Before | ForEach-Object { '2026-10-10T07:{0:00}:{1:00}Z | - | old entry number {2}' -f [Math]::Floor($_ / 60), ($_ % 60), $_ })
+            $result = Invoke-Remember 'emma' 'The newest entry of them all.'
+            $result.ExitCode | Should -Be 0
+            $lines = @(Read-TeamFileLine (Join-Path $room 'agents\emma\memory'))
+            $lines.Count | Should -Be $Expected
+            $lines[$lines.Count - 1] | Should -Match ' \| The newest entry of them all\.$'
+            $lines[0] | Should -Match (' \| old entry number {0}$' -f ($Before - [Math]::Min($Before, 199) + 1))
+        }
+
+        It 'shows another agent the entry, with its author, under the fixed header' {
+            $null = Invoke-Remember 'emma' 'The build runs only from the repository root.' @('build')
+            $found = Invoke-Team 'jack' @('find', 'build')
+            $found.ExitCode | Should -Be 0
+            $lines = Get-TeamLine $found.Output
+            $lines.Count | Should -Be 3
+            $lines[0] | Should -BeExactly $memoryHeader
+            $lines[1] | Should -Match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z Emma \[build\] The build runs only from the repository root\.$'
+            $lines[2] | Should -Match '^NEXT: use what fits your work and check it before you rely on it\. Keep what you learn with: \S.* remember \[tag \.\.\.\]$'
+        }
+
+        It 'puts a tag hit before a hit in the text only, then the newest first, case aside' {
+            Write-TeamMemory 'emma' @(
+                '2026-10-10T08:00:00Z | build | Oldest, tagged.'
+                '2026-10-10T08:05:00Z | - | Newer, the BUILD word in the text.'
+            )
+            Write-TeamMemory 'adam' @('2026-10-10T08:10:00Z | - | Newest, build in the text.', 'not a memory line at all', '2026-10-10T09:00:00Z | - | ')
+            $lines = Get-TeamLine (Invoke-Team 'jack' @('find', 'Build')).Output
+            Join-TeamLine $lines | Should -BeExactly (Join-TeamLine @(
+                    $memoryHeader
+                    '2026-10-10T08:00:00Z Emma [build] Oldest, tagged.'
+                    '2026-10-10T08:10:00Z Adam [-] Newest, build in the text.'
+                    '2026-10-10T08:05:00Z Emma [-] Newer, the BUILD word in the text.'
+                    ($lines[$lines.Count - 1])
+                ))
+        }
+
+        It 'takes tag:<name> as that tag exactly' {
+            Write-TeamMemory 'emma' @(
+                '2026-10-10T08:00:00Z | tests | Tagged tests.'
+                '2026-10-10T08:01:00Z | testsuite | Tagged testsuite.'
+                '2026-10-10T08:02:00Z | - | The word tests in the text.'
+            )
+            $lines = Get-TeamLine (Invoke-Team 'jack' @('find', 'tag:TESTS')).Output
+            $lines.Count | Should -Be 3
+            $lines[1] | Should -BeExactly '2026-10-10T08:00:00Z Emma [tests] Tagged tests.'
+        }
+
+        It 'wants every word, and falls back to any word under its own line' {
+            Write-TeamMemory 'emma' @(
+                '2026-10-10T08:00:00Z | - | The cache lives in the temp folder.'
+                '2026-10-10T08:01:00Z | - | The cache is cleared at night.'
+                '2026-10-10T08:02:00Z | - | The logs live in the temp folder.'
+            )
+            $all = Get-TeamLine (Invoke-Team 'jack' @('find', 'cache', 'temp')).Output
+            $all.Count | Should -Be 3
+            $all[1] | Should -BeExactly '2026-10-10T08:00:00Z Emma [-] The cache lives in the temp folder.'
+            $any = Get-TeamLine (Invoke-Team 'jack' @('find', 'night', 'logs')).Output
+            Join-TeamLine $any[0..3] | Should -BeExactly (Join-TeamLine @(
+                    $memoryHeader
+                    'no entry has all words; closest matches:'
+                    '2026-10-10T08:02:00Z Emma [-] The logs live in the temp folder.'
+                    '2026-10-10T08:01:00Z Emma [-] The cache is cleared at night.'
+                ))
+            $any.Count | Should -Be 5
+        }
+
+        It 'says when nothing matches any word' {
+            Write-TeamMemory 'emma' @('2026-10-10T08:00:00Z | - | The cache lives in the temp folder.')
+            $result = Invoke-Team 'jack' @('find', 'printer')
+            $result.ExitCode | Should -Be 0
+            $lines = Get-TeamLine $result.Output
+            $lines.Count | Should -Be 2
+            $lines[0] | Should -BeExactly 'nothing recorded matches'
+            $lines[1] | Should -Match '^NEXT: '
+        }
+
+        It 'shows the 10 newest entries without words, newest first' {
+            Write-TeamMemory 'emma' @(1..12 | ForEach-Object { '2026-10-10T08:{0:00}:00Z | - | Entry number {0} of twelve.' -f $_ })
+            $lines = Get-TeamLine (Invoke-Team 'jack' @('find')).Output
+            $lines[0] | Should -BeExactly $memoryHeader
+            $lines[1] | Should -BeExactly '2026-10-10T08:12:00Z Emma [-] Entry number 12 of twelve.'
+            $lines[10] | Should -BeExactly '2026-10-10T08:03:00Z Emma [-] Entry number 3 of twelve.'
+            @($lines | Where-Object { $_ -like '2026-*' }).Count | Should -Be 10
+            $lines[$lines.Count - 1] | Should -Match '^NEXT: '
+        }
+
+        It 'prints what another agent wrote without its control characters' {
+            Write-TeamMemory 'emma' @("2026-10-10T08:00:00Z | - | Bell$([char]7) and escape$([char]27)[2J in the text.")
+            $result = Invoke-Team 'jack' @('find', 'bell')
+            $result.Output | Should -Not -Match "[\x07\x1B]"
+            (Get-TeamLine $result.Output)[1] | Should -BeExactly '2026-10-10T08:00:00Z Emma [-] Bell and escape[2J in the text.'
+        }
+
+        It 'tells about new entries once: at start, with a delivery, and not again' {
+            Write-TeamMemory 'emma' @('2026-10-10T08:00:00Z | build | First entry of emma.')
+            $started = Get-TeamLine (Invoke-Team 'jack' @('start')).Output
+            $at = [array]::IndexOf($started, 'room memory: 1 entries, 1 new - run: find <words> before you start or ask')
+            $at | Should -BeGreaterThan 0
+            $started[$at + 1] | Should -BeExactly '  2026-10-10T08:00:00Z Emma [build] First entry of emma.'
+            Write-TeamMemory 'emma' @('2026-10-10T08:00:00Z | build | First entry of emma.', '2026-10-10T08:01:00Z | - | Second entry of emma.')
+            $null = Send-TeamNote 'olivia' 'jack'
+            $delivered = Get-TeamLine (Invoke-Team 'jack' @('wait', '1')).Output
+            $at = [array]::IndexOf($delivered, 'room memory: 2 entries, 1 new - run: find <words> before you start or ask')
+            $at | Should -BeGreaterThan 0
+            $delivered[$at + 1] | Should -BeExactly '  2026-10-10T08:01:00Z Emma [-] Second entry of emma.'
+            $delivered[$at + 2] | Should -Not -Match 'First entry'
+            $null = Send-TeamNote 'olivia' 'jack'
+            $again = Invoke-Team 'jack' @('check')
+            $again.Output | Should -Match 'new message'
+            $again.Output | Should -Not -Match 'room memory:'
+            # start says how much there is, with nothing new to show
+            $restarted = Get-TeamLine (Invoke-Team 'jack' @('start')).Output
+            $at = [array]::IndexOf($restarted, 'room memory: 2 entries, 0 new - run: find <words> before you start or ask')
+            $at | Should -BeGreaterThan 0
+            $restarted[$at + 1] | Should -Not -Match 'entry of emma'
+        }
+
+        It 'shows the three newest new entries and never the agent''s own' {
+            Write-TeamMemory 'emma' @(1..5 | ForEach-Object { '2026-10-10T08:0{0}:00Z | - | Entry {0} of emma.' -f $_ })
+            Write-TeamMemory 'jack' @('2026-10-10T09:00:00Z | - | Entry of jack himself.')
+            $lines = Get-TeamLine (Invoke-Team 'jack' @('start')).Output
+            $at = [array]::IndexOf($lines, 'room memory: 6 entries, 5 new - run: find <words> before you start or ask')
+            $at | Should -BeGreaterThan 0
+            Join-TeamLine $lines[($at + 1)..($at + 3)] | Should -BeExactly (Join-TeamLine @('  2026-10-10T08:05:00Z Emma [-] Entry 5 of emma.', '  2026-10-10T08:04:00Z Emma [-] Entry 4 of emma.', '  2026-10-10T08:03:00Z Emma [-] Entry 3 of emma.'))
+            $lines[$at + 4] | Should -Not -Match 'Entry'
+        }
+
+        It 'prints no memory line while the room remembers nothing' {
+            (Invoke-Team 'jack' @('start')).Output | Should -Not -Match 'room memory:'
+            $null = Send-TeamNote 'olivia' 'jack'
+            (Invoke-Team 'jack' @('check')).Output | Should -Not -Match 'room memory:'
+        }
+
+        It 'tells about new entries before a question is sent' {
+            Write-TeamMemory 'emma' @('2026-10-10T08:00:00Z | - | The answer may be here already.')
+            $asked = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('ask') -Text "Where?`n`nWhere is it?"
+            $asked.ExitCode | Should -Be 0
+            $lines = Get-TeamLine $asked.Output
+            $lines | Should -Contain 'room memory: 1 entries, 1 new - run: find <words> before you start or ask'
+            $lines | Should -Contain '  2026-10-10T08:00:00Z Emma [-] The answer may be here already.'
+            $asked.Output | Should -Match 'SENT jack-olivia-\d+ \(question\)'
+        }
+
+        It 'gives the tip to remember with a report only while the agent has recorded nothing' {
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'adam') -Text "First`n`nDo it."
+            $first = Get-TeamLine (Send-RelayTestMessage -Room $room -Agent 'adam' -Engine $engine -Words @('report') -Text "Done`n`n1. Result: done.").Output
+            $first[$first.Count - 2] | Should -BeExactly 'tip: remember durable findings for your teammates'
+            $first[$first.Count - 1] | Should -Match '^NEXT: run: '
+            $null = Invoke-Remember 'adam' 'Something adam learned that lasts.'
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'adam') -Text "Second`n`nDo it."
+            $second = Send-RelayTestMessage -Room $room -Agent 'adam' -Engine $engine -Words @('report') -Text "Done`n`n1. Result: done."
+            $second.ExitCode | Should -Be 0
+            $second.Output | Should -Not -Match 'tip: remember'
+        }
+    }
+
     Context 'Help' {
-        It 'has the two new lines between who and bye, in the column of the others' {
+        It 'has the team and memory lines between who and bye, in the column of the others' {
             $result = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('help')
             $result.ExitCode | Should -Be 0
             $lines = Get-TeamLine $result.Output
@@ -1791,19 +2074,23 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $at = [array]::IndexOf($lines, $who[0])
             $lines[$at + 1] | Should -Match '^  .+? team {2,}the plan, who does which part, and where everybody stands$'
             $lines[$at + 2] | Should -Match '^  .+? progress {2,}tell the team where you stand, in one line \(draft file\); wakes nobody$'
-            $lines[$at + 3] | Should -Match '^  .+? bye {2,}\S'
+            $lines[$at + 3] | Should -Match '^  .+? remember \[tag \.\.\.\] {2,}keep a finding for the whole team \(draft file\); wakes nobody$'
+            $lines[$at + 4] | Should -Match '^  .+? find \[word\|tag:name \.\.\.\] {2,}search what the team keeps; do it before you start or ask$'
+            $lines[$at + 5] | Should -Match '^  .+? bye {2,}\S'
             # the same column as the lines around them: the text starts where the text of who starts
             $column = $who[0].IndexOf('who is in the room')
             $lines[$at + 1].IndexOf('the plan, who does') | Should -Be $column
             $lines[$at + 2].IndexOf('tell the team where') | Should -Be $column
-            $lines[$at + 3].IndexOf('leave the room') | Should -Be $column
+            $lines[$at + 3].IndexOf('keep a finding') | Should -Be $column
+            $lines[$at + 4].IndexOf('search what the team') | Should -Be $column
+            $lines[$at + 5].IndexOf('leave the room') | Should -Be $column
         }
 
         It 'spells the call the same in all of its lines' {
             $lines = Get-TeamLine (Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('help')).Output
-            $calls = @($lines | ForEach-Object { if ($_ -match '^  (?<call>.+?) (who|team|progress|bye) {2,}') { $Matches['call'] } } | Sort-Object -Unique)
+            $calls = @($lines | ForEach-Object { if ($_ -match '^  (?<call>.+?) (who|team|progress|remember \[tag|find \[word|bye)[ \]|a-z:.]* {2,}') { $Matches['call'] } } | Sort-Object -Unique)
             $calls.Count | Should -Be 1
-            @($lines | Where-Object { $_ -match '^  .+? (who|team|progress|bye) {2,}' }).Count | Should -Be 4
+            @($lines | Where-Object { $_ -match '^  .+? (who|team|progress|remember \[tag|find \[word|bye)[ \]|a-z:.]* {2,}' }).Count | Should -Be 6
         }
     }
 }
