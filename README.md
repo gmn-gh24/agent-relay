@@ -422,6 +422,9 @@ Start the tests from a folder on a local disk.
 GitHub Actions (`.github/workflows/ci.yml`) runs the static and pane checks on Linux, on every push to `main`,
 every pull request and on demand. The Pester files (PowerShell 7 and Windows PowerShell 5.1) do not run there:
 run them on a Windows dev machine before a commit (`tests\Invoke-AllTests.ps1`). The eval cases never run in CI.
+`pwsh -File tests\Install-GitHooks.ps1` installs a `pre-push` hook that runs the gate for PowerShell 7
+(`tests\Invoke-PrePush.ps1`) before each push; `git push --no-verify` skips it, and `-Remove` deletes it. It leaves
+out the Windows PowerShell 5.1 files, so run the whole gate before a release.
 
 ### The pane and the skill
 
