@@ -25,7 +25,7 @@ claude plugin eval . --no-publish   # the skill's cases in evals/; each run is a
 ```
 
 - Engines are `ps7` and `ps5`. The four tool test files (`Tool`, `Team`, `Faults`, `Parity`) run once per engine;
-  the five script files (`Scripts`, `Plan`, `Guard`, `Owner`, `Gate`) take no `-Engines`. `RELAY_TEST_ENGINES=ps7`
+  the seven script files (`Scripts`, `Plan`, `Guard`, `Owner`, `Gate`, `Memory`, `Reopen`) take no `-Engines`. `RELAY_TEST_ENGINES=ps7`
   narrows a run. `ps5` must be started from `powershell.exe`, `ps7` from `pwsh`. The gate runs both (`ps5` on
   Windows only).
 - The gate fails without PSScriptAnalyzer or Claude Code unless `-SkipAnalyzer` / `-SkipPane` is given. The

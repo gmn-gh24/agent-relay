@@ -22,6 +22,9 @@ Two things are never defaulted from memory and never taken from an earlier job:
   when the owner says so, for that machine and for this job. If the owner has not said, the answer is "in use".
 - **Your own authority** in this room.
 
+The local notes (`scripts/Add-RelayLocalMemory.ps1 -Find`) may seed suggestions you offer the owner, but they
+are never silent defaults: say where a suggestion comes from and let the owner confirm it.
+
 ## Named agents or open seats
 
 | | Named agent | Open seat |

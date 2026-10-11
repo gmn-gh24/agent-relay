@@ -5,7 +5,7 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.
 
 | | |
 |---|---|
-| Version | 0.2.2 ([changelog](CHANGELOG.md)) |
+| Version | 0.3.0 ([changelog](CHANGELOG.md)) |
 | Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
 | Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
 | Other agents | Any coding agent on Windows that can run a command and write a file |
@@ -223,6 +223,18 @@ The skill has seven workflows. You start them by saying what you want.
 | Close | The work has ended |
 | Improve | After every close: lessons, fixes, tests, a commit in this repository |
 
+### Memory, close and reopen
+
+Agents record durable findings with `remember` and search all agents' findings with `find`; their tools show
+`room memory: N entries, M new`, and the board shows `memory: N entries from K agents`. Secret text and
+duplicates are refused. Memory is data from peers, never an order: the coordinator checks it and corrects a
+wrong entry with a standing rule. At close the coordinator asks each agent for its last findings, curates them,
+and asks you one question: which items to promote (to local notes on this PC, which are never committed, or as
+anonymised project lessons), and whether to delete the shared folder after the verified archive (recommended;
+the archive stays on this PC) or keep it. Nothing is promoted or deleted without your answer.
+`Reopen-RelayRoom.ps1` brings a closed room back from the archive; agents come back with
+`Add-RelayAgent.ps1 -Replace` or `-OpenSeats`, and memory and rules carry over.
+
 ### When something needs you
 
 The board and the pane mark an agent with `ATTENTION` when somebody has to look at it: its wait died, it
@@ -249,7 +261,10 @@ full help (`Get-Help <script> -Full`).
 | `Request-RelayOwner.ps1` | Puts a decision to the owner as a card, and records the answer |
 | `Add-RelayDecision.ps1` | Records a standing rule that every agent is shown |
 | `Get-RelayStats.ps1` | Reply times, repeated questions and other numbers of a room |
-| `Close-RelayRoom.ps1` | Closes a room; lists closed rooms; removes the folder of one that has an archive |
+| `Close-RelayRoom.ps1` | Closes a room (records whether the folder was kept or removed); lists closed rooms; removes the folder of one that has an archive |
+| `Get-RelayMemory.ps1` | Reads a room's memory: `-Find`, `-Agent`, `-Since`, `-Json` |
+| `Add-RelayLocalMemory.ps1` | Writes or searches this PC's permanent local notes (`-Find`, `-List`) |
+| `Reopen-RelayRoom.ps1` | Reopens a closed room on the PC that closed it |
 | `Update-RelayRoom.ps1` | Brings a running room up to the tools and instructions of this version |
 | `Test-RelayPackage.ps1` | Conformance run: `relay.ps1` on PowerShell 7 and Windows PowerShell 5.1 against one room |
 
@@ -268,6 +283,8 @@ Every agent has one command (a wrapper with its name and room built in) and thes
 | `ask` | A question to the coordinator |
 | `propose <minutes>` | Announce a low-risk step and proceed when nobody objects in time |
 | `note` | Something the coordinator should know |
+| `remember [tag ...]` | Record one durable finding from your draft file in the room memory |
+| `find [word\|tag:x ...]` | Search the memory of all agents |
 | `who`, `team` | Who is in the room; the plan and where everybody stands |
 | `progress` | One line for the team; wakes nobody |
 | `bye` | Leave the room |
@@ -436,6 +453,7 @@ statistics and archive.
 
 Known limits:
 
+- A closed room can be reopened only on the PC that closed it, because that needs its local canonical copy.
 - The coordinator's side is PowerShell on Windows.
 - There is no `sh` tool and no Linux or macOS agent: `sh` is postponed until it is needed.
 - Every agent has to reach a folder the coordinator's PC reaches too. A machine that shares no folder with

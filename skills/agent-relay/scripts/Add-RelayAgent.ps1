@@ -70,6 +70,18 @@ Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 
 $roomObject = Resolve-RelayRoom $Room
 if ($roomObject.IsClosed) { throw "The room $($roomObject.Id) is closed" }
+# Instructions come from this plugin's templates, but the agents run the room's own tool: a room made by a package
+# before 3.2.0 has no find and no remember, so a seat written now would start with a command its tool lacks. The
+# version is this PC's canonical copy of ROOM, compared as a version.
+if (@('Add', 'Replace', 'Assign', 'Open') -contains $PSCmdlet.ParameterSetName) {
+    $roomPackage = [string](Get-RelayValue $roomObject.Info 'package' '')
+    $parsedPackage = $null
+    if (-not [System.Version]::TryParse($roomPackage.Trim(), [ref]$parsedPackage) -or $parsedPackage -lt [System.Version]'3.2.0') {
+        $shown = $roomPackage
+        if (-not $shown) { $shown = '(none recorded)' }
+        throw "ERROR: the room $($roomObject.Id) runs room package $shown, older than 3.2.0: its tool has no find or remember, which the instructions of a new seat use. NEXT: run Update-RelayRoom.ps1 -Room $($roomObject.Id) first, then run this command again."
+    }
+}
 $all = @(Get-RelayRoster $roomObject -IncludeRetired)
 
 function Assert-Agent {

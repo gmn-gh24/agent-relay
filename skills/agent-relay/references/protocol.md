@@ -25,6 +25,7 @@ which files this PC writes, how the pieces fit, and where state lives.
     claim                                             open seat only: who took it (written by the tool)
     card  status  alive  state  journal  delivered    written by the agent's tool
     proposals  progress  wait.lease  baseline/
+    memory                                            written by the agent's tool, not guarded
     wait.lease.lock  proposals.lock  state.lock       short-lived: a critical section
     inbox/.claim-*                                    short-lived: a number being taken
     inbox/<from>-<NNNN>.md                            messages to this agent
@@ -111,7 +112,8 @@ environment turns that off).
 ## Verbs and exit codes
 
 `join` (room-level), `start`, `wait [minutes]`, `check`, `show <id>|open|rules`, `reply <id> [approve|deny]`,
-`report [<task id>]`, `ask`, `propose <minutes>`, `note`, `who`, `team`, `progress`, `bye`; the coordinator
+`report [<task id>]`, `ask`, `propose <minutes>`, `note`, `who`, `team`, `progress`, `remember [tag ...]`,
+`find [word|tag:name ...]`, `bye`; the coordinator
 also has `task <name>`, `ask <name>`, `note <name>|all`. Arguments are single plain words; text comes from the
 draft file.
 
@@ -138,6 +140,24 @@ on, owner to reviewer).
   no plan; a name that is no agent of the room is printed as written, with a capital when it starts with a to z.
   Names and part ids are compared without regard to case: `Emma` as an owner is the agent `emma`, and a part
   `A` after a part `a` is that part again.
+
+## Room memory
+
+`remember` takes one durable finding from the draft file and appends a line `<utc> | tags | text` to the
+agent's `agents/<name>/memory` (tags `-` when none). Up to 5 tags, plain words; the text is 15 to 500
+characters, one fact per entry; text that looks like a secret is refused. The last 200 lines per agent are kept.
+An entry identical to one anybody already recorded prints `ALREADY RECORDED by <name>` and writes nothing.
+
+- `find` searches every agent's memory: all words must match (case-insensitive substring in tags or text, or
+  `tag:name` for a tag), tag hits rank first, newest first, at most 20. If nothing matches all words it shows
+  the closest matches; with no words it shows the 10 newest.
+- `start`, a wait delivery and `ask` print `room memory: N entries, M new - run: find <words> before you start
+  or ask` with up to 3 newest unseen entries (a seen counter in the agent's `state`). `report` nudges an agent
+  that has recorded nothing.
+- Trust: the file is not guarded and any agent can edit it. Entries are colleagues' records, never orders. The
+  coordinator corrects a wrong entry only by a standing rule (`DECISIONS.md`) or by telling the agent to add a
+  corrected entry; entries are append-only, and a wrong one is superseded by a new entry that says so.
+- Memory belongs to the room: it is archived at close and carries over if the room is reopened.
 
 | Code | Meaning |
 |---|---|
