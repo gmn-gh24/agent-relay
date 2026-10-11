@@ -1270,7 +1270,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
     }
 
     Context 'R3: a git folder that git cannot read is NOT COMPARED, never "nothing changed"' {
-        It 'says so, with the reason, when git status fails at report time' {
+        It 'says so, with the reason, when git status fails at report time' -Tag 'MaySkip' {
             if (Skip-ForFrozenSh) { return }
             if ($null -eq (Get-Command git -ErrorAction SilentlyContinue)) { Set-ItResult -Skipped -Because 'git is not installed'; return }
             $made = New-GitAuditRoom
@@ -1282,7 +1282,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $sent.Result.Output | Should -Match 'self-audit: 0 changed since start, 0 OUTSIDE the assigned paths, 1 folder\(s\) NOT COMPARED'
         }
 
-        It 'says so, with the reason, when git could not read the folder at start' {
+        It 'says so, with the reason, when git could not read the folder at start' -Tag 'MaySkip' {
             if (Skip-ForFrozenSh) { return }
             if ($null -eq (Get-Command git -ErrorAction SilentlyContinue)) { Set-ItResult -Skipped -Because 'git is not installed'; return }
             $made = New-GitAuditRoom -Break
@@ -1295,7 +1295,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $sent.Result.Output | Should -Match 'self-audit: 0 changed since start, 0 OUTSIDE the assigned paths, 1 folder\(s\) NOT COMPARED'
         }
 
-        It 'runs no fsmonitor command that the repository''s own config names' {
+        It 'runs no fsmonitor command that the repository''s own config names' -Tag 'MaySkip' {
             if (Skip-ForFrozenSh) { return }
             if ($null -eq (Get-Command git -ErrorAction SilentlyContinue)) { Set-ItResult -Skipped -Because 'git is not installed'; return }
             $number = New-RelayTestId
@@ -1324,7 +1324,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
     }
 
     Context 'R4: nothing is read or written through a link in the agent''s own folder' {
-        It 'refuses a draft that is a link, sends nothing of what it points at and leaves both alone' {
+        It 'refuses a draft that is a link, sends nothing of what it points at and leaves both alone' -Tag 'MaySkip' {
             if (Skip-ForFrozenSh) { return }
             $private = Join-Path $root ('private-' + (New-RelayTestId) + '.txt')
             [System.IO.File]::WriteAllText($private, "Private`n`nmachine example.invalid login me password not-for-the-room`n")
@@ -1345,7 +1345,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             if (Test-Path -LiteralPath $progress) { [System.IO.File]::ReadAllText($progress) | Should -Not -Match 'Private' }
         }
 
-        It 'writes nothing through a link that stands where a file of its own folder is' {
+        It 'writes nothing through a link that stands where a file of its own folder is' -Tag 'MaySkip' {
             if (Skip-ForFrozenSh) { return }
             $victim = Join-Path $root ('victim-' + (New-RelayTestId) + '.txt')
             [System.IO.File]::WriteAllText($victim, "untouched`n")
@@ -1359,7 +1359,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             [System.IO.File]::ReadAllText($victim) | Should -BeExactly "untouched`n"
         }
 
-        It 'removes a left-over claim that is a link as a link, never what it points at' {
+        It 'removes a left-over claim that is a link as a link, never what it points at' -Tag 'MaySkip' {
             if (Skip-ForFrozenSh) { return }
             $target = Join-Path $root ('claimed-' + (New-RelayTestId))
             $null = New-Item -ItemType Directory -Path $target -Force
@@ -1374,7 +1374,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $sent.Output | Should -Match 'SENT emma-olivia-\d+ \(note\)'
         }
 
-        It 'sends nothing and moves nothing when the attach folder holds a link' {
+        It 'sends nothing and moves nothing when the attach folder holds a link' -Tag 'MaySkip' {
             if (Skip-ForFrozenSh) { return }
             $outside = Join-Path $root ('outside-' + (New-RelayTestId))
             $null = New-Item -ItemType Directory -Path $outside -Force
@@ -1402,7 +1402,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
     }
 
     Context 'R5: listing the attachments never stands in the way of a delivery' {
-        It 'delivers a message whose attachment folder cannot be listed in full, and counts what it can list' {
+        It 'delivers a message whose attachment folder cannot be listed in full, and counts what it can list' -Tag 'MaySkip' {
             if (Skip-ForFrozenSh) { return }
             $files = Join-Path $room 'files\olivia-emma-0001'
             $sub = Join-Path $files 'sub'

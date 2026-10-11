@@ -25,6 +25,7 @@ BeforeAll {
 
     function New-GateTestFile {
         # A small Pester file in this test's drive
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper')]
         param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Text)
         $path = Join-Path $TestDrive $Name
         [System.IO.File]::WriteAllText($path, $Text)
@@ -61,6 +62,13 @@ Describe 'Invoke-Suite.ps1 counts every kind of failure (round 5)' -Tag 'Gate' {
         $run.ExitCode | Should -BeGreaterThan 0
         @($run.Lines | Where-Object { $_ -like 'FAILED `[wrongpath`] the test file does not exist:*' }).Count | Should -Be 1
         @($run.Lines | Where-Object { $_ -like 'RESULT `[wrongpath`] passed=0 failed=1 *' }).Count | Should -Be 1
+    }
+
+    It 'names a skipped test on a SKIPPED line unless it is tagged MaySkip' {
+        $file = New-GateTestFile 'Skips.Tests.ps1' "Describe 'a' { It 'passes' { 1 | Should -Be 1 }; It 'may skip' -Tag 'MaySkip' { Set-ItResult -Skipped -Because 'no right'; return }; It 'should not skip' { Set-ItResult -Skipped -Because 'why'; return } }`n"
+        $run = Invoke-GateSuite -Path $file -Label 'skips'
+        $run.ExitCode | Should -Be 0
+        @($run.Lines | Where-Object { $_ -like 'SKIPPED `[skips`]*' }) | Should -Be @('SKIPPED [skips] a.should not skip')
     }
 
     It 'fails a run in which no test ran' {

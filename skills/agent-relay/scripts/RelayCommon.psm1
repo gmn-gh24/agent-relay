@@ -58,24 +58,21 @@ function Resolve-RelayFullPath {
 
 function Test-RelayLink {
     # True when the path is a link of the file system: a symbolic link or a junction. Any agent can make one in
-    # the room, and what lies behind it is not the room's.
+    # the room, and what lies behind it is not the room's. Other reparse points (a cloud file of OneDrive, a
+    # deduplicated file) are files like any other; one whose kind cannot be told is taken for a link.
     param([string]$Path)
-    try { return ((([System.IO.File]::GetAttributes($Path)) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) }
-    catch { return $false }
+    $attributes = [System.IO.FileAttributes]::Normal
+    try { $attributes = [System.IO.File]::GetAttributes($Path) } catch { return $false }
+    if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) { return $false }
+    try { return (@('SymbolicLink', 'Junction') -contains [string](Get-Item -LiteralPath $Path -Force -ErrorAction Stop).LinkType) }
+    catch { return $true }
 }
 
 function Test-RelayLinkedPath {
     # True when the path, or a folder between it and the root, is a link. The root itself is not judged: where
     # the owner keeps the rooms is the owner's choice.
     param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Path)
-    $top = Get-RelayNormalPath $Root
-    $current = Get-RelayNormalPath $Path
-    while ($current.Length -gt $top.Length -and $current.StartsWith($top, [System.StringComparison]::OrdinalIgnoreCase)) {
-        if (Test-RelayLink $current) { return $true }
-        $current = [System.IO.Path]::GetDirectoryName($current)
-        if (-not $current) { break }
-    }
-    return $false
+    return [bool](Get-RelayLinkInPath -Root $Root -Path $Path)
 }
 
 function Get-RelayFileTree {
@@ -85,11 +82,12 @@ function Get-RelayFileTree {
     $files = New-Object System.Collections.Generic.List[System.IO.FileInfo]
     $links = New-Object System.Collections.Generic.List[string]
     $pending = New-Object System.Collections.Generic.Stack[string]
-    $pending.Push((Resolve-RelayFullPath $Path))
+    $top = Resolve-RelayFullPath $Path
+    if (Test-RelayLink $top) { $links.Add($top) } else { $pending.Push($top) }
     while ($pending.Count -gt 0) {
         $folder = New-Object System.IO.DirectoryInfo $pending.Pop()
         foreach ($entry in $folder.GetFileSystemInfos()) {
-            if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { $links.Add($entry.FullName); continue }
+            if ((($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) -and (Test-RelayLink $entry.FullName)) { $links.Add($entry.FullName); continue }
             if ($entry -is [System.IO.DirectoryInfo]) { $pending.Push($entry.FullName) }
             else { $files.Add([System.IO.FileInfo]$entry) }
         }
@@ -108,7 +106,8 @@ function Remove-RelayTree {
         if ([System.IO.Directory]::Exists($link)) { [System.IO.Directory]::Delete($link, $false) }
         else { [System.IO.File]::Delete($link) }
     }
-    Remove-Item -LiteralPath $full -Recurse -Force
+    # A folder that was itself a link is gone with the link
+    if (Test-Path -LiteralPath $full) { Remove-Item -LiteralPath $full -Recurse -Force }
 }
 
 function Test-RelayWorkingCopy {
@@ -179,14 +178,19 @@ function Write-RelayTextAtomic {
     $Path = Resolve-RelayFullPath $Path
     $temporary = '{0}.{1}.tmp' -f $Path, [guid]::NewGuid().ToString('N')
     Write-RelayText $temporary $Text
-    try {
-        # [NullString]: PowerShell hands a plain $null over to a string parameter as an empty string
-        if ([System.IO.File]::Exists($Path)) { [System.IO.File]::Replace($temporary, $Path, [NullString]::Value) }
-        else { [System.IO.File]::Move($temporary, $Path) }
-    }
-    catch {
-        try { [System.IO.File]::Delete($temporary) } catch { $null = $_ }
-        throw
+    # A reader holds the file for a moment on Windows: the move is tried again, as Write-RelayText does
+    for ($try = 0; ; $try++) {
+        try {
+            # [NullString]: PowerShell hands a plain $null over to a string parameter as an empty string
+            if ([System.IO.File]::Exists($Path)) { [System.IO.File]::Replace($temporary, $Path, [NullString]::Value) }
+            else { [System.IO.File]::Move($temporary, $Path) }
+            return
+        }
+        catch {
+            if ($try -lt 5) { Start-Sleep -Milliseconds 150; continue }
+            try { [System.IO.File]::Delete($temporary) } catch { $null = $_ }
+            throw
+        }
     }
 }
 
@@ -396,9 +400,10 @@ function Save-RelayRoomIndex {
 function Update-RelayRoomIndex {
     # Reads the room index, hands its entries to -Change and saves the entries that come back: one caller at a
     # time on this PC (a named mutex), and an index that cannot be read is an error, never an empty list.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Writes this PC''s own room index for the script that called it, which asks for confirmation where it should')]
     param([Parameter(Mandatory)][scriptblock]$Change)
     $local = Get-RelayLocalRoot
-    $mutexName = 'Local\agent-relay-index-' + (Get-RelayBytesHash ($script:Utf8.GetBytes((Get-RelayNormalPath $local).ToLowerInvariant()))).Substring(0, 16)
+    $mutexName = 'Global\agent-relay-index-' + (Get-RelayBytesHash ($script:Utf8.GetBytes((Get-RelayNormalPath $local).ToLowerInvariant()))).Substring(0, 16)
     $mutex = New-Object System.Threading.Mutex($false, $mutexName)
     $held = $false
     try {
@@ -574,7 +579,8 @@ function Get-RelayLinkInPath {
     $top = Get-RelayNormalPath $Root
     $current = Get-RelayNormalPath $Path
     $found = ''
-    while ($current.Length -gt $top.Length -and $current.StartsWith($top, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $below = $top.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    while ($current.Length -gt $top.Length -and $current.StartsWith($below, [System.StringComparison]::OrdinalIgnoreCase)) {
         if (Test-RelayLink $current) { $found = $current }
         $current = [System.IO.Path]::GetDirectoryName($current)
         if (-not $current) { break }
@@ -810,7 +816,7 @@ function Read-RelayMessage {
         Body     = $parts.Body
         Path     = $Path
         Time     = (Get-RelayFileTimeUtc $Path)
-        Mismatch = ($fields['id'] -ne $id -or $fields['from'] -ne $from -or $fields['to'] -ne $to)
+        Mismatch = ($fields['id'] -cne $id -or $fields['from'] -cne $from -or $fields['to'] -cne $to)
     }
 }
 
@@ -2223,8 +2229,7 @@ function Switch-RelaySeatKind {
 
 function Get-RelayAgentKindName {
     # The agent kinds agent-kinds.json knows, in the order of the file
-    $all = ConvertFrom-RelayJson (Read-RelayText (Join-Path $PSScriptRoot 'agent-kinds.json'))
-    return @($all.PSObject.Properties | ForEach-Object { $_.Name })
+    return @((Get-RelayJsonTable 'agent-kinds.json').PSObject.Properties | ForEach-Object { $_.Name })
 }
 
 function Assert-RelayAgentKind {
@@ -2281,7 +2286,9 @@ function Get-RelayLinkTarget {
         # Windows PowerShell 5.1 gives the target as a list, PowerShell 7 as one text
         $target = [string](@($item.Target | Where-Object { $_ }) | Select-Object -First 1)
         if (-not $target) { return '' }
-        if ($target.StartsWith('\??\')) { $target = $target.Substring(4) }
+        if ($target.StartsWith('\??\', [System.StringComparison]::Ordinal)) { $target = $target.Substring(4) }
+        # A link to a share comes back as UNC\server\share in Windows PowerShell 5.1
+        if ($target.StartsWith('UNC\', [System.StringComparison]::OrdinalIgnoreCase)) { $target = '\\' + $target.Substring(4) }
         if (-not [System.IO.Path]::IsPathRooted($target)) { $target = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($Path), $target) }
         return [System.IO.Path]::GetFullPath($target)
     }
