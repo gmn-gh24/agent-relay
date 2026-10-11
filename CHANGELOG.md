@@ -11,6 +11,8 @@ Agent names repeated from room to room on one PC (no change to the room package)
   pool in a shuffled order, away from the names every open room of this PC holds and from the last 20 names
   handed out (`recent` in `names.json`). The keys an older version wrote for open seats and this PC are
   dropped at the next draw; those of named machines stay.
+  A name the owner chose is never refused because a drawn name of the same batch took its letter first: the
+  letters of the wanted names of a batch are kept free for them.
 - Tests: the Scripts suite pins fresh names across two open rooms and after a close, the shuffled order, what
   is remembered and what is dropped, and the numbered names of a room beyond the pool.
 - CLAUDE.md: where a cloud (Linux) session gets `pwsh`, Pester and PSScriptAnalyzer from when the PowerShell

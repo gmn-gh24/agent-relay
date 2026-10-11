@@ -1835,7 +1835,9 @@ function Select-RelayName {
     # from the last 20 names handed out, which the registry keeps under 'recent'. In one room every name starts
     # with a different letter. The registry is written back whole, so one that exists and cannot be read or
     # parsed is an error, never an empty registry.
-    param([Parameter(Mandatory)][string]$Machine, [Parameter(Mandatory)][string]$Role, [string[]]$Taken = @(), [string]$Wanted = '', [switch]$Transient)
+    # -Reserved: the wanted names of the other seats chosen in the same batch; their first letters stay free for
+    # them, so a name the owner chose is never refused because a drawn name took its letter first.
+    param([Parameter(Mandatory)][string]$Machine, [Parameter(Mandatory)][string]$Role, [string[]]$Taken = @(), [string]$Wanted = '', [switch]$Transient, [string[]]$Reserved = @())
     $pool = Get-RelayJsonTable 'relay-names.json'
     $registryPath = Join-Path (Get-RelayLocalRoot) 'names.json'
     $registry = @{}
@@ -1865,6 +1867,9 @@ function Select-RelayName {
     $key = ('{0}|{1}' -f $machineKey, $Role.Trim().ToLowerInvariant())
     $usedLetters = @{}
     foreach ($name in @($Taken)) { if ($name) { $usedLetters[$name.Substring(0, 1).ToLowerInvariant()] = $true } }
+    # The letters kept for the wanted names of the batch: not for a wanted name itself, which may be one of them
+    $keptLetters = @{}
+    foreach ($name in @($Reserved)) { if ($name) { $keptLetters[$name.Trim().Substring(0, 1).ToLowerInvariant()] = $true } }
     $avoid = @{}
     foreach ($name in @($pool.avoid)) { $avoid[([string]$name).ToLowerInvariant()] = $true }
 
@@ -1879,13 +1884,14 @@ function Select-RelayName {
     }
     if (-not $choice -and $remembered -and $registry.ContainsKey($key)) {
         $candidate = $registry[$key]
-        if (-not $usedLetters.ContainsKey($candidate.Substring(0, 1))) { $choice = $candidate }
+        if (-not $usedLetters.ContainsKey($candidate.Substring(0, 1)) -and -not $keptLetters.ContainsKey($candidate.Substring(0, 1))) { $choice = $candidate }
     }
     if (-not $choice) {
         # The pool in a fresh order each time. Pass 1: a free first letter and a name that no remembered seat
         # owns, no open room of this PC holds and was not handed out lately. Pass 2: without the last condition.
         # Pass 3: a free first letter. Pass 4: a room with more agents than letters shares letters. After that:
-        # a pool name with a number, never one an open room holds. No upper limit.
+        # a pool name with a number, never one an open room holds. No upper limit. A letter kept for a wanted name
+        # of the batch is never drawn.
         $owned = @{}
         foreach ($value in $registry.Values) { $owned[$value] = $true }
         $takenNames = @{}
@@ -1898,6 +1904,7 @@ function Select-RelayName {
             foreach ($name in $shuffled) {
                 $candidate = ([string]$name).ToLowerInvariant()
                 if ($avoid.ContainsKey($candidate) -or $takenNames.ContainsKey($candidate)) { continue }
+                if ($keptLetters.ContainsKey($candidate.Substring(0, 1))) { continue }
                 if ($pass -le 3 -and $usedLetters.ContainsKey($candidate.Substring(0, 1))) { continue }
                 if ($pass -le 2 -and ($owned.ContainsKey($candidate) -or $busy.ContainsKey($candidate))) { continue }
                 if ($pass -eq 1 -and $lately.ContainsKey($candidate)) { continue }
@@ -1909,6 +1916,7 @@ function Select-RelayName {
         for ($suffix = 2; -not $choice -and $suffix -lt 1000; $suffix++) {
             foreach ($name in $shuffled) {
                 $candidate = ([string]$name).ToLowerInvariant() + $suffix
+                if ($keptLetters.ContainsKey($candidate.Substring(0, 1))) { continue }
                 if ($candidate -match $script:NamePattern -and -not $takenNames.ContainsKey($candidate) -and -not $busy.ContainsKey($candidate)) { $choice = $candidate; break }
             }
         }

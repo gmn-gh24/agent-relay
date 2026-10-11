@@ -119,8 +119,9 @@ switch ($PSCmdlet.ParameterSetName) {
         foreach ($name in $all) { $taken.Add($name) }
         $lastPrompt = ''
         $lastName = ''
+        $wanted = @($specs | ForEach-Object { [string]$_['wanted_name'] })
         foreach ($spec in $specs) {
-            $name = Select-RelayName -Machine $spec['machine'] -Role $spec['role'] -Taken $taken.ToArray() -Wanted $spec['wanted_name']
+            $name = Select-RelayName -Machine $spec['machine'] -Role $spec['role'] -Taken $taken.ToArray() -Wanted $spec['wanted_name'] -Reserved $wanted
             $taken.Add($name)
             $lastPrompt = Add-RelayAgentSeat -Room $roomObject -Name $name -Spec $spec -Generation 1
             $lastName = $name

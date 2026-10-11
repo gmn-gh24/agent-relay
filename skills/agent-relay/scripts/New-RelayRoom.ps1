@@ -144,8 +144,9 @@ $taken = New-Object System.Collections.Generic.List[string]
 $coordinatorName = Select-RelayName -Machine ([Environment]::MachineName) -Role 'coordinator' -Taken @() -Wanted ([string](Get-RelayProperty $coordinatorAnswer 'name' '')) -Transient
 $taken.Add($coordinatorName)
 $names = New-Object System.Collections.Generic.List[string]
+$wanted = @($specs | ForEach-Object { [string]$_['wanted_name'] })
 foreach ($spec in $specs) {
-    $name = Select-RelayName -Machine $spec['machine'] -Role $spec['role'] -Taken $taken.ToArray() -Wanted $spec['wanted_name']
+    $name = Select-RelayName -Machine $spec['machine'] -Role $spec['role'] -Taken $taken.ToArray() -Wanted $spec['wanted_name'] -Reserved $wanted
     $taken.Add($name)
     $names.Add($name)
 }
