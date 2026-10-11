@@ -419,10 +419,11 @@ pwsh -File tests\Invoke-Suite.ps1 -Path tests\Relay.Faults.Tests.ps1 -Engines ps
 
 Start the tests from a folder on a local disk.
 
-GitHub Actions (`.github/workflows/ci.yml`) runs the static and pane checks on Linux and the Pester files on
-Windows, in two jobs side by side (PowerShell 7 and Windows PowerShell 5.1), on every push to `main`, every pull
-request and on demand. A commit that changes only documents no test reads (the Markdown at the top of the
-repository, `SKILL.md`, `references/`, `evals/`) leaves the Windows jobs out. The eval cases never run there.
+GitHub Actions (`.github/workflows/ci.yml`) runs the static and pane checks on Linux, on every push to `main`,
+every pull request and on demand. The Pester files (PowerShell 7 and Windows PowerShell 5.1) do not run there:
+run them on a Windows dev machine before a commit (`tests\Invoke-AllTests.ps1`). A Claude session that
+cannot run them (no Windows) asks the owner to run them and to report the RESULT lines. The eval cases never run
+in CI.
 
 ### The pane and the skill
 

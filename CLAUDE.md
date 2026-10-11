@@ -17,7 +17,7 @@ All from the repo root, in `pwsh`. Start tests from a folder on a local disk (Pe
 ```
 pwsh -NoProfile -File tests\Invoke-AllTests.ps1                  # the full gate: static, pane, ps7 and ps5 runs
 pwsh -NoProfile -File tests\Invoke-AllTests.ps1 -StaticOnly      # seconds: PSScriptAnalyzer, ASCII/LF, wrapper templates parse, test files listed
-pwsh -NoProfile -File tests\Invoke-AllTests.ps1 -Editions ps7    # the gate with one edition's Pester runs (CI runs ps7 and ps5 as two jobs)
+pwsh -NoProfile -File tests\Invoke-AllTests.ps1 -Editions ps7    # the gate with one edition's Pester runs (CI runs neither; the Pester runs are done on a dev machine)
 pwsh -NoProfile -File tests\Invoke-Suite.ps1 -Path tests\Relay.Faults.Tests.ps1 -Engines ps7 -Label 'Faults ps7'   # one file, one engine
 claude plugin validate .        # manifests and hooks module
 claude plugin test .            # the pane's tests (hooks/feed.test.ts)
@@ -34,6 +34,15 @@ claude plugin eval . --no-publish   # the skill's cases in evals/; each run is a
   default mock beside it.
 - A new test file must also be added to `$toolFiles` or `$scriptFiles` in `tests/Invoke-AllTests.ps1`, or the gate
   never runs it.
+- **No Windows jobs in CI (owner decision).** GitHub Actions runs only the Linux static and pane jobs. The Pester
+  runs (ps7 and ps5) are done locally on a Windows dev machine before a commit. Do not add a Windows runner or
+  a Pester job to `.github/workflows/ci.yml`, and say in the PR's Gate section which edition runs were done locally.
+  **A Claude session without Windows (a cloud or Linux session) cannot run the Pester files, so it must ask the
+  owner to run them on a Windows machine, and must not push or call a change done before it has the result.** Ask
+  with the exact command (`pwsh -NoProfile -File tests\Invoke-AllTests.ps1`, or `-Editions ps7` plus
+  `powershell.exe -File ... -Editions ps5` for one edition, or the one affected file through `Invoke-Suite.ps1`),
+  say which files changed and what to look at, and put the RESULT lines the owner sends back in the PR's Gate
+  section. What a session can run itself, it runs first: `-StaticOnly` (on Linux too, with PSScriptAnalyzer).
 - Iterate with `-StaticOnly` plus the one affected file on the one affected engine; run the whole gate before a commit.
 
 ## Architecture
@@ -107,3 +116,16 @@ uses to force races; renaming one makes the gate fail on purpose.
 - A release bumps `version` in `.claude-plugin/plugin.json` **and** the table in `README.md`, bumps
   `room-package/VERSION` only when the package changed, and adds a `CHANGELOG.md` entry. Lessons from real rooms go
   in `references/lessons.md` (`references/self-improvement.md` is the procedure). Push only when the owner says so.
+
+## Time zone
+
+The owner works in Eastern Time: Windows zone id `Eastern Standard Time`, IANA `America/New_York`. That one id
+covers both halves of the year: EST (UTC-5) in winter and EDT (UTC-4) in summer, so never assume a fixed offset.
+
+- Times reported to the owner (CI runs, commits, pull requests, releases, room messages) are given in Eastern
+  Time with the abbreviation in force on that date, for example `14:32 EDT`. `gh` and the GitHub API answer in
+  UTC (`2026-10-11T18:32:00Z`): convert before reporting, and do not pass a UTC time off as local.
+- Convert with the zone, not by subtracting hours:
+  `[TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([datetime]::Parse($utc).ToUniversalTime(), 'Eastern Standard Time')`
+- This is about what the owner reads. Stamps the code writes (messages, logs, the feed) stay UTC through
+  `Format-RelayUtc`, and nothing in a script or a test may depend on the PC's zone.
