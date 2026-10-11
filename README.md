@@ -394,6 +394,10 @@ pwsh -File tests\Invoke-Suite.ps1 -Path tests\Relay.Faults.Tests.ps1 -Engines ps
 
 Start the tests from a folder on a local disk.
 
+GitHub Actions (`.github/workflows/ci.yml`) runs the whole gate on Windows (PowerShell 7 and Windows
+PowerShell 5.1) and the static and pane checks on Linux, on every push to `main`, every pull request and on
+demand. The eval cases never run there.
+
 ### The pane and the skill
 
 ```
