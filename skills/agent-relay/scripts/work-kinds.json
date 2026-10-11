@@ -4,13 +4,14 @@
     "wants": "strong",
     "method": [
       "Read the code you are about to change, and its tests, before you change it. Match its style, naming and structure.",
-      "Make the smallest change that does the job. Add or update tests together with the change."
+      "Make the smallest change that does the job. Add or update tests together with the change.",
+      "When you discover a convention or a gotcha of this code (a build step, an order that matters, a trap in an API), `remember` it."
     ],
     "report": [
       "**Result:** what is done, in one or two lines. Say plainly if something is not done.",
       "**Evidence:** the checks you ran (tests, linter, build) and what they printed.",
       "**Decisions I made:** judgment calls you took yourself, each with the option you did not take.",
-      "**Findings and suggestions:** what you noticed outside your task. You did not act on these."
+      "**Findings and suggestions:** what you noticed outside your task. You did not act on these. Say which of them you also recorded with `remember`."
     ]
   },
   "run": {
@@ -31,14 +32,15 @@
     "wants": "standard",
     "method": [
       "You observe and report. You do not fix what you test, and you do not change the thing under test, unless the task says so.",
-      "Note the state before you start, and leave the machine as you found it unless the task says otherwise."
+      "Note the state before you start, and leave the machine as you found it unless the task says otherwise.",
+      "`remember` how to run the tests here (the command, the folder, what they need), and the cause of each flaky or failing test you pinned down."
     ],
     "report": [
       "**Result:** pass or fail for each step, the first failure first.",
       "**Evidence:** the exact commands, their exit codes and the lines that show the outcome; where the full logs are.",
       "**What you changed on the machine**, and how you put it back.",
       "**Decisions I made:** judgment calls you took yourself, each with the option you did not take.",
-      "**Findings and suggestions:** what you noticed outside your task. You did not act on these."
+      "**Findings and suggestions:** what you noticed outside your task. You did not act on these. Say which of them you also recorded with `remember`."
     ]
   },
   "debugging": {
@@ -46,14 +48,15 @@
     "wants": "strong",
     "method": [
       "Find the cause and prove it: a reproduction that fails because of it, and a variation that does not.",
-      "Propose the fix. Apply it only when the task says so."
+      "Propose the fix. Apply it only when the task says so.",
+      "`remember` each dead end you ruled out (and what ruled it out) and the root cause once it is proven, so nobody chases them again."
     ],
     "report": [
       "**Result:** the cause in one or two lines, or plainly that it is not found yet.",
       "**Evidence:** the reproduction, what it printed, and the variation that rules out the other suspects.",
       "**Proposed fix:** what to change and where; whether you applied it.",
       "**Decisions I made:** judgment calls you took yourself, each with the option you did not take.",
-      "**Findings and suggestions:** what you noticed outside your task. You did not act on these."
+      "**Findings and suggestions:** what you noticed outside your task. You did not act on these. Say which of them you also recorded with `remember`."
     ]
   },
   "research": {
@@ -61,13 +64,14 @@
     "wants": "standard",
     "method": [
       "Read only: you change nothing.",
-      "Keep apart what a source says and what you conclude from it. Prefer the primary source: the code, the official documentation, the output of a command."
+      "Keep apart what a source says and what you conclude from it. Prefer the primary source: the code, the official documentation, the output of a command.",
+      "`remember` each fact others will need with its source and how to verify it (a link, a path, a command)."
     ],
     "report": [
       "**Answer:** the short answer first.",
       "**Sources:** each with its link or path, what it supports, and how sure you are. Mark what is your own inference.",
       "**Still open:** what you could not find out or could not verify.",
-      "**Findings and suggestions:** what you noticed outside the question. You did not act on these."
+      "**Findings and suggestions:** what you noticed outside the question. You did not act on these. Say which of them you also recorded with `remember`."
     ]
   },
   "documentation": {
@@ -75,13 +79,14 @@
     "wants": "standard",
     "method": [
       "Every statement you write is checked against the code or against a command you ran. Do not document what you did not verify.",
-      "Match the structure, tone and formatting of the documents already there."
+      "Match the structure, tone and formatting of the documents already there.",
+      "`remember` only what other agents will need: where the documents live and the conventions they follow."
     ],
     "report": [
       "**Result:** the files you changed and what changed in each, in a line or two.",
       "**Evidence:** what you checked each changed statement against.",
       "**Decisions I made:** judgment calls you took yourself, each with the option you did not take.",
-      "**Findings and suggestions:** what you noticed outside your task, such as code that disagrees with its documentation. You did not act on these."
+      "**Findings and suggestions:** what you noticed outside your task, such as code that disagrees with its documentation. You did not act on these. Say which of them you also recorded with `remember`."
     ]
   },
   "review": {
@@ -89,7 +94,8 @@
     "wants": "strong",
     "method": [
       "Read only: you change nothing. Judge the work against its task and the standards named here, not against your taste.",
-      "For every finding give the place, a concrete failing case and how sure you are."
+      "For every finding give the place, a concrete failing case and how sure you are.",
+      "`remember` only a defect pattern that other agents are likely to repeat; the findings themselves go in your report."
     ],
     "report": [
       "**Verdict:** acceptable as it is, acceptable after the fixes below, or not acceptable.",
@@ -106,7 +112,7 @@
       "**Result:** what is done, in one or two lines. Say plainly if something is not done.",
       "**Evidence:** the commands you ran and what they printed, or the files and sources that show it.",
       "**Decisions I made:** judgment calls you took yourself, each with the option you did not take.",
-      "**Findings and suggestions:** what you noticed outside your task. You did not act on these."
+      "**Findings and suggestions:** what you noticed outside your task. You did not act on these. Say which of them you also recorded with `remember`."
     ]
   }
 }

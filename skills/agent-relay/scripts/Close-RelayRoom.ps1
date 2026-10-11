@@ -20,9 +20,14 @@
     same way. -WhatIf shows what closing would do and closes, archives and records nothing (only the alarms of
     its look at the room are noted on this PC); -Confirm asks first.
 
-    -ListClosed shows closed rooms whose folder still exists. -Remove deletes the folder of one closed room; it
-    needs the archive to exist and asks for confirmation (-Confirm:$false to skip, -WhatIf to see only). A link in
-    the folder is removed as a link: nothing it points at is deleted. Remove a room only when the owner said so.
+    The transcript ends with what the agents recorded with `remember` (the newest 200 entries, marked as written by
+    the agents and unverified), and the statistics count those entries. The room index records what became of the
+    shared folder: `kept` when the room is closed, `removed` after -Remove.
+
+    -ListClosed shows every closed room with what became of its folder: kept, removed, or missing (kept by the
+    index, but gone). -Remove deletes the folder of one closed room; it needs the archive to exist and asks for
+    confirmation (-Confirm:$false to skip, -WhatIf to see only). A link in the folder is removed as a link: nothing
+    it points at is deleted. Remove a room only when the owner said so.
 
 .PARAMETER Room
     Room id or room folder to close.
@@ -31,7 +36,7 @@
     Close although some agents have not said bye.
 
 .PARAMETER ListClosed
-    List closed rooms whose folder still exists.
+    List closed rooms and what became of their folders.
 
 .PARAMETER Remove
     Id of a closed room whose folder is to be deleted.
@@ -77,14 +82,56 @@ function Test-RoomArchive {
     catch { return $false }
 }
 
+function Save-ClosedStamp {
+    # Marks the room closed in the room index of this PC, under the index's lock; an index that cannot be read is
+    # an error, never an empty list. The folder of a room that is closed is kept (folder: kept) until -Remove.
+    # -KeepStamp: a date, and what became of the folder, that the entry already has stay.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read by the change the index helper runs inside its lock')]
+    param([string]$Id, [string]$Stamp, [switch]$KeepStamp)
+    Update-RelayRoomIndex -Change {
+        param($entries)
+        foreach ($entry in @($entries)) {
+            if ([string](Get-RelayProperty $entry 'id' '') -ceq $Id) {
+                if (-not ($KeepStamp -and [string](Get-RelayProperty $entry 'closed_utc' ''))) {
+                    $entry | Add-Member -NotePropertyName 'closed_utc' -NotePropertyValue $Stamp -Force
+                }
+                if (-not ($KeepStamp -and [string](Get-RelayProperty $entry 'folder' ''))) {
+                    $entry | Add-Member -NotePropertyName 'folder' -NotePropertyValue 'kept' -Force
+                }
+            }
+            $entry
+        }
+    }
+}
+
+function Save-FolderState {
+    # What became of the shared folder of a closed room, in the room index of this PC: kept or removed
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read by the change the index helper runs inside its lock')]
+    param([string]$Id, [ValidateSet('kept', 'removed')][string]$State)
+    Update-RelayRoomIndex -Change {
+        param($entries)
+        foreach ($entry in @($entries)) {
+            if ([string](Get-RelayProperty $entry 'id' '') -ceq $Id) { $entry | Add-Member -NotePropertyName 'folder' -NotePropertyValue $State -Force }
+            $entry
+        }
+    }
+}
+
 if ($ListClosed) {
     $found = 0
     foreach ($entry in @(Get-RelayRoomIndex)) {
         if (-not (Get-RelayProperty $entry 'closed_utc' '')) { continue }
-        if (-not (Test-Path -LiteralPath $entry.path)) { continue }
-        $found++
+        # What the index says became of the folder, checked now: a folder it keeps that is gone is missing. An
+        # entry from before the index recorded it says nothing, and is judged by the folder alone.
+        $folder = [string](Get-RelayProperty $entry 'folder' '')
+        $isThere = Test-Path -LiteralPath $entry.path
+        if ($folder -cne 'removed') {
+            $folder = 'kept'
+            if (-not $isThere) { $folder = 'missing' }
+        }
+        if ($isThere) { $found++ }
         $hasArchive = Test-RoomArchive (Join-Path $archiveRoot "$($entry.id).zip")
-        '{0}  closed {1}  archive: {2}  {3}' -f $entry.id, $entry.closed_utc, $(if ($hasArchive) { 'yes' } else { 'NO' }), $entry.path
+        '{0}  closed {1}  archive: {2}  {3}  folder: {4}' -f $entry.id, $entry.closed_utc, $(if ($hasArchive) { 'yes' } else { 'NO' }), $entry.path, $folder
     }
     if ($found -eq 0) { 'No closed room has a folder left.' }
     else { 'NEXT: remove one only when the owner says so: Close-RelayRoom.ps1 -Remove <id>' }
@@ -102,6 +149,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Remove') {
     if ($PSCmdlet.ShouldProcess($path, 'Delete the folder of the closed room (its archive stays)')) {
         # Each link in the folder goes as a link: Windows PowerShell 5.1 would delete what lies behind a junction
         Remove-RelayTree -Path $path -Confirm:$false
+        Save-FolderState -Id $Remove -State 'removed'
         "REMOVED the folder of room $Remove. Its archive stays: $archive"
     }
     return
@@ -169,22 +217,6 @@ function Save-RoomArchive {
     try { if (Test-Path -LiteralPath $building) { Remove-Item -LiteralPath $building -Force } } catch { $null = $_ }
     Add-RelayAlarm $RoomObject "ARCHIVE failed: $reason"
     return [pscustomobject]@{ IsMade = $false; Links = $links }
-}
-
-function Save-ClosedStamp {
-    # Marks the room closed in the room index of this PC, under the index's lock; an index that cannot be read is
-    # an error, never an empty list. -KeepStamp: a date the entry already has stays.
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read by the change the index helper runs inside its lock')]
-    param([string]$Id, [string]$Stamp, [switch]$KeepStamp)
-    Update-RelayRoomIndex -Change {
-        param($entries)
-        foreach ($entry in @($entries)) {
-            if ([string](Get-RelayProperty $entry 'id' '') -ceq $Id -and -not ($KeepStamp -and [string](Get-RelayProperty $entry 'closed_utc' ''))) {
-                $entry | Add-Member -NotePropertyName 'closed_utc' -NotePropertyValue $Stamp -Force
-            }
-            $entry
-        }
-    }
 }
 
 function Get-LinkLine {
@@ -315,6 +347,29 @@ if ($alarms.Count -gt 0) {
     $text.Add('')
     foreach ($alarm in $alarms) { $text.Add("- $alarm") }
 }
+# What the agents recorded with `remember`: room text, so claims and nothing more. The newest last, at most 200,
+# each without control characters and cut at 500 characters (the module reads no link and no stranger's folder).
+$memory = @(Get-RelayMemoryEntry $roomObject)
+if ($memory.Count -gt 0) {
+    $text.Add('')
+    $text.Add('## Room memory')
+    $text.Add('')
+    $text.Add('Written by the agents; unverified.')
+    $text.Add('')
+    foreach ($entry in @($memory | Select-Object -Last 200)) {
+        $entryText = [string]$entry.Text
+        if ($entryText.Length -gt 500) {
+            $cut = 500
+            # Never half a surrogate pair
+            if ([char]::IsHighSurrogate($entryText[$cut - 1])) { $cut-- }
+            $entryText = $entryText.Substring(0, $cut) + ' [cut]'
+        }
+        $tagText = ''
+        if (@($entry.Tags).Count -gt 0) { $tagText = ' [' + (@($entry.Tags) -join ', ') + ']' }
+        $text.Add((ConvertTo-RelayPrintedLine "- $($entry.Utc) $($entry.Author)$tagText $entryText"))
+    }
+}
+$stats | Add-Member -NotePropertyName 'memoryEntries' -NotePropertyValue $memory.Count -Force
 $transcript = ($text -join "`n") + "`n"
 Write-RelayGuardedText $roomObject 'TRANSCRIPT.md' $transcript
 Write-RelayGuardedText $roomObject 'CLOSED' ("closed_utc: $closedUtc`nby: $($roomObject.Coordinator)`n")
@@ -332,4 +387,6 @@ if ($saved.IsMade) { "archive: $archive" } else { "ARCHIVE FAILED: the room fold
 Get-LinkLine $saved.Links
 "statistics: " + (Join-Path $roomObject.Local 'stats.json')
 if ($stillHere.Count -gt 0) { 'closed with -Force; no bye from: ' + ((@($stillHere | ForEach-Object { $_.name })) -join ', ') }
-'NEXT: run the retro (workflow "Improve"): Get-RelayStats.ps1, the byes, lessons.md.'
+# The shared folder stays until the owner says otherwise: the coordinator asks, with the room memory reviewed first
+if ($saved.IsMade) { "NEXT: review the room memory (Get-RelayMemory.ps1 -Room $($roomObject.Id)) and propose what to promote, then ask the owner whether to delete the shared folder (the archive stays on this PC) or keep it: on delete run Close-RelayRoom.ps1 -Remove $($roomObject.Id). Then run the retro (workflow `"Improve`"): Get-RelayStats.ps1, the byes, lessons.md." }
+else { "NEXT: run Close-RelayRoom.ps1 -Room $($roomObject.Id) again until it names an archive; the shared folder is the only copy until then, so do not offer to delete it. Review the room memory (Get-RelayMemory.ps1 -Room $($roomObject.Id)), then run the retro (workflow `"Improve`"): Get-RelayStats.ps1, the byes, lessons.md." }

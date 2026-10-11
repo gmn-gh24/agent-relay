@@ -1308,7 +1308,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $draft = Join-Path $room 'agents\emma\draft.md'
             if (Test-Path -LiteralPath $draft) { [System.IO.File]::Delete($draft) }
             if ((New-TestLink -Path $draft -Target $private) -ne 'symbolic link') { Set-ItResult -Skipped -Because 'this account may not make a symbolic link to a file here'; return }
-            foreach ($words in @('note'), @('bye'), @('progress')) {
+            foreach ($words in @('note'), @('bye'), @('progress'), @('remember')) {
                 $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words $words -TimeoutSeconds (60 * $pace)
                 $result.ExitCode | Should -Be 1
                 $result.Output | Should -Match '(?m)^ERROR: your draft .*draft\.md is a link'
@@ -1320,6 +1320,42 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             [System.IO.File]::ReadAllText($private) | Should -Match 'not-for-the-room'
             $progress = Join-Path $room 'agents\emma\progress'
             if (Test-Path -LiteralPath $progress) { [System.IO.File]::ReadAllText($progress) | Should -Not -Match 'Private' }
+        }
+
+        It 'leaves no memory file behind a remember that it refuses: <Name>' -ForEach @(
+            @{ Name = 'a secret'; Draft = ('The key AKIA' + ('ABCDEFGH' * 2) + ' opens the store') }
+            @{ Name = 'too short'; Draft = 'too short' }
+            @{ Name = 'a draft of blanks'; Draft = "`n   `n" }
+        ) {
+            Set-RelayTestDraft -Room $room -Agent 'emma' -Text $Draft
+            $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('remember', 'build') -TimeoutSeconds (60 * $pace)
+            $result.ExitCode | Should -Be 1
+            $result.Output | Should -Match '(?m)^ERROR: .*nothing'
+            $result.Output | Should -Not -MatchExactly 'REMEMBERED'
+            Test-Path -LiteralPath (Join-Path $room 'agents\emma\memory') | Should -BeFalse
+        }
+
+        It 'writes no memory through a link that stands where the memory file is' -Tag 'MaySkip' {
+            $victim = Join-Path $root ('memory-victim-' + (New-RelayTestId) + '.txt')
+            [System.IO.File]::WriteAllText($victim, "untouched`n")
+            $memory = Join-Path $room 'agents\emma\memory'
+            if ((New-TestLink -Path $memory -Target $victim) -ne 'symbolic link') { Set-ItResult -Skipped -Because 'this account may not make a symbolic link to a file here'; return }
+            $result = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('remember') -Text 'A finding that must not land behind the link.'
+            $result.ExitCode | Should -Be 1
+            $result.Output | Should -Match '(?m)^ERROR: your memory file .*memory is a link'
+            $result.Output | Should -Match '(?m)^NEXT: delete the link'
+            [System.IO.File]::ReadAllText($victim) | Should -BeExactly "untouched`n"
+            (Get-Item -LiteralPath $memory -Force).LinkType | Should -Be 'SymbolicLink'
+        }
+
+        It 'reads no memory behind a link in another agent''s folder' -Tag 'MaySkip' {
+            $outside = Join-Path $root ('memory-outside-' + (New-RelayTestId) + '.txt')
+            [System.IO.File]::WriteAllText($outside, "2026-10-10T08:00:00Z | secret | private-line-not-for-the-room`n")
+            if ((New-TestLink -Path (Join-Path $room 'agents\jack\memory') -Target $outside) -ne 'symbolic link') { Set-ItResult -Skipped -Because 'this account may not make a symbolic link to a file here'; return }
+            $found = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('find') -TimeoutSeconds (60 * $pace)
+            $found.ExitCode | Should -Be 0
+            $found.Output | Should -Not -Match 'private-line-not-for-the-room'
+            $found.Output | Should -Match '(?m)^nothing recorded yet$'
         }
 
         It 'writes nothing through a link that stands where a file of its own folder is' -Tag 'MaySkip' {

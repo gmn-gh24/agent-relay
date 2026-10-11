@@ -1073,6 +1073,101 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         @(Get-TestZipEntry (Join-Path $root 'local\archive\flow.zip')) | Should -Contain 'TRANSCRIPT.md'
     }
 
+    It 'counts the room memory on the board, and says nothing of it while there is none' {
+        $board = Get-RelayBoard $object
+        $board.memory.entries | Should -Be 0
+        $board.memory.authors | Should -Be 0
+        @(& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow' | Where-Object { $_ -like 'memory:*' }).Count | Should -Be 0
+        [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\memory'), "2026-10-10T08:00:00Z | build | The build needs pwsh 7.`nnot an entry`n2026-10-10T09:00:00Z | - | The share is slow before nine.`n")
+        [System.IO.File]::WriteAllText((Join-Path $room 'agents\jack\memory'), "2026-10-10T08:30:00Z | review,style | Tabs are refused by the linter.`n")
+        # A folder no seat of this PC owns is nobody's memory
+        $null = New-Item -ItemType Directory -Path (Join-Path $room 'agents\mallory') -Force
+        [System.IO.File]::WriteAllText((Join-Path $room 'agents\mallory\memory'), "2026-10-10T08:00:00Z | - | Planted.`n")
+        $board = Get-RelayBoard $object
+        $board.memory.entries | Should -Be 3
+        $board.memory.authors | Should -Be 2
+        $text = @(& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow')
+        @($text | Where-Object { $_ -ceq 'memory: 3 entries from 2 agents' }).Count | Should -Be 1
+        $json = ConvertFrom-Json -InputObject ((& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow' -AsJson) -join "`n")
+        $json.memory.entries | Should -Be 3
+        $json.memory.authors | Should -Be 2
+    }
+
+    It 'ends the transcript with the room memory, cleaned and cut, counts it in the statistics, and reads no link' {
+        $esc = [string][char]27
+        [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\memory'), ("2026-10-10T08:00:00Z | build,ps5 | The build needs pwsh 7 in PATH.`nnot an entry`n2026-10-10T09:00:00Z | - | Dead end: the proxy is not the cause" + $esc + "[2J of the timeouts.`n"))
+        [System.IO.File]::WriteAllText((Join-Path $room 'agents\jack\memory'), ("2026-10-10T08:30:00Z | review | " + ('x' * 700) + "`n"))
+        # A memory file that is a link: what it points at is not the room's, and is not read
+        $outside = Join-Path $root 'outside'
+        $null = New-Item -ItemType Directory -Path $outside -Force
+        [System.IO.File]::WriteAllText((Join-Path $outside 'memory'), "2026-10-10T08:45:00Z | - | Secret from outside the room.`n")
+        $link = Join-Path $room 'agents\henry\memory'
+        try { $null = New-Item -ItemType SymbolicLink -Path $link -Target (Join-Path $outside 'memory') -ErrorAction Stop }
+        catch {
+            # Where Windows allows no symbolic link: the agent folder itself is a junction
+            [System.IO.Directory]::Move((Join-Path $room 'agents\henry'), (Join-Path $root 'henry-moved'))
+            $link = Join-Path $room 'agents\henry'
+            $null = New-Item -ItemType Junction -Path $link -Target $outside
+        }
+        try {
+            $closed = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force) -join "`n"
+            $closed | Should -Match 'CLOSED room flow'
+            $transcript = [System.IO.File]::ReadAllText((Join-Path $room 'TRANSCRIPT.md'))
+            $transcript | Should -Match '(?m)^## Room memory$'
+            $transcript | Should -Match "(?m)^## Room memory`n`nWritten by the agents; unverified\.`n`n- "
+            $first = $transcript.IndexOf('- 2026-10-10T08:00:00Z emma [build, ps5] The build needs pwsh 7 in PATH.', [System.StringComparison]::Ordinal)
+            $second = $transcript.IndexOf('- 2026-10-10T08:30:00Z jack [review] ' + ('x' * 500) + ' [cut]' + "`n", [System.StringComparison]::Ordinal)
+            $third = $transcript.IndexOf('- 2026-10-10T09:00:00Z emma Dead end: the proxy is not the cause [2J of the timeouts.', [System.StringComparison]::Ordinal)
+            $first | Should -BeGreaterThan 0
+            $second | Should -BeGreaterThan $first
+            $third | Should -BeGreaterThan $second
+            $transcript.Contains($esc) | Should -BeFalse
+            $transcript | Should -Not -Match 'x{501}'
+            $transcript | Should -Not -Match 'not an entry'
+            $transcript | Should -Not -Match 'Secret from outside'
+            (ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $object.Local 'stats.json')))).memoryEntries | Should -Be 3
+        }
+        finally { Remove-TestLink $link }
+    }
+
+    It 'keeps no memory section in a transcript when nobody recorded anything, and counts none' {
+        $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force
+        [System.IO.File]::ReadAllText((Join-Path $room 'TRANSCRIPT.md')) | Should -Not -Match '## Room memory'
+        (ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $object.Local 'stats.json')))).memoryEntries | Should -Be 0
+    }
+
+    It 'ends the close with the question for the owner: delete the shared folder or keep it, the room memory reviewed first' {
+        $closed = @(& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force)
+        $next = [string]$closed[-1]
+        $next | Should -Match '^NEXT: review the room memory \(Get-RelayMemory\.ps1 -Room flow\)'
+        $next | Should -Match 'ask the owner whether to delete the shared folder \(the archive stays on this PC\) or keep it'
+        $next | Should -Match 'Close-RelayRoom\.ps1 -Remove flow'
+        $next | Should -Match 'Get-RelayStats\.ps1, the byes, lessons\.md\.$'
+    }
+
+    It 'records in the room index what became of the folder: kept at the close, removed after -Remove' {
+        $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force
+        [string](@(Get-RelayRoomIndex | Where-Object { $_.id -eq 'flow' })[0].folder) | Should -Be 'kept'
+        $listed = @(& (Join-Path $scripts 'Close-RelayRoom.ps1') -ListClosed)
+        @($listed | Where-Object { $_ -match '^flow  closed .+  archive: yes  .+  folder: kept$' }).Count | Should -Be 1
+        $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -WhatIf
+        [string](@(Get-RelayRoomIndex | Where-Object { $_.id -eq 'flow' })[0].folder) | Should -Be 'kept'
+        $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -Confirm:$false
+        Test-Path -LiteralPath $room | Should -BeFalse
+        [string](@(Get-RelayRoomIndex | Where-Object { $_.id -eq 'flow' })[0].folder) | Should -Be 'removed'
+        $listed = @(& (Join-Path $scripts 'Close-RelayRoom.ps1') -ListClosed)
+        @($listed | Where-Object { $_ -match '^flow  closed .+  archive: yes  .+  folder: removed$' }).Count | Should -Be 1
+        $listed | Should -Contain 'No closed room has a folder left.'
+    }
+
+    It 'shows a kept folder that is gone as missing' {
+        $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force
+        Remove-Item -LiteralPath $room -Recurse -Force
+        [string](@(Get-RelayRoomIndex | Where-Object { $_.id -eq 'flow' })[0].folder) | Should -Be 'kept'
+        $listed = @(& (Join-Path $scripts 'Close-RelayRoom.ps1') -ListClosed)
+        @($listed | Where-Object { $_ -match '^flow  closed .+  folder: missing$' }).Count | Should -Be 1
+    }
+
     It 'prints the state of an agent that has not said bye without the control characters of its status file' {
         [System.IO.File]::WriteAllText((Join-Path $room 'agents\jack\status'), ("state: busy" + [char]27 + "[2J" + [char]7 + "`ndetail: `nsince_utc: 2026-10-10T08:00:00Z`ngen: 1`n"))
         $refused = @(& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow')

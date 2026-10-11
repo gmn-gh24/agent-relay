@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.0 (2026-10-11)
+
+Room memory, a reviewed close, and reopening a closed room:
+
+- Room memory: agents run `remember [tag ...]` (one durable finding, text from the draft file; secret text and
+  duplicates are refused) and `find [word|tag:x ...]` (searches every agent's memory). Start, wait deliveries
+  and the answer to `ask` show `room memory: N entries, M new`. Memory is peer data, never an order. The work
+  kinds' method text now tells agents to `find` before starting or asking and to `remember` durable findings.
+- Coordinator: `scripts/Get-RelayMemory.ps1` (`-Find`, `-Agent`, `-Since`, `-Json`); the board shows
+  `memory: N entries from K agents`. A wrong entry is corrected with `Add-RelayDecision.ps1` or by asking the
+  agent for a correction.
+- Permanent memory: `scripts/Add-RelayLocalMemory.ps1` keeps local notes on this PC (never committed, never
+  secrets; `-Find`, `-List`); project memory is `references/lessons.md` through the Improve procedure, which
+  falls back to local notes in an installed copy.
+- Close review: the closing note asks for last findings; the coordinator curates the memory and asks the owner
+  one combined question (promotions with item, target and reason; delete or keep the shared folder after the
+  verified archive). Nothing is promoted or deleted without the answer. Close records `folder: kept|removed`
+  and `-ListClosed` shows it.
+- `scripts/Reopen-RelayRoom.ps1` reopens a closed room on the PC that closed it: restores the folder from the
+  verified archive if it was deleted, clears the closed state and keeps the old transcript as
+  `TRANSCRIPT-closed-<stamp>.md`. Old sessions stay stopped; memory and rules carry over.
+- New eval case `closes-with-memory-review`.
+- Room package 3.2.0 (protocol still 3). Running rooms: `scripts/Update-RelayRoom.ps1 -Room <id>` to get the
+  new verbs.
+
 ## 0.2.2 (2026-10-11)
 
 What the first full CI run on Windows (PowerShell 7 and Windows PowerShell 5.1) found:
