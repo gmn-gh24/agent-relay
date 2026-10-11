@@ -107,3 +107,16 @@ uses to force races; renaming one makes the gate fail on purpose.
 - A release bumps `version` in `.claude-plugin/plugin.json` **and** the table in `README.md`, bumps
   `room-package/VERSION` only when the package changed, and adds a `CHANGELOG.md` entry. Lessons from real rooms go
   in `references/lessons.md` (`references/self-improvement.md` is the procedure). Push only when the owner says so.
+
+## Time zone
+
+The owner works in Eastern Time: Windows zone id `Eastern Standard Time`, IANA `America/New_York`. That one id
+covers both halves of the year: EST (UTC-5) in winter and EDT (UTC-4) in summer, so never assume a fixed offset.
+
+- Times reported to the owner (CI runs, commits, pull requests, releases, room messages) are given in Eastern
+  Time with the abbreviation in force on that date, for example `14:32 EDT`. `gh` and the GitHub API answer in
+  UTC (`2026-10-11T18:32:00Z`): convert before reporting, and do not pass a UTC time off as local.
+- Convert with the zone, not by subtracting hours:
+  `[TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([datetime]::Parse($utc).ToUniversalTime(), 'Eastern Standard Time')`
+- This is about what the owner reads. Stamps the code writes (messages, logs, the feed) stay UTC through
+  `Format-RelayUtc`, and nothing in a script or a test may depend on the PC's zone.
