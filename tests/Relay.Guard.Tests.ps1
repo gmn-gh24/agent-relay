@@ -11,7 +11,8 @@
     one pass, the launcher survives a folder outside ASCII, every PowerShell quote is doubled, and the feed says
     once that a room folder cannot be reached. A message under the coordinator's name counts only when the
     coordinator's own tool sent it: the tamper check moves out one that is not on this PC's record (G15). A guarded
-    file in the room is replaced in one step, so that an agent's tool never reads a part of it (G16).
+    file in the room is replaced in one step, so that an agent's tool never reads a part of it (G16). A cmdlet that
+    fails inside the module stops it: a listing that fails is not an empty inbox (G17).
     Runs under PowerShell 7 and Windows PowerShell 5.1. Pester 6. ASCII only.
 #>
 
@@ -1259,5 +1260,19 @@ Describe 'A guarded file in the room is replaced in one step, never written in p
         $seen | Should -Not -Match 'a newer tool'
         (Get-GuardFile $tool) | Should -BeExactly "# a newer tool`n"
         Get-RelayFileHash $tool | Should -Be (Get-RelayFileHash (Join-Path $object.Canon 'tools/relay.ps1'))
+    }
+}
+
+Describe 'A cmdlet that fails inside the module stops it, whatever the caller''s preference (G17)' -Tag 'Guard' {
+
+    It 'ends a module function at a listing that fails, instead of going on with nothing' {
+        $missing = Join-Path $TestDrive ('gone-' + (New-RelayTestId))
+        $saved = $global:ErrorActionPreference
+        $global:ErrorActionPreference = 'Continue'
+        try {
+            # A listing that fails inside the module, as Get-RelayMessage lists an inbox
+            { InModuleScope RelayCommon -Parameters @{ Path = $missing } { param($Path) $null = Get-ChildItem -LiteralPath $Path -File; 'went on' } } | Should -Throw
+        }
+        finally { $global:ErrorActionPreference = $saved }
     }
 }

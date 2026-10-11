@@ -7,6 +7,10 @@
 #>
 
 Set-StrictMode -Version Latest
+# A module does not take the preference of the script that imports it: its functions see the global one, which is
+# Continue. Without this line a cmdlet that fails in here (an inbox that cannot be listed) writes an error and
+# goes on with nothing, and nothing looks like an empty inbox.
+$ErrorActionPreference = 'Stop'
 
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 $script:RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
