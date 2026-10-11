@@ -723,10 +723,12 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $result.Output | Should -Match '(?m)^YOU: Jack\. Your parts: none\.'
             $result.Output | Should -Not -Match '(?m)^      parts: '
             # Consistent with a second between each of three reads (two seconds more than a call that does not wait).
-            # It does not count the reads: that would need the tool to say when it reads. The upper bound can fail by scheduling alone.
+            # It does not count the reads: that would need the tool to say when it reads. The margins are those of a
+            # shared machine running six suites at once (a CI runner measured 1.55 and 2.96 seconds): wide enough for
+            # its scheduling, narrow enough to tell a call that waits from one that does not, or waits far too long.
             $extra = $measuredSeconds - $baseSeconds
-            $extra | Should -BeGreaterThan 1.6
-            $extra | Should -BeLessThan 2.9
+            $extra | Should -BeGreaterThan 1.2
+            $extra | Should -BeLessThan 4.0
             (Read-TeamKeyValue (Join-Path $room 'agents\jack\state')).ContainsKey('plan_seen') | Should -BeFalse
         }
 

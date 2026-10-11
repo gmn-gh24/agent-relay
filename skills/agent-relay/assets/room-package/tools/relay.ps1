@@ -29,7 +29,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.1.1'
+$script:ToolVersion = '3.1.2'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -2464,10 +2464,16 @@ function Invoke-Wait {
         $custom = 0
         if ([int]::TryParse([string]$env:RELAY_LEASE_PATIENCE_SECONDS, [ref]$custom) -and $custom -ge 0) { $patience = $custom }
         $askedSince = [DateTime]::UtcNow
+        $leasePath = Join-Path $script:MyDir 'wait.lease'
+        $nobody = 0
         while ($holder -ge 0 -and ([DateTime]::UtcNow - $askedSince).TotalSeconds -lt $patience) {
             Start-Sleep -Seconds 1
             $shareNow = Write-Alive
             $holder = Request-Lease $token $shareNow
+            # Nothing to wait for when neither a lease nor its lock is there, twice in a row: the lease cannot be taken
+            # because the agent's folder takes no new file, and no holder will ever give it back
+            if ($holder -ge 0 -and -not (Test-Path -LiteralPath $leasePath) -and -not (Test-Path -LiteralPath "$leasePath.lock")) { $nobody++ } else { $nobody = 0 }
+            if ($nobody -ge 2) { break }
         }
     }
     if ($holder -ge 0) {

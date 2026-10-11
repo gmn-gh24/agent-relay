@@ -40,6 +40,19 @@ function Get-RelayTestEngine {
     return $engines.ToArray()
 }
 
+function Invoke-TestGit {
+    # git for a test's own repository, with the arguments as given. Windows PowerShell 5.1 turns every line git
+    # writes to its error stream into an error, and git for Windows warns there that it will turn LF into CRLF
+    # (core.autocrlf is on by default): the warnings are kept out and only git's exit code counts.
+    $saved = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $said = @(& git -c core.autocrlf=false -c core.safecrlf=false @args 2>&1 | ForEach-Object { [string]$_ })
+        if ($LASTEXITCODE -ne 0) { throw ("git " + ($args -join ' ') + " failed: " + ($said -join ' ')) }
+    }
+    finally { $ErrorActionPreference = $saved }
+}
+
 function New-RelayTestId {
     # A short unique word for a folder or room id. A counter kept in BeforeEach would not survive the test.
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper: returns a word, changes nothing')]

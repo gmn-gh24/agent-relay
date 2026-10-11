@@ -513,8 +513,11 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
     Context 'Waiting' {
         It 'wakes when a message arrives' {
             $waiting = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')
-            Start-Sleep -Seconds 3
-            (Get-Content -LiteralPath (Join-Path $room 'agents\emma\status') -Raw) | Should -Match 'state: listening'
+            # A busy machine starts a PowerShell in more than three seconds: the status is looked at until it says so
+            $status = Join-Path $room 'agents\emma\status'
+            $until = [DateTime]::UtcNow.AddSeconds(30)
+            while ([DateTime]::UtcNow -lt $until -and (Get-Content -LiteralPath $status -Raw) -notmatch 'state: listening') { Start-Sleep -Milliseconds 200 }
+            (Get-Content -LiteralPath $status -Raw) | Should -Match 'state: listening'
             $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Wake up`n`nThere is work."
             $woken = Wait-RelayTool -Handle $waiting -TimeoutSeconds 30
             $woken.ExitCode | Should -Be 0
@@ -569,7 +572,8 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $waiting = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')
             $until = [DateTime]::UtcNow.AddSeconds(30)
             while ([DateTime]::UtcNow -lt $until -and (Get-Content -LiteralPath (Join-Path $room 'agents\emma\status') -Raw) -notmatch 'state: listening') { Start-Sleep -Milliseconds 200 }
-            & kill -INT $waiting.Process.Id
+            $killCommand = @(Get-Command -Name 'kill' -CommandType Application -ErrorAction Stop)[0].Source
+            & $killCommand '-INT' ([string]$waiting.Process.Id)
             $stopped = Wait-RelayTool -Handle $waiting -TimeoutSeconds 30
             $stopped.Output | Should -Match 'your wait was stopped before anything arrived: nothing listens for emma now'
             $stopped.Output | Should -Match '(?m)^NEXT: run: .+ wait'
@@ -962,9 +966,9 @@ Describe 'Self-audit on <Engine>' -Tag 'Tool' -ForEach $engineCases {
     It 'compares a git repository with its commit and status at start' {
         $git = Get-Command git -ErrorAction SilentlyContinue
         if ($null -eq $git) { Set-ItResult -Skipped -Because 'git is not installed'; return }
-        & git -C $work init --quiet 2>&1 | Out-Null
-        & git -C $work -c user.name=test -c user.email=test@example.invalid add -A 2>&1 | Out-Null
-        & git -C $work -c user.name=test -c user.email=test@example.invalid commit --quiet -m base 2>&1 | Out-Null
+        Invoke-TestGit -C $work init --quiet
+        Invoke-TestGit -C $work -c user.name=test -c user.email=test@example.invalid add -A
+        Invoke-TestGit -C $work -c user.name=test -c user.email=test@example.invalid commit --quiet -m base
         [System.IO.File]::WriteAllText((Join-Path $work 'docs\dirty-before.txt'), "was already there, uncommitted`n")
         $room = (New-RelayTestRoom -Root (Join-Path $root "r$number") -RoomId "audit-$engine-$number" -Agents $agents).Path
         foreach ($agent in 'olivia', 'emma') { $null = Invoke-RelayTool -Room $room -Agent $agent -Engine $engine -Words @('start', 'p', 'm', 'e') }
@@ -972,8 +976,8 @@ Describe 'Self-audit on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         [System.IO.File]::WriteAllText((Join-Path $work 'src\a.txt'), "a changed`n")
         [System.IO.File]::WriteAllText((Join-Path $work 'docs\readme.txt'), "readme changed`n")
         [System.IO.File]::WriteAllText((Join-Path $work 'src\committed.txt'), "committed during the task`n")
-        & git -C $work -c user.name=test -c user.email=test@example.invalid add src/committed.txt 2>&1 | Out-Null
-        & git -C $work -c user.name=test -c user.email=test@example.invalid commit --quiet -m during 2>&1 | Out-Null
+        Invoke-TestGit -C $work -c user.name=test -c user.email=test@example.invalid add src/committed.txt
+        Invoke-TestGit -C $work -c user.name=test -c user.email=test@example.invalid commit --quiet -m during
         $report = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('report') -Text "Done`n`n1. Result: done."
         $report.ExitCode | Should -Be 0
         $audit = (Get-Content -LiteralPath (Join-Path $room 'files\emma-olivia-0002\self-audit.txt') -Raw) -replace "`r", ''
