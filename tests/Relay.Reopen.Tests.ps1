@@ -162,6 +162,32 @@ Describe 'Reopen-RelayRoom' -Tag 'Scripts' {
         (Invoke-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('check')).ExitCode | Should -Be 0
     }
 
+    It 'leaves an open seat that nobody took running, so that the first agent to join the reopened room is not told it was stopped' {
+        $added = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -OpenSeats 2 -NoClipboard) -join "`n"
+        $added | Should -Match 'OPEN SEATS added'
+        $open = @(Get-RelayTestOpenSeat $room)
+        $open.Count | Should -Be 2
+        # The first open seat is taken before the close; the second stays free
+        $joined = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'some-model', 'low')
+        $joined.ExitCode | Should -Be 0 -Because $joined.Output
+        Get-RelayTestJoinedName $joined | Should -Be $open[0]
+        Close-TestRoom
+        $output = (& $reopen -Room 'reo') -join "`n"
+        $output | Should -Match "(?m)^old sessions stopped: .*$($open[0])"
+        $output | Should -Not -Match "(?m)^old sessions stopped: .*$($open[1])"
+        Get-RelayValue (Read-RelayKeyValue (Join-Path $object.Canon "agents/$($open[0])/control")) 'state' 'run' | Should -Be 'stop'
+        Get-RelayValue (Read-RelayKeyValue (Join-Path $object.Canon "agents/$($open[1])/control")) 'state' 'run' | Should -Be 'run'
+        @(Test-RelayTamper (Resolve-RelayRoom 'reo')).Count | Should -Be 0
+        # An agent given the join prompt after the reopen gets the free seat and works; the old session stays stopped
+        $fresh = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'new', 'gemini', 'm', 'e')
+        $fresh.ExitCode | Should -Be 0 -Because $fresh.Output
+        Get-RelayTestJoinedName $fresh | Should -Be $open[1]
+        $fresh.Output | Should -Not -Match 'you were stopped'
+        $old = Invoke-RelayTool -Room $room -Agent $open[0] -Engine $engine -Words @('check')
+        $old.ExitCode | Should -Be 5
+        $old.Output | Should -Match 'you were stopped'
+    }
+
     It 'restores a removed folder from the archive: files as the archive holds them, guarded files as the canonical copy' {
         Close-TestRoom -Remove
         Test-Path -LiteralPath $room | Should -BeFalse
