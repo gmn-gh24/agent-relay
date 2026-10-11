@@ -37,6 +37,12 @@ claude plugin eval . --no-publish   # the skill's cases in evals/; each run is a
 - **No Windows jobs in CI (owner decision).** GitHub Actions runs only the Linux static and pane jobs. The Pester
   runs (ps7 and ps5) are done locally on a Windows dev machine before a commit. Do not add a Windows runner or
   a Pester job to `.github/workflows/ci.yml`, and say in the PR's Gate section which edition runs were done locally.
+  **A Claude session without Windows (a cloud or Linux session) cannot run the Pester files, so it must ask the
+  owner to run them on a Windows machine, and must not push or call a change done before it has the result.** Ask
+  with the exact command (`pwsh -NoProfile -File tests\Invoke-AllTests.ps1`, or `-Editions ps7` plus
+  `powershell.exe -File ... -Editions ps5` for one edition, or the one affected file through `Invoke-Suite.ps1`),
+  say which files changed and what to look at, and put the RESULT lines the owner sends back in the PR's Gate
+  section. What a session can run itself, it runs first: `-StaticOnly` (on Linux too, with PSScriptAnalyzer).
 - Iterate with `-StaticOnly` plus the one affected file on the one affected engine; run the whole gate before a commit.
 
 ## Architecture
