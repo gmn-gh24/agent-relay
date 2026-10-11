@@ -245,6 +245,32 @@ Describe 'Parity on <Engine>' -Tag 'Parity' -ForEach $engineCases {
         }
     }
 
+    Context 'Room memory: the same lines on every engine' {
+        It 'prints REMEMBERED with the counts, and ALREADY RECORDED for the same text again' {
+            $first = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('remember', 'build') -Text 'The build runs only from the repository root.'
+            $first.ExitCode | Should -Be 0
+            $call = Get-ParityCall
+            Join-ParityLine (Get-ParityLine $first.Output) | Should -BeExactly (Join-ParityLine @('REMEMBERED (1 of yours, 1 in the room)', "NEXT: carry on with your work. Before you ask anybody, look first with: $call find <words>"))
+            $stamp = ([System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\memory'))).Substring(0, 20)
+            $again = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('remember') -Text 'the build runs only from the  REPOSITORY root.'
+            $again.ExitCode | Should -Be 0
+            Join-ParityLine (Get-ParityLine $again.Output) | Should -BeExactly (Join-ParityLine @("ALREADY RECORDED by Emma at $stamp", "NEXT: nothing was written. Carry on with your work; what the room knows: $call find <words>"))
+            $second = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('remember') -Text 'The tests need a local disk, not a share.'
+            (Get-ParityLine $second.Output)[0] | Should -BeExactly 'REMEMBERED (1 of yours, 2 in the room)'
+        }
+
+        It 'orders the entries in byte order of author when their times are equal, whatever the culture' {
+            Write-ParityFile (Join-Path $room 'agents\jack\memory') "2026-10-10T08:00:00Z | - | Same second, written by jack.`n"
+            Write-ParityFile (Join-Path $room 'agents\emma\memory') "2026-10-10T08:00:00Z | - | Same second, written by emma.`n"
+            $danish = @{ LC_ALL = 'da_DK.UTF-8'; LC_MESSAGES = 'da_DK.UTF-8'; LANG = 'da_DK.UTF-8' }
+            $found = Invoke-Parity 'henry' @('find', 'same') $danish
+            $found.ExitCode | Should -Be 0
+            $lines = Get-ParityLine $found.Output
+            $lines[1] | Should -BeExactly '2026-10-10T08:00:00Z Jack [-] Same second, written by jack.'
+            $lines[2] | Should -BeExactly '2026-10-10T08:00:00Z Emma [-] Same second, written by emma.'
+        }
+    }
+
     Context 'Round 5: the same words and orders on every machine' {
         It 'refuses a sign in front of the minutes of wait: <Word>' -ForEach @(
             @{ Word = '-0' }

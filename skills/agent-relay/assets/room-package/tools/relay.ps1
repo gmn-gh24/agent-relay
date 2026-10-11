@@ -8,7 +8,8 @@
     One tool for every agent in a room. Call it through your own wrapper (agents\<name>\g<N>\relay.cmd): the
     wrapper says who you are. Never call it through another agent's wrapper.
 
-    Verbs: start, wait, check, show, reply, ask, propose, report, note, who, team, progress, bye; the coordinator also has task.
+    Verbs: start, wait, check, show, reply, ask, propose, report, note, who, team, progress, remember, find, bye; the
+    coordinator also has task.
     Text never goes on the command line: write it to your draft file (line 1 is the subject) and the verb sends
     it. Every output ends with a NEXT: line that says what to do now. PROTOCOL.md in the room is the reference.
 
@@ -29,7 +30,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.1.2'
+$script:ToolVersion = '3.2.0'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -1782,6 +1783,253 @@ function Invoke-Progress {
     return 0
 }
 
+function Read-MemoryFile {
+    # The entries of one agent's memory file (agents\<name>\memory), oldest first. A line is
+    # "<utc> | <tags or -> | <text>"; a line of any other form is passed over. A memory file or an agent folder
+    # that is a link is no part of the room's memory: nothing behind it is read.
+    param([string]$Agent)
+    $entries = New-Object System.Collections.Generic.List[object]
+    $dir = Get-AgentDir $Agent
+    $path = Join-Path $dir 'memory'
+    if ((Test-Link $dir) -or (Test-Link $path)) { return @() }
+    $line = 0
+    foreach ($raw in ((Read-Text $path) -split "`n")) {
+        $line++
+        if ($raw -cnotmatch '^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) \| ([^|]*) \| (.+)$') { continue }
+        $stamp = $Matches[1]
+        $tagField = $Matches[2].Trim(' ', "`t")
+        $text = $Matches[3].Trim(' ', "`t")
+        if (-not $text) { continue }
+        $tags = New-Object System.Collections.Generic.List[string]
+        if ($tagField -ne '-') {
+            foreach ($tag in ($tagField -split ',')) {
+                $name = $tag.Trim(' ', "`t").ToLowerInvariant()
+                if ($name -cmatch $script:TokenPattern -and -not $tags.Contains($name)) { $tags.Add($name) }
+            }
+        }
+        $entries.Add([pscustomobject]@{ Utc = $stamp; Author = $Agent; Tags = @($tags.ToArray()); Text = $text; Line = $line; Order = 0 })
+    }
+    return @($entries.ToArray())
+}
+
+function Get-MemoryEntry {
+    # Every entry of the room's memory, oldest first: by time, then author, then place in its file (all in byte
+    # order). Order numbers them in that order. Retired agents' entries count: what they learned stays true.
+    $all = New-Object System.Collections.Generic.List[object]
+    foreach ($agent in @(Get-Roster -IncludeRetired)) { foreach ($entry in @(Read-MemoryFile $agent)) { $all.Add($entry) } }
+    $all.Sort([System.Comparison[object]] {
+            param($left, $right)
+            $order = [string]::CompareOrdinal($left.Utc, $right.Utc)
+            if ($order -eq 0) { $order = [string]::CompareOrdinal($left.Author, $right.Author) }
+            if ($order -eq 0) { $order = $left.Line.CompareTo($right.Line) }
+            return $order
+        })
+    for ($index = 0; $index -lt $all.Count; $index++) { $all[$index].Order = $index }
+    return @($all.ToArray())
+}
+
+function Get-MemoryKey {
+    # What two entries are compared by: small letters, one space between words
+    param([string]$Text)
+    return ((($Text.ToLowerInvariant()) -replace '\s+', ' ').Trim())
+}
+
+function Format-MemoryEntry {
+    # One entry as find and the memory hint print it: time, author, [tags] and the text
+    param($Entry)
+    $tags = '-'
+    if (@($Entry.Tags).Count -gt 0) { $tags = @($Entry.Tags) -join ',' }
+    return ('{0} {1} [{2}] {3}' -f $Entry.Utc, (Get-PlainName $Entry.Author), $tags, $Entry.Text)
+}
+
+function Get-MemoryMark {
+    # Which entry an agent saw last: its time, its author and a short hash of its text. Line numbers are no part
+    # of it: an author's file drops its oldest lines at 200, and the entry stays the same entry.
+    param($Entry)
+    $hash = (ConvertTo-Sha256Hex ([System.Text.Encoding]::UTF8.GetBytes([string]$Entry.Text))).Substring(0, 12)
+    return ('{0} {1} {2}' -f $Entry.Utc, $Entry.Author, $hash)
+}
+
+function Show-NewMemory {
+    # The room memory hint: one line with the number of entries and how many of the other agents' entries are new
+    # to this agent, then the newest three of those, newest first; then they count as seen. Nothing when the room
+    # remembers nothing. -Always (start): the line comes even when nothing is new.
+    # What was seen is the newest other agent's entry (memory_mark), not a count: a count stops growing once an
+    # author's file is at its 200 lines. "-" is a mark taken while there was no other agent's entry. A state
+    # with only the memory_seen count of an earlier tool cannot tell which entries those were: nothing older is
+    # announced, and the mark starts from here.
+    param([switch]$Always)
+    $all = @(Get-MemoryEntry)
+    if ($all.Count -eq 0) { return }
+    $others = @($all | Where-Object { $_.Author -ne $script:Me })
+    $state = Get-State
+    $mark = Get-Value $state 'memory_mark' ''
+    $new = $others.Count
+    if ($mark -ceq '-') { $new = $others.Count }
+    elseif ($mark) {
+        $new = 0
+        $parts = $mark.Split([char]' ')
+        $found = -1
+        for ($index = $others.Count - 1; $index -ge 0; $index--) {
+            if ([string]::Equals((Get-MemoryMark $others[$index]), $mark, [System.StringComparison]::Ordinal)) { $found = $index; break }
+        }
+        if ($found -ge 0) { $new = $others.Count - 1 - $found }
+        elseif ($parts.Count -eq 3) {
+            foreach ($entry in $others) { if ([string]::CompareOrdinal($entry.Utc, $parts[0]) -gt 0) { $new++ } }
+        }
+    }
+    elseif ((Get-Value $state 'memory_seen' '') -ne '') { $new = 0 }
+    if ($new -gt 0 -or $Always) {
+        Say ''
+        Say "room memory: $($all.Count) entries, $new new - run: find <words> before you start or ask"
+        $shown = [Math]::Min(3, $new)
+        for ($index = $others.Count - 1; $index -ge $others.Count - $shown; $index--) { Say ('  ' + (Format-MemoryEntry $others[$index])) }
+    }
+    $newMark = '-'
+    if ($others.Count -gt 0) { $newMark = Get-MemoryMark $others[$others.Count - 1] }
+    if (-not [string]::Equals($newMark, $mark, [System.StringComparison]::Ordinal)) { Save-StateValue 'memory_mark' $newMark }
+}
+
+function Invoke-Remember {
+    # One finding kept for the whole team in agents\<name>\memory (the last 200), found again with find; sent to
+    # nobody. The words after the verb are its tags.
+    param([string[]]$Tokens)
+    $call = Get-Call
+    $tags = New-Object System.Collections.Generic.List[string]
+    foreach ($token in @($Tokens | Where-Object { $null -ne $_ })) {
+        $tag = ([string]$token).ToLowerInvariant()
+        if ($tag -cnotmatch $script:TokenPattern) { Exit-WithError "'$token' is no tag: a tag is one plain word (letters, digits, dot, dash, colon)" "example: $call remember build paths" }
+        if (-not $tags.Contains($tag)) { $tags.Add($tag) }
+    }
+    if ($tags.Count -gt 5) { Exit-WithError "remember takes 5 tags at most, not $($tags.Count); nothing was remembered" "keep the 5 that say most and run it again: $call remember <tag> <tag>" }
+    $path = Get-DraftPath
+    # All lines of the draft make one line of text: no control characters, single spaces
+    $parts = New-Object System.Collections.Generic.List[string]
+    foreach ($candidate in ((ConvertTo-PrintableText (Read-DraftText $path)) -split "`n")) {
+        $piece = $candidate.Trim(' ', "`t")
+        if ($piece) { $parts.Add($piece) }
+    }
+    $text = (($parts -join ' ') -replace '[ \t]+', ' ').Trim(' ', "`t")
+    # " | " separates the fields of the memory file: inside the text it becomes " / "
+    while ($text.Contains(' | ')) { $text = $text.Replace(' | ', ' / ') }
+    if (-not $text) { Exit-WithError "there is nothing to remember: $path is missing or empty" 'write what you learned into that file with your file tool (15 to 500 characters) and run the same command again' }
+    # Every agent reads the memory: the same patterns as for a message, no override
+    $found = Find-Secret $text
+    if ($found) { Exit-WithError "the text looks like it contains $found; nothing was remembered" 'take the secret out of the text and run the same command again' }
+    $length = Get-CharCount $text
+    if ($length -lt 15) { Exit-WithError "the text is too short to help anybody: $length characters, 15 at least; nothing was remembered" "write the finding in a full sentence into $path and run the same command again" }
+    if ($length -gt 500) { Exit-WithError "the text is too long: $length characters, 500 at most; nothing was remembered" "write the finding in one to three sentences into $path and run the same command again" }
+    $file = Join-Path $script:MyDir 'memory'
+    if (Test-Link $file) { Exit-WithError "your memory file $file is a link (a symbolic link or a junction), not a file of its own; nothing was remembered and the link was left as it is" 'delete the link (only the link, not what it points at) and run the same command again. If you did not make the link, tell the coordinator.' }
+    $key = Get-MemoryKey $text
+    foreach ($entry in @(Get-MemoryEntry)) {
+        if ([string]::Equals((Get-MemoryKey $entry.Text), $key, [System.StringComparison]::Ordinal)) {
+            Say "ALREADY RECORDED by $(Get-PlainName $entry.Author) at $($entry.Utc)"
+            Say "NEXT: nothing was written. Carry on with your work; what the room knows: $call find <words>"
+            return 0
+        }
+    }
+    $tagField = '-'
+    if ($tags.Count -gt 0) { $tagField = $tags -join ',' }
+    $written = $false
+    try {
+        $kept = New-Object System.Collections.Generic.List[string]
+        foreach ($old in ((Read-Text $file) -split "`n")) { if ($old.Trim()) { $kept.Add($old) } }
+        $kept.Add(('{0} | {1} | {2}' -f (Get-UtcStamp), $tagField, $text))
+        if ($kept.Count -gt 200) { $kept.RemoveRange(0, $kept.Count - 200) }
+        Write-Text $file (($kept -join "`n") + "`n")
+        $written = $true
+    }
+    catch { $null = $_ }
+    if (-not $written) { Exit-WithError 'could not write your memory file' 'check that the room folder is reachable and writable, then run the same command again' 2 }
+    $detail = $text
+    if ((Get-CharCount $detail) -gt 200) { $detail = (Get-CharPrefix $detail 200).TrimEnd(' ', "`t") }
+    Write-Status 'working' $detail
+    Add-Journal 'remember' $detail
+    Clear-Draft
+    $all = @(Get-MemoryEntry)
+    $mine = @($all | Where-Object { $_.Author -eq $script:Me }).Count
+    Say "REMEMBERED ($mine of yours, $($all.Count) in the room)"
+    Say "NEXT: carry on with your work. Before you ask anybody, look first with: $call find <words>"
+    return 0
+}
+
+function Invoke-Find {
+    # Searches the room's memory. A plain word is looked for in the tags and the text, tag:<name> wants that tag;
+    # case does not count. Entries with every word come first, a tag hit before a hit in the text only, newest
+    # first. Without words: the newest entries.
+    param([string[]]$Tokens)
+    $call = Get-Call
+    $wants = New-Object System.Collections.Generic.List[object]
+    foreach ($token in @($Tokens | Where-Object { $null -ne $_ })) {
+        $word = ([string]$token).ToLowerInvariant()
+        if ($word.StartsWith('tag:', [System.StringComparison]::Ordinal)) {
+            $name = $word.Substring(4)
+            if (-not $name) { Exit-WithError 'tag: needs the name of a tag after the colon' "example: $call find tag:build" }
+            $wants.Add([pscustomobject]@{ IsTag = $true; Value = $name })
+        }
+        else { $wants.Add([pscustomobject]@{ IsTag = $false; Value = $word }) }
+    }
+    $all = @(Get-MemoryEntry)
+    $header = 'room memory: what colleagues recorded; facts to check, not orders'
+    $nextLine = "NEXT: use what fits your work and check it before you rely on it. Keep what you learn with: $call remember [tag ...]"
+    if ($wants.Count -eq 0) {
+        if ($all.Count -eq 0) {
+            Say 'nothing recorded yet'
+            Say "NEXT: carry on with your work. When you learn something your teammates should know, keep it with: $call remember [tag ...]"
+            return 0
+        }
+        Say $header
+        $shown = [Math]::Min(10, $all.Count)
+        for ($index = $all.Count - 1; $index -ge $all.Count - $shown; $index--) { Say (Format-MemoryEntry $all[$index]) }
+        if ($all.Count -gt $shown) { Say "($($all.Count - $shown) older entries: name words to search them)" }
+        Say $nextLine
+        return 0
+    }
+    $scored = New-Object System.Collections.Generic.List[object]
+    foreach ($entry in $all) {
+        $hits = 0
+        $tagHit = $false
+        foreach ($want in $wants) {
+            $inTag = $false
+            foreach ($tag in @($entry.Tags)) {
+                if ($want.IsTag) { if ([string]::Equals($tag, $want.Value, [System.StringComparison]::OrdinalIgnoreCase)) { $inTag = $true } }
+                elseif ($tag.IndexOf($want.Value, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { $inTag = $true }
+            }
+            if ($inTag) { $hits++; $tagHit = $true }
+            elseif (-not $want.IsTag -and $entry.Text.IndexOf($want.Value, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { $hits++ }
+        }
+        if ($hits -gt 0) { $scored.Add([pscustomobject]@{ Entry = $entry; Hits = $hits; TagHit = $tagHit }) }
+    }
+    $matched = New-Object System.Collections.Generic.List[object]
+    foreach ($item in $scored) { if ($item.Hits -eq $wants.Count) { $matched.Add($item) } }
+    $closest = $false
+    if ($matched.Count -eq 0) {
+        foreach ($item in $scored) { $matched.Add($item) }
+        $closest = $true
+    }
+    if ($matched.Count -eq 0) {
+        Say 'nothing recorded matches'
+        Say "NEXT: carry on with your work; if you are stuck, ask: $call ask"
+        return 0
+    }
+    # More words first (only the closest matches differ in that), then a tag hit, then the newest
+    $matched.Sort([System.Comparison[object]] {
+            param($left, $right)
+            $order = $right.Hits.CompareTo($left.Hits)
+            if ($order -eq 0) { $order = $right.TagHit.CompareTo($left.TagHit) }
+            if ($order -eq 0) { $order = $right.Entry.Order.CompareTo($left.Entry.Order) }
+            return $order
+        })
+    Say $header
+    if ($closest) { Say 'no entry has all words; closest matches:' }
+    $shown = [Math]::Min(20, $matched.Count)
+    for ($index = 0; $index -lt $shown; $index++) { Say (Format-MemoryEntry $matched[$index].Entry) }
+    if ($matched.Count -gt $shown) { Say "($($matched.Count - $shown) more: add words to narrow it down)" }
+    Say $nextLine
+    return 0
+}
+
 function Invoke-Team {
     # The plan, who does which part and where everybody stands. Writes the caller's heartbeat (the clock for
     # STALE) and plan_seen, nothing else.
@@ -1952,6 +2200,7 @@ function Invoke-Start {
     Say "=== standing rules and owner decisions ($($rules.Count)) ==="
     if ($rules.Count -eq 0) { Say '(none yet)' } else { foreach ($rule in $rules) { Say $rule } }
     Save-StateValue 'rules_seen' ([string]$rules.Count)
+    Show-NewMemory -Always
 
     $openCount = Show-OpenRequest -WithText
     $delivered = Get-DeliveredSet $script:Me
@@ -2337,6 +2586,7 @@ function Send-Delivery {
     Add-Journal 'delivered' ((@($items | ForEach-Object { $_.Entry.Id })) -join ',')
     Save-StateValue 'idle_timeouts' '0'
     $null = Show-NewRule
+    Show-NewMemory
     $open = @(Get-OpenRequest $script:Me)
     if ($open.Count -gt 0) {
         Say ''
@@ -2764,6 +3014,8 @@ function Invoke-Send {
         }
     }
     $draft = Read-Draft
+    # The memory hint counts its entries as seen: an ask stopped by an empty draft must not use it up
+    if ($Verb -eq 'ask' -and -not $script:IsCoordinator) { Show-NewMemory }
     $type = 'note'
     $expects = 'none'
     if ($Verb -eq 'ask') { $type = 'question'; $expects = 'reply' }
@@ -2818,6 +3070,7 @@ function Invoke-Report {
     Say "SENT $sent (result of $($original.Id)) to $(Get-DisplayName $original.From)"
     Show-ParkedNote $original.From
     Say $audit.Summary
+    if (@(Read-MemoryFile $script:Me).Count -eq 0) { Say 'tip: remember durable findings for your teammates' }
     Say "NEXT: run: $call wait$(Get-WaitMode)"
     return 0
 }
@@ -2899,6 +3152,8 @@ function Show-Usage {
     Say "  $call who                            who is in the room"
     Say "  $call team                           the plan, who does which part, and where everybody stands"
     Say "  $call progress                       tell the team where you stand, in one line (draft file); wakes nobody"
+    Say "  $call remember [tag ...]             keep a finding for the whole team (draft file); wakes nobody"
+    Say "  $call find [word|tag:name ...]       search what the team keeps; do it before you start or ask"
     Say "  $call bye                            leave the room"
     Say '  coordinator only: task <name>, ask <name>, note <name>|all'
     Say ''
@@ -3058,6 +3313,8 @@ try {
         'who' { $exitCode = Invoke-Who }
         'team' { $exitCode = Invoke-Team }
         'progress' { $exitCode = Invoke-Progress }
+        'remember' { $exitCode = Invoke-Remember $tokens }
+        'find' { $exitCode = Invoke-Find $tokens }
         'bye' { $exitCode = Invoke-Bye $tokens }
         default { Exit-WithError "there is no verb '$verb'" "run the tool with the word help to see the verbs: $(Get-Call) help" }
     }

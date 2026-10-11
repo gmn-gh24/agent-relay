@@ -13,7 +13,8 @@
        headers and the same text, and nobody may owe anything.
     2. The team plan: a plan written by hand into the room, progress lines from two seats on different engines,
        the changed plan shown once with the next delivery, and team from every seat, which must print the same
-       on every engine apart from the YOU: line.
+       on every engine apart from the YOU: line. Then the room memory: each of two seats on different engines
+       remembers a finding, the other one finds it, and the same text again is refused.
     3. A load run: three senders, the engines in turn, send -Messages messages each to the coordinator at the same
        time. Nothing may be lost, no id may appear twice, and one wait per receiver must deliver every message
        exactly once.
@@ -149,7 +150,7 @@ try {
     }
 
     ''
-    '2. Team plan: team and progress across engines'
+    '2. Team plan: team, progress and the room memory across engines'
     $everybody = @('olivia') + $names
     $displayOf = @{}
     foreach ($name in $everybody) { $displayOf[$name] = ConvertTo-RelayDisplayName $name }
@@ -267,6 +268,25 @@ try {
     }
     $olivia = Invoke-Seat 'olivia' @('check')
     Assert-That (-not $olivia.Output.Contains('the team plan changed')) 'the coordinator is never shown the changed plan'
+
+    # Room memory: one seat remembers on one engine, a seat on the other engine finds it, and the same text again
+    # is refused on either
+    $memoryText = @{ emma = 'The work folder must be on a local disk, not a share.'; jack = 'Reviews go to the coordinator, never to the author.' }
+    foreach ($name in @('emma', 'jack')) {
+        $kept = Invoke-Seat $name @('remember', 'howto', $name) $memoryText[$name]
+        Assert-That ($kept.ExitCode -eq 0 -and $kept.Output -match '(?m)^REMEMBERED \(1 of yours, \d in the room\)') "$name ($($engineOf[$name])) remembers a finding"
+        $line = @(Get-Content -LiteralPath (Join-Path $room "agents\$name\memory") -Encoding UTF8)
+        Assert-That ($line.Count -eq 1 -and $line[0] -cmatch ('^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ \| howto,' + $name + ' \| ' + [regex]::Escape($memoryText[$name]) + '$')) "$name ($($engineOf[$name])) memory file holds one line with tags and text"
+    }
+    foreach ($pair in @(@('emma', 'jack'), @('jack', 'emma'))) {
+        $reader = $pair[0]
+        $author = $pair[1]
+        $found = Invoke-Seat $reader @('find', "tag:$author", 'howto')
+        $foundLines = @($found.Output -split "`r?`n")
+        Assert-That ($found.ExitCode -eq 0 -and $foundLines.Count -ge 3 -and $foundLines[1] -cmatch ('^\d{4}-\S+ ' + $displayOf[$author] + ' \[howto,' + $author + '\] ' + [regex]::Escape($memoryText[$author]) + '$')) "$reader ($($engineOf[$reader])) finds what $author ($($engineOf[$author])) remembered"
+        $twice = Invoke-Seat $reader @('remember') $memoryText[$author].ToUpperInvariant()
+        Assert-That ($twice.ExitCode -eq 0 -and $twice.Output -cmatch ('(?m)^ALREADY RECORDED by ' + $displayOf[$author] + ' at ')) "$reader ($($engineOf[$reader])) is told that $author recorded it already"
+    }
 
     ''
     "3. Load: $($names.Count) senders, $Messages messages each, at the same time"

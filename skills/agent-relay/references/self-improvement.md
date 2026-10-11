@@ -7,7 +7,8 @@ is committed only when the test gate passes, and the owner is told what changed.
 
 Only in the plugin's working copy (a git repository). `scripts/Get-RelayRooms.ps1` says which copy this is.
 An installed copy cannot improve itself: tell the owner that the lesson is waiting, and write it into the
-room's retro notes on this PC instead.
+room's retro notes on this PC instead. The same holds for a promotion to project lessons: without a git
+working copy it falls back to local memory (`scripts/Add-RelayLocalMemory.ps1`).
 
 ## The retro
 
@@ -26,6 +27,15 @@ Add each finding to `references/lessons.md`: date, what happened in general term
 machine names, no share names, no addresses, no user names, no task content: the file is committed. A lesson
 that only says "be careful" is not a lesson; it names the change that makes care unnecessary, or says plainly
 that none was found.
+
+## Promotions from room memory
+
+At close the coordinator curates the room's memory and the owner approves what is promoted
+(`references/coordinating.md`, "Room memory"). An item approved for project lessons becomes a lesson like any
+other: rewritten in the coordinator's own words, dated, with the same anonymisation (no machine, share,
+address, user or task content), and it names what changed or says plainly that nothing could. An item approved
+for local notes goes in with `scripts/Add-RelayLocalMemory.ps1` and is never committed. Nothing is promoted
+that the owner did not approve in that session.
 
 ## What may change
 
