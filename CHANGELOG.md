@@ -21,9 +21,10 @@ What a review of the plugin found, and the fixes (room package 3.2.3; running ro
   place of the coordinator's inbox.
 - The feed knew a message by the path of its file for the room's life. A forged message under the coordinator's
   name that the tamper check moved out kept its path, and the coordinator's own message that took the same
-  number afterwards was never shown, while the forgery stayed in the pane. A message is now known by its path,
-  write time and size; one whose file is gone is dropped and the feed says so (`removed`), and the pane drops it
-  too. The pane also marks a message whose header names another sender, receiver or number than its file, as the
+  number afterwards was never shown, while the forgery stayed in the pane. A message is now known by its path
+  with the write time and size of its file; a file that reads differently is read again and compared (the same
+  text is the same message, another text has taken its place); one whose file is gone is dropped and the feed
+  says so (`removed`), and the pane drops it too. The pane also marks a message whose header names another sender, receiver or number than its file, as the
   terminal feed did.
 - `Reopen-RelayRoom.ps1` stopped every seat, open seats nobody had taken included: the first agent to join the
   reopened room got the lowest free seat and was told it was stopped. An untaken open seat keeps running.
