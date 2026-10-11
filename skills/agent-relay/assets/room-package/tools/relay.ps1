@@ -30,10 +30,12 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.2.1'
+$script:ToolVersion = '3.2.2'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
+# The token each lock this call holds was written with, by the lock's path (Enter-FileLock, Exit-FileLock)
+$script:LockTokens = @{}
 
 $script:NamePattern = '^[a-z][a-z0-9]{1,15}$'
 $script:IdPattern = '^([a-z][a-z0-9]{1,15})-([a-z][a-z0-9]{1,15})-([0-9]{4,6})$'
@@ -773,8 +775,19 @@ function Send-Message {
                 "expects: $Expects"
                 '---'
             ) -join "`n"
+            $text = (($header + "`n" + $Body.TrimEnd() + "`n") -replace "`r`n", "`n") -replace "`r", "`n"
             $temporary = Join-Path $inbox ('.{0}-{1}.tmp' -f $script:Me, [guid]::NewGuid().ToString('N'))
-            Write-Text $temporary ($header + "`n" + $Body.TrimEnd() + "`n")
+            Write-Text $temporary $text
+            if ($script:SentLog) {
+                # The record first, the message second: whenever the file is there, so is its line. The hash is of
+                # the bytes meant to be sent, never read back from the inbox, where any agent can swap the
+                # temporary file. A record that cannot be written means no message.
+                try { Add-Line $script:SentLog ("{0}`t{1}`t{2}" -f (Get-UtcStamp), $id, (ConvertTo-Sha256Hex ($script:Utf8.GetBytes($text)))) }
+                catch {
+                    Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+                    throw "could not write this PC's record of what the coordinator sends ($($script:SentLog)), so nothing was sent: $($_.Exception.Message)"
+                }
+            }
             $madeIt = $false
             try { [System.IO.File]::Move($temporary, $final); $madeIt = $true } catch { $madeIt = $false }
             if ($madeIt) {
@@ -2322,19 +2335,30 @@ function Enter-FileLock {
     # Tried every 200 milliseconds for up to 3 seconds, whatever the reason it cannot be had (it is there, the
     # share is gone, the folder is not writable, a stale one cannot be removed). A lock older than 15 seconds on
     # the room's clock was left over from a caller that died and is removed; without the room's time nothing is
-    # judged old. False when the lock could not be taken.
+    # judged old. False when the lock could not be taken. The lock holds a token of this call: a caller that kept
+    # it longer than that, and lost it, must not remove the lock of the one that took it over (Exit-FileLock).
     param([string]$Lock)
     $began = [DateTime]::UtcNow
     $roomNow = $null
     $roomAsked = $false
     $roomStarted = $began
     while ($true) {
+        $created = $false
         try {
+            $token = [guid]::NewGuid().ToString('N')
             $stream = [System.IO.File]::Open($Lock, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-            $stream.Dispose()
+            $created = $true
+            try {
+                $bytes = $script:Utf8.GetBytes($token)
+                $stream.Write($bytes, 0, $bytes.Length)
+            }
+            finally { $stream.Dispose() }
+            $script:LockTokens[$Lock] = $token
             return $true
         }
         catch {
+            # A lock this call made but could not write its token into is given back at once
+            if ($created) { Remove-Entry $Lock }
             if (([DateTime]::UtcNow - $began).TotalSeconds -ge 3) { return $false }
             if (Test-Path -LiteralPath $Lock) {
                 if (-not $roomAsked) { $roomNow = Write-Alive; $roomStarted = [DateTime]::UtcNow; $roomAsked = $true }
@@ -2349,8 +2373,16 @@ function Enter-FileLock {
 }
 
 function Exit-FileLock {
+    # Removes the lock only while it still holds this call's token. A lock that another caller took over (this one
+    # held it past 15 seconds) is that caller's; one that cannot be read now is left to grow old.
     param([string]$Lock)
-    Remove-Entry $Lock
+    $token = ''
+    if ($script:LockTokens.ContainsKey($Lock)) {
+        $token = [string]$script:LockTokens[$Lock]
+        $script:LockTokens.Remove($Lock)
+    }
+    if (-not $token -or (Test-Link $Lock)) { return }
+    if ((Read-Text $Lock) -ceq $token) { Remove-Entry $Lock }
 }
 
 function Get-Lease {
@@ -3263,6 +3295,10 @@ if ($verb -eq 'join') {
 }
 
 $script:IsCoordinator = ($script:Me -eq $script:Coordinator)
+# The coordinator's launcher names this PC's record of what the coordinator sends: the tamper check moves out a
+# message under the coordinator's name that is not on it. Nobody else keeps one.
+$script:SentLog = ''
+if ($script:IsCoordinator -and $env:RELAY_SENT_LOG) { $script:SentLog = [string]$env:RELAY_SENT_LOG }
 $script:MyDir = Get-AgentDir $script:Me
 if (-not (Test-Path -LiteralPath $script:MyDir)) { Exit-WithError "there is no agent '$($script:Me)' in room $($script:RoomId)" 'use the wrapper you were given; do not copy one from another agent' }
 $script:Seat = Read-KeyValue (Join-Path $script:MyDir 'seat')

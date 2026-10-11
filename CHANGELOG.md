@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.3.7 (2026-10-11)
+
+What a review of the design found, and the fixes (room package 3.2.2; running rooms:
+`scripts/Update-RelayRoom.ps1 -Room <id>`):
+
+- Forged coordinator messages: any agent could write a file named like a coordinator message into another
+  agent's inbox, and the room tool takes the sender from the file name. The coordinator's launcher now has its
+  tool write the id and hash of every message it sends into `sent.log` on this PC, before the message appears,
+  and the tamper check moves out (alarm `TAMPER forged moved out: ...`) every file under the coordinator's name
+  that is not on it or whose bytes changed. The record of an older room starts with the next
+  `Update-RelayRoom.ps1` and counts the coordinator's messages already there as sent; a room whose tool is
+  older gets none (a new launcher there, when the coordinator is replaced, starts no record). A record that cannot be
+  written means no message; one that cannot be read judges nothing and says so. An agent whose wait is running
+  can still read a forgery in the seconds before the next pass; the alarm names it, and the coordinating
+  reference says what to tell the agent.
+- The board and the feed read open requests the way the room tool does: types and ids exactly, an owner file is
+  never a request, only the receiver's result or answer to the one who asked closes a request, and hidden or
+  capitalised message files are taken as the tool takes them. Before, the board could show a request as open or
+  closed that the agent's own `show open` did not.
+- `RelayCommon.psm1` sets `$ErrorActionPreference = 'Stop'` itself: a module does not take the preference of the
+  script that imports it, so a listing that failed inside it (an inbox the share would not list) went on with
+  nothing and looked like an empty inbox.
+- `relay.ps1`: a lock holds a token of the call that made it, and is removed only by that call. A call that
+  kept a lock past 15 seconds, and lost it to another, removed the other's lock when it ended.
+- Guarded files in the room (instructions, wrappers, controls, rules, tools, and the tamper check's restores)
+  are replaced in one step, so an agent's tool never reads a part of one; a part of `ASSIGNMENT.md` used to make
+  the self-audit take a new baseline. Where the file server refuses the replacement, the file is written in
+  place, as before.
+- Docs: the tamper check runs every 15 seconds while the feed runs, not on every round (README, CLAUDE.md); the
+  Faults suite names all six pause points.
+- Tests: Guard G15 (forged messages), G16 (one-step writes), G17 (the module's error preference), a Scripts test
+  that holds the board's open requests against every agent's `show open`, and a Faults race for the lock.
+
 ## 0.3.6 (2026-10-11)
 
 Times in JSON under PowerShell 7.0 to 7.4 (no change to the room package):

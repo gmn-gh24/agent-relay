@@ -114,8 +114,21 @@ function Start-RelayTool {
     $startInfo.WorkingDirectory = $Room
     $variables = $startInfo.EnvironmentVariables
     # Also what would tell the tool which agent session calls: the suite itself may run inside one
-    foreach ($name in 'RELAY_NAME', 'RELAY_GEN', 'RELAY_ROOM_ID', 'RELAY_WRAPPER', 'RELAY_DRAFT', 'RELAY_NO_EVENTS', 'RELAY_POLL_SECONDS', 'RELAY_SETTLE_MS', 'RELAY_MINUTE_SECONDS', 'RELAY_SESSION', 'CLAUDE_CODE_SESSION_ID') {
+    foreach ($name in 'RELAY_NAME', 'RELAY_GEN', 'RELAY_ROOM_ID', 'RELAY_WRAPPER', 'RELAY_DRAFT', 'RELAY_SENT_LOG', 'RELAY_NO_EVENTS', 'RELAY_POLL_SECONDS', 'RELAY_SETTLE_MS', 'RELAY_MINUTE_SECONDS', 'RELAY_SESSION', 'CLAUDE_CODE_SESSION_ID') {
         if ($variables.ContainsKey($name)) { $variables.Remove($name) }
+    }
+    # The coordinator sends through its launcher, which names this PC's record of what it sent: a test's coordinator
+    # does the same, so that the tamper check takes its messages for its own. A test that plays an agent forging
+    # the coordinator's messages sets RELAY_SENT_LOG to '' in -Environment.
+    $roomFacts = Join-Path $Room 'ROOM'
+    if ($env:AGENT_RELAY_LOCAL -and [System.IO.File]::Exists($roomFacts)) {
+        $facts = [System.IO.File]::ReadAllText($roomFacts)
+        $coordinator = ''
+        $roomId = ''
+        if ($facts -cmatch '(?m)^coordinator: *([a-z][a-z0-9]*) *\r?$') { $coordinator = $Matches[1] }
+        if ($facts -cmatch '(?m)^room: *(\S+) *\r?$') { $roomId = $Matches[1] }
+        $folder = Join-Path (Join-Path $env:AGENT_RELAY_LOCAL 'rooms') $roomId
+        if ($coordinator -and $roomId -and $coordinator -ceq $Agent -and (Test-Path -LiteralPath $folder -PathType Container)) { $variables['RELAY_SENT_LOG'] = Join-Path $folder 'sent.log' }
     }
     $variables['RELAY_NAME'] = $Agent
     $variables['RELAY_GEN'] = [string]$Generation

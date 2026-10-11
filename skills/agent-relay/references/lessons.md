@@ -529,3 +529,19 @@ last hour showed:
   folder before the retro, and the retro starts with that script. The numbers were still there, in the file
   the close saved on this PC. Changed: the self-improvement reference names that file for a room whose folder
   is gone. Not changed yet: the script does not fall back to it by itself.
+
+## 2026-10-11: a review of the design (no room)
+
+- **A guard that covers one sender and not the other protects the wrong one.** The owner's messages were
+  checked against a log on this PC; the coordinator's own, which carry the tasks, were not, and any agent could
+  write one into another agent's inbox. Changed: the coordinator's tool keeps a record on this PC and the tamper
+  check moves out what is not on it. When a check is added for one kind of file, ask which other kind an agent
+  can write that is believed for the same reason.
+- **Two readers of one file drift, also when both are tested.** The room tool and the module each read messages
+  and open requests; they disagreed on case, hidden files, owner files and what closes a request, and no test
+  held one against the other. Changed: a test that builds one room and compares the board with every agent's
+  `show open`. Where a format has two readers, test them against each other, not each against itself.
+- **A module does not inherit the caller's `$ErrorActionPreference`.** Every script set `Stop`; the module's
+  functions still ran under `Continue`, so a failed listing went on with nothing. Set it in the module.
+- **A lock that anybody may remove is no lock.** A holder that ran long lost its lock to another caller and then
+  removed that caller's lock. A lock carries the token of its holder, and only that holder removes it.
