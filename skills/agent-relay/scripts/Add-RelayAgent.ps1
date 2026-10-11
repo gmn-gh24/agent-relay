@@ -119,8 +119,9 @@ switch ($PSCmdlet.ParameterSetName) {
         $taken = New-Object System.Collections.Generic.List[string]
         foreach ($name in $all) { $taken.Add($name) }
         $names = New-Object System.Collections.Generic.List[string]
+        $wanted = @($specs | ForEach-Object { [string]$_['wanted_name'] })
         foreach ($spec in $specs) {
-            $name = Select-RelayName -Machine $spec['machine'] -Role $spec['role'] -Taken $taken.ToArray() -Wanted $spec['wanted_name']
+            $name = Select-RelayName -Machine $spec['machine'] -Role $spec['role'] -Taken $taken.ToArray() -Wanted $spec['wanted_name'] -Reserved $wanted
             $taken.Add($name)
             $names.Add($name)
         }
