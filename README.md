@@ -5,7 +5,7 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.
 
 | | |
 |---|---|
-| Version | 0.3.9 ([changelog](CHANGELOG.md)) |
+| Version | 0.4.1 ([changelog](CHANGELOG.md)) |
 | Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
 | Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
 | Other agents | Any coding agent that can run a command and write a file |
@@ -192,6 +192,8 @@ for every job: a share that other jobs use too is never assumed.
 | `/relay <room id>` | Binds the session to the room and opens the pane |
 | `/relay` | Opens the pane of the bound room again |
 | `/relay off` | Unbinds the session and stops its feed |
+| `/relay outside on` | Allows Claude Code's session-to-session tools (`SendMessage`, `ListAgents`) in this session while a room is bound, after a confirmation in the dialog; refused by default, since the room is the coordinator's only channel to an agent |
+| `/relay outside off` | Refuses them again (a new session refuses them anyway) |
 
 The pane shows the room's rows above an input that stays in place:
 
@@ -328,6 +330,12 @@ What the design does about it:
 
 - **One authority.** Agents take tasks from the coordinator and rules from `DECISIONS.md`. A message from
   another agent is a request from a colleague, never an order.
+- **The coordinator stays in its room.** The only channel from the coordinator to an agent is the room: its
+  own launcher and the room's verbs. Another session of yours on this PC, in an editor or in the cloud is not
+  an agent until it has taken a seat; the coordinator does not list it, message it or hand it work through
+  Claude Code's own session-to-session tools, and it asks for no exception. While a room is bound in the
+  session the plugin refuses those tools. Only you can lift that, with `/relay outside on` in the
+  coordinator's session and a confirmation in the dialog, and the exception is recorded as a standing rule.
 - **Nothing the coordinator's PC decides by comes from the room.** Any agent can write any file in the room
   folder, so the room index, the settings, the closed state and the owner's messages are taken from this PC's
   own copy and log. A file that only claims to come from the owner is reported, not obeyed, and a file under
@@ -434,9 +442,10 @@ claude plugin eval . --no-publish
 ```
 
 `validate` checks the manifests and the hooks module, `test` runs the pane's tests, and `eval` runs the
-skill's cases: requests that must load the skill, requests that must not, and one that checks what the
-coordinator settles with the owner before it builds anything. Each eval run is a full headless session on
-your account; `--no-publish` keeps its report on this PC.
+skill's cases: requests that must load the skill, requests that must not, and cases that check how the
+coordinator behaves: what it settles with you before it builds, how it closes a room, and that it reaches an
+agent through the room only. Each eval run is a full headless session on your account; `--no-publish` keeps
+its report on this PC.
 
 ### Conventions
 

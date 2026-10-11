@@ -79,6 +79,8 @@ declare module 'claude-code' {
   interface PluginState {
     // scroll: the first row the pane's window shows; null while it follows the end
     // deciding: the decisions on their way, each of a card of the room it names
-    'agent-relay': { room: string | null; view: RelayView | null; scroll: number | null; deciding: RelayDecision[] }
+    // outside: the owner's word, for this session, that the host's session-to-session tools may be used while a
+    // room is bound (the room is the coordinator's only channel to an agent otherwise)
+    'agent-relay': { room: string | null; view: RelayView | null; scroll: number | null; deciding: RelayDecision[]; outside: boolean }
   }
 }
