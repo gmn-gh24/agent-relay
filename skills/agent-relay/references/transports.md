@@ -54,8 +54,8 @@ What was measured and what follows from it:
 ## SSH
 
 Not built. The owner has postponed an SSH bridge, like sh, until it is needed: it is not planned for any
-version. The scripts refuse `ssh` as a transport (`the SSH bridge is not built yet: use share or same-pc`),
-and a Linux or macOS machine cannot take part at all: there is no `sh` tool.
+version. The scripts refuse `ssh` as a transport (`the SSH bridge is not built yet: use share or same-pc`).
+There is no `sh` tool either: the room tool is PowerShell on every machine.
 
 ## Traps seen so far
 

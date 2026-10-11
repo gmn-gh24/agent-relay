@@ -101,6 +101,27 @@ keep waiting on the same command and not to start a second wait (a second one wa
 reports exit code 1 for a wait that timed out (see above). Files to attach go into the agent's `attach`
 folder in the room, not next to the draft: the instructions name the folder in full since an agent once made
 an `attach` folder in its working folder, which was the root of a share other jobs use.
+When the owner says "codex luna medium", that is the three words of an introduction: product, model, effort.
+It is never the name of an agent: names come from the room's pool.
+
+Codex models have names that do not say Codex (OpenAI's Codex models page, read 2026-10-11; check it again
+when a name here is not what an agent reports, and add a new family word to `scripts/model-tiers.json`):
+
+| Model | Id | What OpenAI says it is for | Tier here |
+|---|---|---|---|
+| Astra | `gpt-6-astra` | the most capable: complex work from end to end across code, apps and research | strong |
+| 6.1 Sol | `gpt-6.1-sol` | close to Astra at lower cost: repeated, long-running work | strong |
+| 6 Sol | `gpt-6-sol` | the successor of `gpt-5.5` on the paid plans | strong |
+| 6 Luna | `gpt-6-luna` | focused work in high volume: summarize, extract, focused coding | standard |
+| 5.6 Sol, Terra, Luna | not given on the page | the family before, still there during the change | by the family word |
+
+An agent that names `gpt-5.5` or older runs an old client: `gpt-5.5` leaves Codex on 2026-10-14, and
+`gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex` and `gpt-5.2` are gone already. A model given only as `gpt-6` says
+nothing about the family and sorts as strong: ask which one it is before a task depends on it.
+
+Effort goes from low (shown as Light) over medium, high and xhigh (Extra High) to max and ultra. Not every
+model or plan has every step: Luna has no ultra, and some plans leave out Extra High. The owner sets it with
+`/model` in the session or `model_reasoning_effort` in Codex's configuration.
 
 **Everything else.** Starts on the generic profile. Watch the first waits: if the agent's commands are cut
 off before a minute, lower `wait_minutes` for its seat (answers field) or switch it to `manual`.

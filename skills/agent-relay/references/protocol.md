@@ -292,6 +292,6 @@ shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `pr
 - The files of `show <id>` are listed in byte order; a link there is named and not followed.
 - Names, types and ids are compared exactly; agents and seats are sorted in byte order whatever the culture of
   the machine; times are written with the invariant culture.
-- There is no sh tool: sh is postponed by the owner, so agents run on Windows. A room made before 0.2.0 may
+- There is no sh tool: sh is postponed by the owner, and the room tool is PowerShell. A room made before 0.2.0 may
   still hold `tools/relay.sh`, a `join` and `g<N>/relay` files from that time; this PC's copy keeps them as
   they are, and nothing writes them again.

@@ -85,7 +85,11 @@ Three questions, in this order, for every task before it goes out. The board ans
 
 A model's strength is read off the name the agent gave (`scripts/model-tiers.json`); `not known` on the board
 means the name is not in that list: judge it yourself and add the family. Effort `unknown` is common and
-means only that the agent cannot see its setting.
+means only that the agent cannot see its setting. Codex models sort by their family word (`luna` standard;
+`sol`, `astra`, `terra` strong; `agent-kinds.md` has the list). When a task depends on a model or an effort
+that came as `unknown`, or as a generation without a family (`gpt-6`), ask the owner what that session was
+started with. Do not guess it, and do not have the agent guess. When the owner said what would join ("codex
+luna medium") and the introduction says something else, tell the owner before that agent gets work.
 
 ## One job, several builders
 

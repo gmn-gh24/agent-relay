@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.4 (2026-10-11)
+
+Codex models, after a live room in which "codex luna medium" was read as an agent's name (no change to the
+room package):
+
+- `scripts/model-tiers.json` knows the Codex family words: `luna` standard; `astra`, `sol`, `terra` strong. A
+  tier may have more than one list, and `luna` stands in one in front of the generation words: `gpt-6-luna`
+  had sorted as strong by its `gpt-6`.
+- The agent kinds reference lists the Codex models, what each is for and the steps of effort (OpenAI's Codex
+  models page, read 2026-10-11), and says that "codex luna medium" is product, model and effort, never a name.
+- The coordinating reference: ask the owner what a session was started with when a task depends on a model or
+  an effort that came as `unknown` or as a generation without a family; tell the owner when an introduction is
+  not what the owner announced.
+- Lessons: a job that runs as SYSTEM and as a standard user needs two seats on that machine, planned when the
+  room is made; read the `rights:` line again after an agent was started again elevated. Two gaps are written
+  down and not closed: the room does not hold the model and effort the owner announced for a seat, and a
+  second introduction under the name of a live agent is neither refused nor marked.
+- README and references, on the owner's word that agents are not limited to Windows: the texts no longer say
+  that an agent's machine must run Windows. They say what is there: the room tool is PowerShell, there is no
+  `sh` tool, and no agent on Linux or macOS has worked a room yet. No change to the scripts: an answers file
+  still takes `os` `windows` only for a named agent.
+
 ## 0.3.3 (2026-10-11)
 
 How the owner starts the agents, on the owner's word after several live rooms (no change to the room package):
