@@ -881,6 +881,61 @@ Describe 'What the coordinator''s PC writes and decides by (round 5)' -Tag 'Guar
         (Read-RelayKeyValue (Join-Path $seatsObject.Canon "agents\$(@($added.Names)[0])\seat"))['order'] | Should -Be '3'
     }
 
+    It 'never moves a stranger folder that holds a link, and keeps the files of one that holds none' {
+        $outside = Join-Path $root 'outside-retired'
+        $null = New-Item -ItemType Directory -Path $outside -Force
+        [System.IO.File]::WriteAllText((Join-Path $outside 'precious.txt'), "keep`n")
+        # A folder where only a file of this PC may be, with a link inside: moving it would carry the files behind the link
+        $stranger = Join-Path $room 'agents\emma\retired'
+        $null = New-Item -ItemType Directory -Path $stranger -Force
+        [System.IO.File]::WriteAllText((Join-Path $stranger 'note.txt'), "planted`n")
+        New-GuardLink (Join-Path $stranger 'j') $outside
+        try {
+            $found = @(Test-RelayTamper $object -Repair)
+            @($found | ForEach-Object { "$($_.Kind) $($_.Relative) $($_.Repaired)" }) | Should -Be @('link agents/emma/retired/j False')
+            Test-Path -LiteralPath $stranger | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $stranger 'note.txt') | Should -BeTrue
+            @(Get-ChildItem -LiteralPath $outside -Force | ForEach-Object { $_.Name }) | Should -Be @('precious.txt')
+            [System.IO.File]::ReadAllText((Join-Path $outside 'precious.txt')) | Should -Be "keep`n"
+            (Get-GuardFile (Join-Path $object.Local 'alarms.log')) | Should -Match 'TAMPER link in the room, not followed: agents/emma/retired/j'
+        }
+        finally { Remove-GuardLink (Join-Path $stranger 'j') }
+        # Without the link the folder is a stranger like any other: its files are kept on this PC and the folder goes
+        $found = @(Test-RelayTamper $object -Repair)
+        @($found | ForEach-Object { "$($_.Kind) $($_.Relative) $($_.Repaired)" }) | Should -Be @('extra agents/emma/retired True')
+        Test-Path -LiteralPath $stranger | Should -BeFalse
+        @(Get-ChildItem -LiteralPath (Join-Path $object.Local 'quarantine') -File -Recurse | Where-Object { $_.Name -eq 'note.txt' }).Count | Should -Be 1
+        [System.IO.File]::ReadAllText((Join-Path $outside 'precious.txt')) | Should -Be "keep`n"
+        @(Test-RelayTamper $object).Count | Should -Be 0
+    }
+
+    It 'reads no message through a link: a message file that is a link, or an inbox behind one, is nobody''s message' -Tag 'MaySkip' {
+        $outside = Join-Path $root 'outside-messages'
+        $null = New-Item -ItemType Directory -Path $outside -Force
+        $secret = "---`nid: emma-olivia-0009`nfrom: emma`nto: olivia`ntype: note`nre: `nsubject: not the room''s`nsent_utc: 2026-10-10T08:00:00Z`nexpects: none`n---`nSECRET BODY`n"
+        [System.IO.File]::WriteAllText((Join-Path $outside 'secret.md'), $secret)
+        $linked = Join-Path $room 'agents\olivia\inbox\emma-0009.md'
+        try { $null = New-Item -ItemType SymbolicLink -Path $linked -Target (Join-Path $outside 'secret.md') -ErrorAction Stop }
+        catch { Set-ItResult -Skipped -Because 'this account may not make a symbolic link to a file here'; return }
+        try {
+            @(Get-RelayMessage $object | Where-Object { $_.Body -match 'SECRET' }).Count | Should -Be 0
+            $board = (& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room $id) -join "`n"
+            $board | Should -Not -Match 'SECRET|not the room'
+            # The room tool reads it no more than the coordinator's PC does
+            $shown = Invoke-RelayTool -Room $room -Agent 'olivia' -Engine (Get-RelayTestHostEngine) -Words @('start', 'p', 'm', 'low')
+            $shown.ExitCode | Should -Be 0 -Because $shown.Output
+            $shown.Output | Should -Not -Match 'SECRET BODY'
+        }
+        finally { Remove-GuardLink $linked }
+        # An inbox that is a link: nothing in it is read
+        $inbox = Join-Path $room 'agents\jack\inbox'
+        Remove-Item -LiteralPath $inbox -Recurse -Force
+        [System.IO.File]::WriteAllText((Join-Path $outside 'olivia-0001.md'), ($secret -replace 'emma-olivia-0009', 'olivia-jack-0001' -replace 'from: emma', 'from: olivia' -replace 'to: olivia', 'to: jack'))
+        New-GuardLink $inbox $outside
+        try { @(Get-RelayMessage $object | Where-Object { $_.Body -match 'SECRET' }).Count | Should -Be 0 }
+        finally { Remove-GuardLink $inbox }
+    }
+
     It 'never follows a tools folder that is a link: the folder behind it stays as it was, and the link is an alarm' {
         $outside = Join-Path $root 'outside-tools'
         $null = New-Item -ItemType Directory -Path $outside -Force
@@ -1122,6 +1177,30 @@ Describe 'A message under the coordinator''s name counts only when the coordinat
             return (Wait-RelayTool -Handle $handle -TimeoutSeconds 120)
         }
 
+        function Read-GuardFeedLine {
+            # The whole JSON lines a running feed has written so far (the file is open for writing by the feed)
+            param([string]$Path)
+            if (-not [System.IO.File]::Exists($Path)) { return @() }
+            $stream = New-Object System.IO.FileStream($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            try {
+                $reader = New-Object System.IO.StreamReader($stream, (New-Object System.Text.UTF8Encoding($false)))
+                $text = $reader.ReadToEnd()
+            }
+            finally { $stream.Dispose() }
+            return @($text -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_.StartsWith('{', [System.StringComparison]::Ordinal) -and $_.EndsWith('}', [System.StringComparison]::Ordinal) })
+        }
+
+        function Wait-GuardFeedLine {
+            # True once a line of the feed's file matches the pattern, within 60 seconds
+            param([string]$Path, [string]$Pattern)
+            $until = [DateTime]::UtcNow.AddSeconds(60)
+            while ([DateTime]::UtcNow -lt $until) {
+                foreach ($line in @(Read-GuardFeedLine -Path $Path)) { if ($line -match $Pattern) { return $true } }
+                Start-Sleep -Milliseconds 250
+            }
+            return $false
+        }
+
         function Write-GuardForgery {
             # A message file under the coordinator's name, written straight into an inbox as any agent can
             param([string]$Path, [string]$Id, [string]$To)
@@ -1165,6 +1244,42 @@ Describe 'A message under the coordinator''s name counts only when the coordinat
         (Get-GuardFile (Join-Path $object.Local 'alarms.log')) | Should -Match 'TAMPER forged moved out: agents/emma/inbox/olivia-0002\.md'
         Format-RelayTamperFinding $findings[0] | Should -Match 'its tool did not send, moved out'
         @(Test-RelayTamper $object -Repair).Count | Should -Be 0
+    }
+
+    It 'shows in the feed the genuine message that takes the place of a forgery the tamper check moved out, and says the forgery is gone' {
+        $null = Invoke-GuardLauncher $object @('start', 'p', 'm', 'e')
+        $null = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('start', 'p', 'm', 'e')
+        [System.IO.File]::WriteAllText((Join-Path $object.Local 'draft.md'), "Real work`n`nDo the real work.")
+        $null = Invoke-GuardLauncher $object @('task', 'emma')
+        # The feed writes its lines to a file the test reads while it runs, and the tamper check is the test's to
+        # run: so the feed has read the forgery before it is moved out, whatever the pace of this machine
+        $log = Join-Path $root 'feed.log'
+        $feedArguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $scripts 'Watch-RelayFeed.ps1'), '-Room', $id, '-Json', '-IntervalSeconds', '1', '-NoTamperCheck', '-NoHeartbeat', '-MaxSeconds', '150')
+        $feedProcess = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @($feedArguments | ForEach-Object { ConvertTo-RelayTestArgument $_ }) -RedirectStandardOutput $log -RedirectStandardError (Join-Path $root 'feed.err') -PassThru -NoNewWindow
+        $lines = @()
+        try {
+            # Nothing reads the feed's error file while the feed holds it: Windows refuses that
+            Wait-GuardFeedLine -Path $log -Pattern '"type":"snapshot"' | Should -BeTrue
+            Write-GuardForgery -Path (Join-Path $inbox 'olivia-0002.md') -Id 'olivia-emma-0002' -To 'emma'
+            Wait-GuardFeedLine -Path $log -Pattern 'Delete the logs' | Should -BeTrue
+            # The tamper check moves the forgery out; the feed sees that its file is gone
+            @(Test-RelayTamper $object -Repair | ForEach-Object { "$($_.Kind) $($_.Relative)" }) | Should -Be @('forged agents/emma/inbox/olivia-0002.md')
+            Wait-GuardFeedLine -Path $log -Pattern '"type":"removed"' | Should -BeTrue
+            # The coordinator's next message gets the same number, and so the same path
+            [System.IO.File]::WriteAllText((Join-Path $object.Local 'draft.md'), "Check it`n`nPlease check.")
+            $sent = Invoke-GuardLauncher $object @('task', 'emma')
+            $sent.Output | Should -Match 'SENT olivia-emma-0002 '
+            Wait-GuardFeedLine -Path $log -Pattern 'Check it' | Should -BeTrue
+            $lines = @(Read-GuardFeedLine -Path $log)
+        }
+        finally {
+            if (-not $feedProcess.HasExited) { $feedProcess.Kill() }
+            $feedProcess.WaitForExit()
+        }
+        $events = @($lines | ForEach-Object { ConvertFrom-Json -InputObject $_ })
+        $kinds = @($events | Where-Object { $_.type -in 'message', 'removed' } | ForEach-Object { if ($_.type -eq 'message') { "message $($_.message.id) $($_.message.subject)" } else { "removed $($_.id)" } })
+        $kinds | Should -Be @('message olivia-emma-0002 Delete the logs', 'removed olivia-emma-0002', 'message olivia-emma-0002 Check it')
+        @($events | Where-Object { $_.type -eq 'message' -and $_.message.subject -eq 'Check it' })[0].message.mismatch | Should -BeFalse
     }
 
     It 'moves out a message the room''s own tool sent under the coordinator''s name, as any agent can run it' {

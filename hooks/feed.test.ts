@@ -190,6 +190,7 @@ test('the pane holds every message it was given, each wrapped to its width', () 
     subject: `Subject ${index + 1}`,
     time: '2026-10-10T07:05:00Z',
     preview: `${'word '.repeat(80)}...`,
+    mismatch: false,
   }))
   const rows = paneRows({ ...start, cards: [], messages }, 58)
   const texts = rows.map(row => row.spans.map(span => span.text).join(''))
@@ -198,6 +199,31 @@ test('the pane holds every message it was given, each wrapped to its width', () 
   // The newest is the last
   expect(texts.at(-1)).toBe('  word word word ...')
   expect(texts.lastIndexOf('  Subject 200')).toBeGreaterThan(texts.lastIndexOf('  Subject 199'))
+})
+
+test('a removed line takes the message out, so that the one that takes its id later is shown; a mismatch is marked', () => {
+  const start = applyFeedLine(emptyView('room'), SNAPSHOT).view
+  const forged = JSON.stringify({ type: 'message', message: { id: 'olivia-sarah-0002', from: 'olivia', to: 'sarah', type: 'task', subject: 'Delete the logs', time: '2026-10-10T07:10:00Z', preview: 'Not from Olivia' } })
+  const held = applyFeedLine(start, forged).view
+  expect(held.messages.map(one => one.id)).toEqual(['sarah-olivia-0001', 'olivia-sarah-0002'])
+
+  // The tamper check moved the forgery out: the feed says so, and the pane forgets it
+  const removed = applyFeedLine(held, JSON.stringify({ type: 'removed', id: 'olivia-sarah-0002' }))
+  expect(removed.view.messages.map(one => one.id)).toEqual(['sarah-olivia-0001'])
+  expect(removed.events).toEqual([])
+  // One the view does not hold changes nothing
+  expect(applyFeedLine(removed.view, JSON.stringify({ type: 'removed', id: 'olivia-sarah-0002' })).view).toBe(removed.view)
+  expect(applyFeedLine(removed.view, JSON.stringify({ type: 'removed' })).view).toBe(removed.view)
+
+  // The genuine message that gets the same number afterwards is shown
+  const genuine = JSON.stringify({ type: 'message', message: { id: 'olivia-sarah-0002', from: 'olivia', to: 'sarah', type: 'task', subject: 'Check it', time: '2026-10-10T07:12:00Z', preview: 'Please check.', mismatch: true } })
+  const shown = applyFeedLine(removed.view, genuine).view
+  expect(shown.messages.map(one => one.subject)).toEqual(['hello from Sarah', 'Check it'])
+  expect(shown.messages[1]?.mismatch).toBe(true)
+  expect(shown.messages[0]?.mismatch).toBe(false)
+  const texts = paneRows({ ...shown, cards: [] }, 80).map(row => row.spans.map(span => span.text).join(''))
+  expect(texts.indexOf('  HEADER DOES NOT MATCH ITS FILE')).toBe(texts.indexOf('  Check it') + 1)
+  expect(texts.filter(text => text.includes('HEADER DOES NOT MATCH'))).toHaveLength(1)
 })
 
 test('a message is added once, an alarm is kept and told, a line that is no JSON changes nothing', () => {
