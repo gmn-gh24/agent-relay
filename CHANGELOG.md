@@ -9,8 +9,6 @@ CI only (no change to the plugin):
   Pester files run on a dev machine before a commit (`tests\Invoke-AllTests.ps1`).
 - PSScriptAnalyzer (1.24.0) and Claude Code (2.1.296) are pinned and cached in CI, and the pane's steps are left
   out when a commit touches nothing the pane reads.
-- New `tests\Install-GitHooks.ps1` and `tests\Invoke-PrePush.ps1`: an optional local `pre-push` hook that runs
-  the PowerShell 7 gate.
 
 ## 0.3.7 (2026-10-11)
 
