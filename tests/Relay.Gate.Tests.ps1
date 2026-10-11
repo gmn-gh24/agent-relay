@@ -89,8 +89,15 @@ Describe 'Invoke-AllTests.ps1 runs the editions it is given' -Tag 'Gate' {
             $host_ = (Get-Process -Id $PID).Path
             $arguments = @('-NoProfile', '-NonInteractive')
             if ($PSVersionTable.PSVersion.Major -lt 6) { $arguments += @('-ExecutionPolicy', 'Bypass') }
-            $output = @(& $host_ @arguments -File $gate @Words 2>&1 | ForEach-Object { [string]$_ })
-            return [pscustomobject]@{ Lines = $output; ExitCode = $LASTEXITCODE }
+            # Windows PowerShell turns each line a program writes to standard error into an error, and under Stop
+            # the first one ends the test
+            $previous = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $output = @(& $host_ @arguments -File $gate @Words 2>&1 | ForEach-Object { [string]$_ })
+                return [pscustomobject]@{ Lines = $output; ExitCode = $LASTEXITCODE }
+            }
+            finally { $ErrorActionPreference = $previous }
         }
     }
 

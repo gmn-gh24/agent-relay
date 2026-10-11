@@ -149,8 +149,10 @@ function Wait-RelayTool {
     else { $Handle.Process.WaitForExit() }
     $output = ''
     $errorText = ''
-    try { if ($Handle.Output.Wait(5000)) { $output = [string]$Handle.Output.Result } } catch { $null = $_ }
-    try { if ($Handle.Error.Wait(5000)) { $errorText = [string]$Handle.Error.Result } } catch { $null = $_ }
+    # The output ends when the last holder of the pipe closes it, not when the tool exits: the tab-title helper the
+    # tool starts may hold an inherited copy for a few seconds more on a busy machine
+    try { if ($Handle.Output.Wait(30000)) { $output = [string]$Handle.Output.Result } } catch { $null = $_ }
+    try { if ($Handle.Error.Wait(30000)) { $errorText = [string]$Handle.Error.Result } } catch { $null = $_ }
     $code = -999
     if (-not $timedOut) { $code = $Handle.Process.ExitCode }
     return [pscustomobject]@{
