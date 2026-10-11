@@ -83,6 +83,7 @@ again; then every change since 0.1.1 has to be carried over, with its test. `Rel
 `scripts/Test-RelayPackage.ps1` has all three engines converse in one room. `RELAY_PAUSE_AT`/`RELAY_PAUSE_DIR` are
 pause points that `Relay.Faults.Tests.ps1` uses to force races; renaming one makes the gate fail on purpose.
 
+
 ## Conventions the gate enforces or relies on
 
 - **ASCII only in every file**, Markdown and this file included (the static check fails on any byte over 127), and
