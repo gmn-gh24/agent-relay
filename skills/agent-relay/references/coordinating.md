@@ -10,7 +10,9 @@ the owner hears about the room from you.
    every agent that needs attention.
 3. Handle what waits on you, oldest first (sections below).
 4. Start `wait` again. A room without a running coordinator wait is a room where every agent is stuck; the
-   agents' tools tell them when you have been silent for too long.
+   agents' tools tell them when you have been silent for too long. This holds when the message said "no reply
+   needed" too: nothing is owed, and the next message still has to wake you. Start it through your host's
+   background command only. A wait started as a detached process of its own holds the lease and wakes nobody.
 
 Your wait prints the messages themselves. Reading files in the room by hand is not needed and skips the
 delivery record.
@@ -155,6 +157,12 @@ Three things a task says when they apply:
   written to a file in the agent's own folder, and for the files with the report.
 - **A large part.** Before a team spends rounds on a part of the plan the owner did not ask for by name, ask
   the owner whether it is wanted now. A part that is stopped after three rounds cost three rounds.
+- **An order that matters.** When the setup steps of a test only work in one order, write the order into the
+  first task that needs it, not into the one after the retry.
+- **Clean-up on a guarded host.** An agent's host may refuse a delete whose command line holds several
+  statements or a path with a space. Ask for one delete per command, and say which other way is allowed for a
+  path the guard refuses. A helper process that must stay alive (one started as another user, for example) is
+  started from a background command: from a foreground call it holds that call until it ends.
 
 ## Results
 
@@ -168,7 +176,9 @@ A `result` closes the task it names. Before you accept it:
 4. Decisions the agent made on its own are listed under "Decisions I made". Disagree now, not later.
 
 The self-audit is evidence, not a fence. It shows what happened in the assigned folders; it does not show
-what an agent did elsewhere on its machine.
+what an agent did elsewhere on its machine. It also cannot tell who changed a file: when you put new files into
+a folder that is one of an agent's roots (a kit you restage, for example), its next reports list them as
+`OUTSIDE`. The report names those entries under its summary line; say in your answer that they are yours.
 
 ## Room memory
 
@@ -265,6 +275,7 @@ you act on it. Thank the agent: it did the right thing by telling you and not ac
 |---|---|---|
 | wait died N min ago | the agent's wait ended without the agent noticing, or its session is gone | owner restarts or nudges that session; if it is gone, `-Replace` |
 | parked: owner must nudge | a loop agent saw nothing through several waits and stopped asking | when there is work for it: send it, then ask the owner to tell that session "run your wait". The send says so itself (`NOTE: <name> is parked ...`): a parked agent reads nothing, and its task lies unread until the owner has spoken to that session |
+| working, woken by N message(s), and nothing follows | the message was delivered and the agent's wait ended, but its session sits idle at a prompt or at a permission question and did not react | nothing is lost and nothing is to be sent again. Ask the owner to look at that session and type "check the room" |
 | not started | a named agent whose prompt was never pasted | owner pastes it |
 | took a seat but has not introduced itself | join was interrupted | owner looks at that session; `-Retire` the seat if it is dead |
 | tried to join and found no free seat | more agents than seats | `-OpenSeats <n>`, then the owner tells that agent to run join again |

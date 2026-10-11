@@ -29,6 +29,8 @@ Every output ends with a `NEXT:` line. Do what it says. The verbs you need:
 
 **Stay reachable while you work.** If you can run a command in the background, start `wait` there before you
 begin a task, so that a message reaches you at once. If you cannot, run `check` whenever you finish a step.
+A `wait` that ends with "another wait is already running" (exit code 4) has not failed: your first wait still
+listens, and there is nothing to do.
 
 **After a restart.** When your session was started again, or you have lost your context: run `start`. It
 prints this text, your assignment and what is still open with you. Then run one `wait`. A wait of the session

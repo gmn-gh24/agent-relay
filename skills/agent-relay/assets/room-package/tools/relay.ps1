@@ -30,7 +30,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.2.0'
+$script:ToolVersion = '3.2.1'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -1364,6 +1364,8 @@ function Get-Audit {
     $lines = New-Object System.Collections.Generic.List[string]
     $changed = 0
     $outside = 0
+    # The first entries outside the assigned paths, for the report itself: a bare count leaves both sides guessing
+    $outsideShown = New-Object System.Collections.Generic.List[string]
     $skipped = 0
     $folder = Join-Path $script:MyDir 'baseline'
     $scopes = @(Get-Scope)
@@ -1476,7 +1478,11 @@ function Get-Audit {
                 $listed++
                 $changed++
                 if (Test-InScope $path @($scope.May)) { $lines.Add("  ok       $entry") }
-                else { $outside++; $lines.Add("  OUTSIDE  $entry") }
+                else {
+                    $outside++
+                    $lines.Add("  OUTSIDE  $entry")
+                    if ($outsideShown.Count -lt 10) { $outsideShown.Add("  OUTSIDE  $entry  (in $($scope.Root))") }
+                }
             }
             if ($listed -eq 0) { $lines.Add('  nothing changed') }
         }
@@ -1489,7 +1495,8 @@ function Get-Audit {
     # A folder that could not be compared must not read as "nothing changed"
     if ($skipped -gt 0) { $summary += ", $skipped folder(s) NOT COMPARED" }
     $lines.Add($summary)
-    return [pscustomobject]@{ Text = ($lines -join "`n") + "`n"; Summary = $summary }
+    if ($outside -gt $outsideShown.Count) { $outsideShown.Add("  ... and $($outside - $outsideShown.Count) more, see self-audit.txt") }
+    return [pscustomobject]@{ Text = ($lines -join "`n") + "`n"; Summary = $summary; Outside = $outsideShown.ToArray() }
 }
 
 #endregion
@@ -3064,12 +3071,17 @@ function Invoke-Report {
         $failure = "self-audit: the audit failed and was left out: $(ConvertTo-HeaderText $_.Exception.Message)"
         $audit = [pscustomobject]@{ Text = "$failure`n"; Summary = $failure }
     }
+    # Which entries lie outside, not only how many: they may be the coordinator's own changes in a folder the agent reads
+    $outsideLines = @()
+    if ($audit.PSObject.Properties['Outside']) { $outsideLines = @($audit.Outside) }
     $body = $draft.Body + "`n`n---`n" + $audit.Summary + ' (self-audit.txt is attached)'
+    if ($outsideLines.Count -gt 0) { $body += "`n" + ($outsideLines -join "`n") }
     $sent = Send-Message -To $original.From -Type 'result' -Re $original.Id -Expects 'none' -Subject $draft.Subject -Body $body -ExtraFiles @{ 'self-audit.txt' = $audit.Text } -AllowSecret:($parsed.Flags.ContainsKey('allow-secret'))
     Clear-Draft
     Say "SENT $sent (result of $($original.Id)) to $(Get-DisplayName $original.From)"
     Show-ParkedNote $original.From
     Say $audit.Summary
+    foreach ($line in $outsideLines) { Say $line }
     if (@(Read-MemoryFile $script:Me).Count -eq 0) { Say 'tip: remember durable findings for your teammates' }
     Say "NEXT: run: $call wait$(Get-WaitMode)"
     return 0
