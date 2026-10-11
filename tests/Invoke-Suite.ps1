@@ -50,6 +50,9 @@ else {
     $configuration.Run.Path = $present.ToArray()
     $configuration.Run.PassThru = $true
     $configuration.Output.Verbosity = 'None'
+    # No test uses TestRegistry, and the gate runs several suites side by side: two Pester runs that start together
+    # both try to create HKCU\Software\Pester, and the one that loses fails its whole file before a test ran
+    $configuration.TestRegistry.Enabled = $false
     $result = Invoke-Pester -Configuration $configuration
     if ($null -eq $result) {
         # Pester returns nothing when the run itself failed, for example when it found no test file

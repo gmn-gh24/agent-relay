@@ -30,7 +30,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.2.2'
+$script:ToolVersion = '3.2.3'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -248,19 +248,37 @@ function Add-Line {
 }
 
 function Remove-Entry {
-    # Removes a file or a folder of the room, quietly. A link is removed as a link, never what it points at:
-    # Windows PowerShell 5.1 would empty the folder behind a junction.
+    # Removes a claim or a lock of the tool, quietly. A link is removed as a link, never what it points at, and a
+    # folder only when it is empty: a claim or a lock is a file of this tool, and a folder in its place is not the
+    # tool's to empty. Nothing recurses: Windows PowerShell 5.1 would empty the folder behind a junction that an
+    # agent put inside.
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Removes the tool''s own claims and locks; there is nobody to ask')]
     param([string]$Path)
     try {
-        if (Test-Link $Path) {
-            $isFolder = (([System.IO.File]::GetAttributes($Path)) -band [System.IO.FileAttributes]::Directory) -ne 0
-            # Windows removes a folder link as a folder; elsewhere a link is a file, whatever it points at
-            if ($isFolder -and [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.IO.Directory]::Delete($Path, $false) }
-            else { [System.IO.File]::Delete($Path) }
-            return
+        $isFolder = (([System.IO.File]::GetAttributes($Path)) -band [System.IO.FileAttributes]::Directory) -ne 0
+        # Windows removes a folder, and a folder link, as a folder; elsewhere a link is a file, whatever it points at
+        if ($isFolder -and ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT -or -not (Test-Link $Path))) { [System.IO.Directory]::Delete($Path, $false) }
+        else { [System.IO.File]::Delete($Path) }
+    }
+    catch { $null = $_ }
+}
+
+function Remove-Tree {
+    # Removes a folder of this send with everything in it, quietly, without following a link: each link inside is
+    # removed as a link first, so that nothing behind a junction an agent put there is deleted (Windows PowerShell
+    # 5.1 would recurse into it)
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Removes the tool''s own staging folder; there is nobody to ask')]
+    param([string]$Path)
+    try {
+        foreach ($link in @((Get-FileTree $Path -Lenient).Links)) {
+            try {
+                if ([System.IO.Directory]::Exists($link)) { [System.IO.Directory]::Delete($link, $false) }
+                else { [System.IO.File]::Delete($link) }
+            }
+            catch { $null = $_ }
         }
-        Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+        # A folder that was itself a link is gone with the link
+        if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue }
     }
     catch { $null = $_ }
 }
@@ -458,6 +476,8 @@ function Get-InboxEntry {
     $entries = New-Object System.Collections.Generic.List[object]
     if (Test-Path -LiteralPath $inbox) {
         foreach ($file in @(Get-ChildItem -LiteralPath $inbox -Filter '*.md' -File -Force -ErrorAction Stop)) {
+            # A message file that is a link is no message: what lies behind it is not the room's and is not read
+            if ((($file.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) -and (Test-Link $file.FullName)) { continue }
             if ($file.Name -cmatch '^([a-z][a-z0-9]{1,15})-([0-9]{4,6})\.md$') {
                 $entries.Add([pscustomobject]@{
                         Id     = ($Matches[1] + '-' + $Agent + '-' + $Matches[2])
@@ -633,7 +653,7 @@ function Undo-Send {
                 if (-not (Test-Path -LiteralPath $toDir)) { $null = New-Item -ItemType Directory -Path $toDir -Force }
                 Move-Item -LiteralPath $from -Destination $to -Force
             }
-            Remove-Item -LiteralPath $Container -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Tree $Container
         }
     }
     catch { $null = $_ }
@@ -722,7 +742,9 @@ function Send-Message {
             $id = '{0}-{1}-{2:0000}' -f $script:Me, $To, $number
             $final = Join-Path $inbox ('{0}-{1:0000}.md' -f $script:Me, $number)
             $wanted = Join-Path $script:FilesDir $id
-            if ([System.IO.File]::Exists($final)) { $number++; continue }
+            # Anything at the final name takes the number, a folder that somebody made there too: the move into place
+            # would fail on it every time
+            if (Test-Path -LiteralPath $final) { $number++; continue }
             # The number is claimed before anything is placed: the claim is created exclusively. A claim older than
             # two minutes is left over from a sender that died: it is removed, and the number is skipped in this
             # attempt.
@@ -743,7 +765,7 @@ function Send-Message {
             }
             # Free only when the claim is ours, no message file has this number, and no folder files\<id> exists
             # (the one this send placed itself on an earlier try of the same number does not count)
-            if ([System.IO.File]::Exists($final) -or ((Test-Path -LiteralPath $wanted) -and $placed -ne $wanted)) {
+            if ((Test-Path -LiteralPath $final) -or ((Test-Path -LiteralPath $wanted) -and $placed -ne $wanted)) {
                 Remove-Entry $claim
                 $claim = ''
                 $number++
@@ -801,8 +823,8 @@ function Send-Message {
             Remove-Entry $claim
             $claim = ''
             # A lost race reports "already exists" or "access denied" depending on the file server: what counts is
-            # whether the final name is there now
-            if ([System.IO.File]::Exists($final)) { $number++; continue }
+            # whether anything is at the final name now
+            if (Test-Path -LiteralPath $final) { $number++; continue }
             $blocked++
             if ($blocked -ge 5) { break }
             Start-Sleep -Milliseconds 300

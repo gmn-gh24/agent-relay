@@ -42,8 +42,10 @@ $rooms = New-Object System.Collections.Generic.List[object]
 foreach ($entry in @(Get-RelayRoomIndex)) {
     $closed = [string](Get-RelayProperty $entry 'closed_utc' '')
     if ($closed -and -not $All) { continue }
-    $isReachable = Test-Path -LiteralPath (Join-Path ([string]$entry.path) 'ROOM')
-    $rooms.Add([pscustomobject]@{ id = $entry.id; state = $(if ($closed) { 'closed' } else { 'open' }); isReachable = $isReachable; coordinator = $entry.coordinator; created_utc = $entry.created_utc; closed_utc = $closed; job = $entry.job; path = $entry.path })
+    # An entry a hand edit or an older index left without a property ends no listing
+    $entryPath = [string](Get-RelayProperty $entry 'path' '')
+    $isReachable = ($entryPath -and (Test-Path -LiteralPath (Join-Path $entryPath 'ROOM')))
+    $rooms.Add([pscustomobject]@{ id = (Get-RelayProperty $entry 'id' ''); state = $(if ($closed) { 'closed' } else { 'open' }); isReachable = $isReachable; coordinator = (Get-RelayProperty $entry 'coordinator' ''); created_utc = (Get-RelayProperty $entry 'created_utc' ''); closed_utc = $closed; job = (Get-RelayProperty $entry 'job' ''); path = $entryPath })
 }
 if ($AsJson) {
     $machines = $null

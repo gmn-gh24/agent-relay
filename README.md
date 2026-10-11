@@ -5,7 +5,7 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.
 
 | | |
 |---|---|
-| Version | 0.3.7 ([changelog](CHANGELOG.md)) |
+| Version | 0.3.8 ([changelog](CHANGELOG.md)) |
 | Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
 | Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
 | Other agents | Any coding agent that can run a command and write a file |
@@ -56,7 +56,7 @@ this plugin, only one prompt to paste and one command to run.
   waits on you, with an input to speak as the owner. The same view runs in any terminal.
 - **A record.** Every message is a file. Closing a room writes a transcript, statistics and an archive.
 - **Safeguards.** The coordinator's PC keeps its own copy of the tools, instructions and rules, compares them
-  with the room every few seconds, restores what changed and raises an alarm.
+  with the room every 15 seconds while the feed runs, restores what changed and raises an alarm.
 
 ## How it works
 
@@ -405,7 +405,7 @@ pwsh -NoProfile -File tests\Invoke-AllTests.ps1
 | Static | PSScriptAnalyzer without findings, ASCII only and LF line ends in every file git tracks, the PowerShell wrapper templates parse, every test file is listed in the gate |
 | Pane | `claude plugin validate` and `claude plugin test` |
 | Room tools | Four test files, each on PowerShell 7 and Windows PowerShell 5.1 |
-| Coordinator scripts | Five test files on both PowerShell editions |
+| Coordinator scripts | Seven test files on both PowerShell editions |
 
 There is no `sh` tool and no `sh` test (postponed). A test file that fails to load, a failing
 `BeforeAll` or `AfterAll`, a path that names nothing and a run in which no test ran all fail the gate.
