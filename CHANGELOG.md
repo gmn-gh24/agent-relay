@@ -1,5 +1,80 @@
 # Changelog
 
+## 0.2.0 (2026-10-11)
+
+A full review of the plugin by five independent readers (each tool, the module, the scripts, the pane and the
+gate), and the fixes, each with a test that fails without it. Owner decisions: `relay.sh` is deferred (frozen as
+in 0.1.1, out of the gate, no longer kept in step with `relay.ps1`); text an agent wrote loses its control
+characters when printed, and nothing else about the output changes; the case rule of `may:` patterns differs
+between the two tools and is documented.
+
+Nothing the coordinator's PC decides by comes from the room, again:
+
+- The coordinator's launcher no longer falls back to the tool's own folder when the room cannot be reached.
+  That folder is this PC's canonical copy: a share that was gone for a moment made the coordinator's tool write
+  its state into it, and the tamper check then put those stale files over the real ones in the room.
+- The agents of a room, and which of them are retired, come from this PC's copy, not from the room's folders.
+  A planted agent folder was a plan owner, got direct lines and showed on the board as "owner must paste the
+  start prompt"; a planted `retired` marker retired a real agent. The seat order of a new open seat comes from
+  the copy too, and a prompt or join command at the top of the room that this PC did not write is moved out.
+- Nothing follows a link in the room. The tamper check, the guarded writes, the archive and `-Remove` never go
+  through a symbolic link or junction (a repair pass could move the owner's own files into quarantine); the room
+  tool refuses a draft, an attach folder or a file of its own that is a link (another agent could make a
+  verb send a private file).
+- The owner's log hashes the bytes it means to send, not a file in the inbox that an agent could swap.
+- A template value can no longer expand another key; PowerShell quoting doubles the typographic quotes too.
+
+Coordinator scripts:
+
+- `Close-RelayRoom -WhatIf` changes nothing (it used to close the room). A close cut short leaves the room
+  closed in the index. The archive is made with literal paths (a `[` in the path no longer breaks it).
+- The room index is read, changed and written by one caller at a time, and an index that cannot be read is an
+  error, never an empty list. Strict reads also for the rules, the plan revision, the lines, the name registry
+  and the templates.
+- `New-RelayRoom` checks every answer before it builds anything and refuses a leftover folder of an earlier
+  attempt; `Add-RelayAgent` refuses an empty list and an unknown agent kind; `Request-RelayOwner -Resolve`
+  refuses a card already answered; `Update-RelayRoom` passes `-Confirm` on; `Test-RelayPackage` deletes only a
+  work folder it made. Relative paths are taken against the PowerShell location. Missing NEXT lines added.
+- The feed says once that the room folder is gone, restores nothing meanwhile, and says when it is back.
+- Text an agent wrote is printed without control, escape and direction characters everywhere.
+
+Time and culture:
+
+- Every time stamp is written in the invariant culture (a dot in fi-FI and the Thai calendar broke the feed).
+- Text that is parsed is compared ordinally. Under th-TH `"room: x".IndexOf(':')` is 0 in .NET with ICU: every
+  key: value file read as empty and the room tool called the room "not reachable" (since 0.1.0).
+- The wait measures time on the UTC clock (a daylight-saving change stopped the heartbeat for an hour).
+
+The room tool `relay.ps1` (package 3.1.0, protocol 3 unchanged):
+
+- The self-audit says NOT COMPARED, with git's reason, when git cannot read an assigned folder, never "nothing
+  changed"; no fsmonitor command of a repository runs.
+- A UTF-16 or UTF-32 draft (what Windows PowerShell 5.1 writes with `>`) is decoded, and the secret check sees
+  it; a draft with NUL characters is refused.
+- One unreadable attachment no longer blocks every later delivery; hidden files are sent and listed.
+- What cannot be read is no changed assignment (the baseline was taken again mid-task); the state is written
+  inside a lock; a damaged proposal line is skipped; paused is said once; `wait -0` is refused; dot files are
+  seen on Linux and macOS.
+- Refactored: the wait loop in four functions, one lease writer, one send undo.
+
+The pane:
+
+- A feed that was replaced can no longer draw into another room's view, and a decision goes only to the room
+  the pane showed. Unbinding stops the feed's process at once; a reload notifies no card again; Approve and
+  Deny cannot both go out; an error note clears when the feed reads the room again.
+- Text is measured in terminal cells (wide characters, emoji); control and direction characters are stripped
+  from every toast; Home and End jump to the ends; a restart keeps the message history; times are local.
+
+The test gate:
+
+- No sh runs and no dash check (deferred, and it says so); Windows PowerShell 5.1 only on Windows.
+- A failing `BeforeAll` or `AfterAll`, a file that does not load, a path that names nothing and a run in which
+  no test ran fail it (`Relay.Gate.Tests.ps1`). Every test file must be listed; the ASCII and line-end check
+  reads what git tracks; the PowerShell wrapper templates are parsed; the pane's validate and tests are steps.
+  `-SkipAnalyzer` and `-SkipPane` run the rest where PSScriptAnalyzer or Claude Code is missing.
+- The suites run on Linux and macOS under PowerShell 7 (dash found there, ps5 offered only on Windows).
+- Eval cases: the must-load cases can fail now, each with an outcome grader.
+
 ## 0.1.1 (2026-10-10)
 
 The room pane, after the owner's first look at a live room:

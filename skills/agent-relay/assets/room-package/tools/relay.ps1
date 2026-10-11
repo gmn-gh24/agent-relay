@@ -29,7 +29,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.0.0'
+$script:ToolVersion = '3.1.0'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
