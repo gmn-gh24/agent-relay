@@ -10,7 +10,9 @@ What the first full CI run on Windows (PowerShell 7 and Windows PowerShell 5.1) 
 - Tests: git in the tests' own repositories ignores git for Windows' LF/CRLF warnings, which Windows
   PowerShell 5.1 turns into errors (a new `Invoke-TestGit` helper); a tree snapshot no longer compares a
   folder's own time, which Windows sets a moment after a copy; a wait is looked at until it listens instead of
-  for a fixed three seconds; the timing margins of the half-written-plan test fit a shared runner; the
+  for a fixed three seconds; the half-written-plan test times five back-to-back pairs of calls (one that waits,
+  one that does not) and takes the median difference, which a burst of load on a shared runner does not move
+  (the smallest of three calls of each kind measured from 0.95 to 4.16 seconds there, for a true 2); the
   graceful-stop test calls `kill` by its path, not an alias.
 - Package and relay.ps1 3.1.2.
 
