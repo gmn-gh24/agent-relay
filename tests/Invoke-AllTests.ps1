@@ -52,6 +52,10 @@
     Leaves out the pane's checks. Without this switch a machine where claude is not on PATH fails the gate;
     with it, the result says pane NOT TESTED.
 
+.PARAMETER Editions
+    Which PowerShell editions run the Pester files: ps7, ps5 or both (the default). CI runs each edition in a
+    job of its own; an edition left out is named on a NOT TESTED line.
+
 .EXAMPLE
     pwsh -File tests\Invoke-AllTests.ps1
 
@@ -74,7 +78,8 @@ param(
     [ValidateRange(1, 16)][int]$PowerShellRuns = 6,
     [ValidateRange(1, 16)][int]$ShellRuns = 2,
     [switch]$SkipAnalyzer,
-    [switch]$SkipPane
+    [switch]$SkipPane,
+    [ValidateSet('ps7', 'ps5')][string[]]$Editions = @('ps7', 'ps5')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -247,9 +252,15 @@ else {
 }
 
 # Pester runs: one process per PowerShell edition and engine
-$pwsh = Get-RelayTestPwsh
+$pwsh = ''
 $windowsPowerShell = ''
-if ($onWindows) {
+if ($Editions -contains 'ps7') {
+    $pwsh = Get-RelayTestPwsh
+    if (-not $pwsh) { $problems.Add('PowerShell 7 was not found: its runs (ps7) were skipped') }
+}
+else { $untested.Add('ps7 NOT TESTED: -Editions') }
+if ($Editions -notcontains 'ps5') { $untested.Add('ps5 NOT TESTED: -Editions') }
+elseif ($onWindows) {
     $candidate = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     if (Test-Path -LiteralPath $candidate -PathType Leaf) { $windowsPowerShell = $candidate }
     else { $problems.Add("Windows PowerShell 5.1 was not found at $candidate`: its runs (ps5) were skipped") }
@@ -258,7 +269,6 @@ else {
     'ps5: not available on this OS (Windows PowerShell 5.1 exists only on Windows), its runs are skipped'
     $untested.Add('ps5 NOT TESTED: not available on this OS')
 }
-if (-not $pwsh) { $problems.Add('PowerShell 7 was not found: its runs (ps7) were skipped') }
 $presentScripts = @($scriptFiles | Where-Object { $missingFiles -notcontains $_ } | ForEach-Object { Join-Path $PSScriptRoot $_ })
 $scriptTests = $presentScripts -join ';'
 $runs = New-Object System.Collections.Generic.List[object]

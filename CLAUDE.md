@@ -17,6 +17,7 @@ All from the repo root, in `pwsh`. Start tests from a folder on a local disk (Pe
 ```
 pwsh -NoProfile -File tests\Invoke-AllTests.ps1                  # the full gate: static, pane, ps7 and ps5 runs
 pwsh -NoProfile -File tests\Invoke-AllTests.ps1 -StaticOnly      # seconds: PSScriptAnalyzer, ASCII/LF, wrapper templates parse, test files listed
+pwsh -NoProfile -File tests\Invoke-AllTests.ps1 -Editions ps7    # the gate with one edition's Pester runs (CI runs ps7 and ps5 as two jobs)
 pwsh -NoProfile -File tests\Invoke-Suite.ps1 -Path tests\Relay.Faults.Tests.ps1 -Engines ps7 -Label 'Faults ps7'   # one file, one engine
 claude plugin validate .        # manifests and hooks module
 claude plugin test .            # the pane's tests (hooks/feed.test.ts)
