@@ -704,6 +704,36 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
 
 Describe 'Shared helpers of the module: fixed time stamps, strict reads, whole writes, links (round 5)' -Tag 'Guard' {
 
+    It 'keeps every time in JSON as the text it was written as, also on PowerShell 7.0 to 7.4' {
+        $text = '{"t":"2026-10-11T18:36:19Z","d":"2026-10-11","n":5,"big":5000000000,"f":1.5,"a":[1,"x"],"o":{"b":true,"z":null,"when":"2026-01-02T03:04:05Z"},"e":[]}'
+        # Under PowerShell 7, the path of the editions without -DateKind is taken also where the edition has it
+        $paths = @($false)
+        if ($PSVersionTable.PSVersion.Major -ge 6) { $paths = @($false, $true) }
+        foreach ($withoutDateKind in $paths) {
+            try {
+                if ($withoutDateKind) { InModuleScope RelayCommon { $script:HasDateKind = $false } }
+                $o = ConvertFrom-RelayJson $text
+                $o.t | Should -BeOfType ([string])
+                $o.t | Should -BeExactly '2026-10-11T18:36:19Z'
+                $o.o.when | Should -BeExactly '2026-01-02T03:04:05Z'
+                $o.d | Should -BeExactly '2026-10-11'
+                $o.n | Should -Be 5
+                $o.big | Should -Be 5000000000
+                $o.f | Should -Be 1.5
+                @($o.a).Count | Should -Be 2
+                $o.a[1] | Should -BeExactly 'x'
+                $o.o.b | Should -BeTrue
+                $null -eq $o.o.z | Should -BeTrue
+                @($o.e).Count | Should -Be 0
+                @($o.PSObject.Properties | ForEach-Object { $_.Name }) | Should -Be @('t', 'd', 'n', 'big', 'f', 'a', 'o', 'e')
+                # An array at the top is handed over item by item
+                @(ConvertFrom-RelayJson '[{"id":"a","created_utc":"2026-10-11T00:00:00Z"},{"id":"b"}]' | ForEach-Object { $_.created_utc }) | Should -Be @('2026-10-11T00:00:00Z', $null)
+                { ConvertFrom-RelayJson '{"a":1} {"b":2}' } | Should -Throw
+            }
+            finally { InModuleScope RelayCommon { $script:HasDateKind = $null } }
+        }
+    }
+
     BeforeEach {
         $case = New-RelayTestId
         $root = Join-Path $TestDrive "helpers-$case"

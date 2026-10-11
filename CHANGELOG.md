@@ -33,6 +33,17 @@ What a review of the design found, and the fixes (room package 3.2.2; running ro
 - Tests: Guard G15 (forged messages), G16 (one-step writes), G17 (the module's error preference), a Scripts test
   that holds the board's open requests against every agent's `show open`, and a Faults race for the lock.
 
+## 0.3.6 (2026-10-11)
+
+Times in JSON under PowerShell 7.0 to 7.4 (no change to the room package):
+
+- `ConvertFrom-RelayJson` kept times as text only with `-DateKind`, which exists from PowerShell 7.5. Under 7.0 to
+  7.4 (7.4 is a long-term release) every time in the room index and the machine state came back as a date and
+  was printed in the local format: the closed time of `Close-RelayRoom.ps1 -ListClosed`, the index, statistics.
+  There the text is now read with Json.NET (which ConvertFrom-Json is built on) with its reading of dates turned
+  off, and handed over in the same shapes. Test in Relay.Guard.Tests.ps1; it also takes that path under 7.5.
+- The README's version line had stayed at 0.3.4.
+
 ## 0.3.5 (2026-10-11)
 
 Wording, after a live room with one elevated agent (no change to the scripts or the room package):
