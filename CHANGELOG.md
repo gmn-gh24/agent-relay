@@ -1,13 +1,23 @@
 # Changelog
 
+## 0.4.3 (2026-10-11)
+
+The release workflow completes a release it left half done (no change to the room package):
+
+- A run that pushed the tag `v<version>` and then failed to publish the GitHub Release left the version without
+  one for good: every later run found the tag and stopped. Now a tag on the commit without its Release gets the
+  Release on the next run; a tag on another commit still means nothing to do. Found by the review of pull
+  request #9.
+- CHANGELOG 0.4.2 says what is tagged: every version from 0.4.1 on, nothing older.
+
 ## 0.4.2 (2026-10-11)
 
 Release tags (no change to the room package):
 
-- Every version now has a tag and a GitHub Release. `.github/workflows/release.yml` runs on every push to
+- Every version from 0.4.1 on has a tag and a GitHub Release. `.github/workflows/release.yml` runs on every push to
   `main`: when the version in `plugin.json` has no tag yet, the commit gets the annotated tag `v<version>` and a
   Release whose notes are that version's section of this file; a version without a section fails the run. A
-  push that bumps nothing does nothing. On demand, with a commit given, it tags that commit: 0.4.1 was tagged
+  push that bumps nothing does nothing. On demand, with a commit given, it tags that commit: 0.4.1 is tagged
   this way after the fact, and nothing older is tagged. Linux only, like the rest of CI.
 - Docs: README (the gate and the conventions) and CLAUDE.md (the release convention).
 
