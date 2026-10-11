@@ -1,7 +1,9 @@
 # Agent kinds
 
 `scripts/agent-kinds.json` is the source: per kind, how it waits (`wake`, `wait_minutes`, `park_after`),
-where its draft file is, and one sentence about waiting that goes into its prompt. A named agent gets its kind
+where its draft file is, one sentence about waiting that goes into its prompt, and for some kinds a
+`coordinator_note`: one line the scripts print once when a seat of that kind is added (Codex: start it with
+full access). A kind that is not in the file is refused. A named agent gets its kind
 in the answers file. An agent from the join prompt names its product; the room tool maps that to a kind
 (`tools/kinds`): an exact kind name first, then any product containing `codex`, `gemini`, `cursor`, `copilot`
 or `claude`, otherwise `generic`.

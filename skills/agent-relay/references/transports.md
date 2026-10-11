@@ -57,7 +57,8 @@ What was measured and what follows from it:
 Planned, not available in this version: `Start-RelayBridge.ps1` on the coordinator's PC, one per SSH agent,
 keeping `~/agent-relay/<room id>/` on the remote machine in step with the room. Until it exists the scripts
 refuse `ssh` as a transport (`the SSH bridge is not built yet: use share or same-pc`), and a Linux or macOS
-machine joins by mounting the share and running `sh '<mount point>/<room id>/join' ...`.
+machine joins by mounting the share and running `sh '<mount point>/<room id>/join' ...` (`relay.sh` is deferred:
+it works as it did in 0.1.1, without the later fixes of `relay.ps1`).
 
 ## Traps seen so far
 

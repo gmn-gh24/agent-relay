@@ -43,10 +43,12 @@ that none was found.
 pwsh -NoProfile -File tests\Invoke-AllTests.ps1
 ```
 
-Static checks (PSScriptAnalyzer without findings, ASCII only, LF line ends, `relay.sh` syntax), then Pester 6:
-the room tools on every engine and the coordinator scripts under PowerShell 7 and Windows PowerShell 5.1.
-A tool change also runs `scripts/Test-RelayPackage.ps1` (the engines talk to each other in one room).
-`relay.ps1` and `relay.sh` change together: a behaviour that exists in one only is a fault.
+Static checks (PSScriptAnalyzer without findings, ASCII only, LF line ends, the wrapper templates parse, every
+test file listed), the pane's checks (`claude plugin validate`, `claude plugin test`), then Pester 6: the room
+tool and the coordinator scripts under PowerShell 7 and Windows PowerShell 5.1. A tool change also runs
+`scripts/Test-RelayPackage.ps1` (the engines talk to each other in one room). `relay.sh` is deferred by the
+owner: it is frozen, not tested and not changed with `relay.ps1`. A lesson that concerns it is recorded as
+"Not changed yet: relay.sh is deferred".
 
 ## Commit
 

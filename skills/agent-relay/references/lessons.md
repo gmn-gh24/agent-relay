@@ -357,3 +357,30 @@ last hour showed:
   before its time. Not changed yet: it may be what a late joiner needs, or it may confuse it.
 - **Names in tests.** Pester expands `<name>` in the title of a test, and two agents whose names begin with
   the same letter are easy to take for each other in a test's output: both cost one agent reruns.
+
+## 2026-10-11: a full review by five readers, and the fixes (no room)
+
+- **Readers who each own one part find what the gates do not.** One reader per tool, one for the module, one
+  for the scripts, one for the pane and the gate: over seventy findings in code that had passed every test,
+  among them a fallback that let a share outage write the coordinator's state into this PC's canonical copy,
+  an agent list read from the room's folders, and a tamper check that followed a planted link and moved the
+  owner's own files into quarantine. The trust boundary breaks where nobody asks "where does this value come
+  from" for the one function that everybody calls. Changed: the roster, the seat order and the launcher's room
+  come from this PC; nothing follows a link in the room.
+- **The culture decides what a string search finds.** `String.IndexOf(string)` compares by the culture: under
+  th-TH on .NET with ICU, `"room: x".IndexOf(':')` is 0, so every key: value file was empty and the room tool
+  called the room unreachable. Nobody had run it under Thai; a test written for time stamps found it. Changed:
+  parsers search for a char or compare ordinally, time stamps use the invariant culture, sorting is by byte.
+- **A test that cannot fail proves nothing, and nor does a gate that counts only what it was told to count.**
+  A failing `AfterAll` passed the gate, a wrong path reported "failed=0", and three eval cases could not fail.
+  Changed: the gate counts block and container failures, refuses a run in which no test ran and every unlisted
+  test file, and each eval case has a grader that can fail.
+- **Pester 6 runs no original command for a call that no filtered mock matches.** A test with only a filtered
+  mock made every other call throw, and the code under test took the throws for findings. A filtered mock gets
+  a default mock beside it.
+- **Builders who cannot run their code hand over untested code.** The parallel builders' isolated sessions
+  could not start PowerShell; four of five branches came back unrun and one test of each kind above failed on
+  the first run. Before handing out work, check that the builders can run the gate where they are; otherwise
+  plan the runs, and the round trips, with whoever can.
+- **Not changed yet: relay.sh is deferred.** The owner took the sh implementation out of the gate. Every fix of
+  0.2.0 in `relay.ps1` has to be carried over to `relay.sh`, with its test, when sh is taken up again.

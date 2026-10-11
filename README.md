@@ -5,7 +5,7 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.
 
 | | |
 |---|---|
-| Version | 0.1.1 ([changelog](CHANGELOG.md)) |
+| Version | 0.2.0 ([changelog](CHANGELOG.md)) |
 | Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
 | Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
 | Other agents | Any coding agent that can run a command and write a file, on Windows, Linux or macOS |
@@ -83,7 +83,9 @@ this plugin, only one prompt to paste and one command to run.
 | Feed | The live stream of the room. It drives the pane, runs the tamper check and shows the coordinator alive. |
 
 Two tools in the room do everything an agent needs: `relay.ps1` (Windows PowerShell 5.1 and PowerShell 7) and
-`relay.sh` (POSIX `sh`, no extra packages). Both behave the same. Every output ends with a `NEXT:` line that
+`relay.sh` (POSIX `sh`, no extra packages). `relay.sh` is deferred: it ships as it was in 0.1.1, is no longer
+tested or kept in step with `relay.ps1`, and lacks the fixes of 0.2.0 (see [Status and
+limitations](#status-and-limitations)). Every output ends with a `NEXT:` line that
 says what to do, so an agent with little context still knows its next step. Message text is never typed on a
 command line: it is written into a draft file, and the verbs take single plain words.
 
@@ -95,7 +97,7 @@ The full protocol is in [`skills/agent-relay/references/protocol.md`](skills/age
 |---|---|
 | Coordinator | Claude Code on Windows; PowerShell 7 (`pwsh`) or Windows PowerShell 5.1 |
 | Agent on Windows | Windows PowerShell 5.1, which is part of Windows |
-| Agent on Linux or macOS | `sh` |
+| Agent on Linux or macOS | `sh` (`relay.sh` is deferred: see Status and limitations) |
 | Everybody | A folder all of them can reach: a local folder for agents on one PC, a file share across machines |
 
 The room pane uses Claude Code's plugin hooks, which are early access. Without them everything else works,
@@ -336,6 +338,7 @@ Give an agent an account with the rights its task needs and no more.
 | "another wait is already running" | The agent's own background wait, or the wait of a session that just ended | Do nothing in the first case; in the second, run `wait` again after 30 seconds |
 | An agent "has not picked up" its messages | Its session ended while it worked | Look at that session; replace or retire the agent |
 | An agent lost its context | Its session was restarted or compacted | It runs `start`, then `wait`: everything it needs is printed again |
+| "your draft is a link" or "your attach folder holds a link" | A symbolic link or junction stands where the agent's own file belongs; the tool never reads or writes through one | Remove the link and put a real file there |
 | Tests fail at once on an agent's machine | Pester does not run from a network folder | Work in a folder on a local disk |
 | `ARCHIVE FAILED` at close | A file of the room could not be read while the archive was made | Run `Close-RelayRoom.ps1 -Room <id>` again. Until it names an archive, keep the room folder |
 
@@ -361,8 +364,8 @@ CHANGELOG.md
 
 ### Prerequisites
 
-PowerShell 7 and Windows PowerShell 5.1, Pester 6, PSScriptAnalyzer, and Git for Windows (the tests run
-`relay.sh` under its `dash`).
+PowerShell 7 and Windows PowerShell 5.1, Pester 6, PSScriptAnalyzer, and Claude Code (the gate runs the
+pane's checks). The PowerShell 7 suites also run on Linux and macOS; Windows PowerShell 5.1 only on Windows.
 
 ### The test gate
 
@@ -374,15 +377,19 @@ pwsh -NoProfile -File tests\Invoke-AllTests.ps1
 
 | Stage | Checks |
 |---|---|
-| Static | PSScriptAnalyzer without findings, ASCII only, LF line ends, `relay.sh` syntax under `dash` |
-| Room tools | Four test files, each on PowerShell 7, Windows PowerShell 5.1 and `sh` |
-| Coordinator scripts | Four test files on both PowerShell editions |
+| Static | PSScriptAnalyzer without findings, ASCII only and LF line ends in every file git tracks, the PowerShell wrapper templates parse, every test file is listed in the gate |
+| Pane | `claude plugin validate` and `claude plugin test` |
+| Room tools | Four test files, each on PowerShell 7 and Windows PowerShell 5.1 |
+| Coordinator scripts | Five test files on both PowerShell editions |
 
-The whole gate takes the better part of an hour: `relay.sh` starts many processes, which is slow on Windows.
-`-StaticOnly` runs the first stage alone. One file on one engine takes a few minutes:
+`relay.sh` is deferred: the gate runs no `sh` and says so. A test file that fails to load, a failing
+`BeforeAll` or `AfterAll`, a path that names nothing and a run in which no test ran all fail the gate.
+`-StaticOnly` runs the first stage alone; `-SkipAnalyzer` and `-SkipPane` run the rest where PSScriptAnalyzer
+or Claude Code is missing, and the result says what was not tested. One file on one engine takes a few
+minutes:
 
 ```
-pwsh -File tests\Invoke-Suite.ps1 -Path tests\Relay.Faults.Tests.ps1 -Engines sh -Label 'Faults sh'
+pwsh -File tests\Invoke-Suite.ps1 -Path tests\Relay.Faults.Tests.ps1 -Engines ps7 -Label 'Faults ps7'
 ```
 
 Start the tests from a folder on a local disk.
@@ -403,16 +410,18 @@ your account; `--no-publish` keeps its report on this PC.
 ### Conventions
 
 - PowerShell that also runs on Windows PowerShell 5.1; ASCII only; LF line ends.
-- Both room tools behave the same: a change to one is a change to the other, with a test on every engine.
+- `relay.ps1` changes with a test on both PowerShell editions. `relay.sh` is deferred and frozen: it is not
+  changed until the sh implementation is taken up again.
 - Every fix comes with a test that fails without it.
 - No real machine, share or account name in a committed file.
 - Every release has an entry in [CHANGELOG.md](CHANGELOG.md).
 
 ## Status and limitations
 
-Built and in use: protocol 3, both room tools, named agents and open seats, the team plan, the board, the
-feed, the pane, the owner's messages and cards, standing rules, the tamper check, closing with transcript,
-statistics and archive.
+Built and in use: protocol 3, the room tool `relay.ps1`, named agents and open seats, the team plan, the board,
+the feed, the pane, the owner's messages and cards, standing rules, the tamper check, closing with transcript,
+statistics and archive. `relay.sh` is deferred: it still ships in every room for agents on Linux and macOS,
+as it was in 0.1.1, without the fixes of 0.2.0, and it is not tested.
 
 | Agent | Status |
 |---|---|
@@ -424,6 +433,7 @@ statistics and archive.
 Known limits:
 
 - The coordinator's side is PowerShell on Windows.
+- `relay.sh` (agents on Linux and macOS with `sh`) is deferred and not kept in step with `relay.ps1`.
 - Every agent has to reach a folder the coordinator's PC reaches too. A machine that shares no folder with
   it cannot take part: `ssh` is refused as a transport.
 - An agent that cannot wait in the background costs a turn for every wait that ends without a message, until

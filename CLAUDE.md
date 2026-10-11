@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Claude Code plugin (`agent-relay`) that lets one session (the "coordinator") hand out work to any number of other
 coding agents through a shared folder (a "room"). There is no build step and no package manager: the product is
-PowerShell scripts, two room tools (`relay.ps1` / `relay.sh`), Markdown instructions, and a TypeScript pane.
+PowerShell scripts, two room tools (`relay.ps1` / `relay.sh`, the latter deferred), Markdown instructions, and a
+TypeScript pane.
 `README.md` is the user-facing document; read its "How it works" and "Security model" sections first.
 
 ## Commands
@@ -14,17 +15,22 @@ PowerShell scripts, two room tools (`relay.ps1` / `relay.sh`), Markdown instruct
 All from the repo root, in `pwsh`. Start tests from a folder on a local disk (Pester 6 fails on network paths).
 
 ```
-pwsh -NoProfile -File tests\Invoke-AllTests.ps1                  # the full gate; takes the better part of an hour
-pwsh -NoProfile -File tests\Invoke-AllTests.ps1 -StaticOnly      # seconds: PSScriptAnalyzer, ASCII/LF check, dash -n on relay.sh
-pwsh -NoProfile -File tests\Invoke-Suite.ps1 -Path tests\Relay.Faults.Tests.ps1 -Engines sh -Label 'Faults sh'   # one file, one engine
+pwsh -NoProfile -File tests\Invoke-AllTests.ps1                  # the full gate: static, pane, ps7 and ps5 runs
+pwsh -NoProfile -File tests\Invoke-AllTests.ps1 -StaticOnly      # seconds: PSScriptAnalyzer, ASCII/LF, wrapper templates parse, test files listed
+pwsh -NoProfile -File tests\Invoke-Suite.ps1 -Path tests\Relay.Faults.Tests.ps1 -Engines ps7 -Label 'Faults ps7'   # one file, one engine
 claude plugin validate .        # manifests and hooks module
 claude plugin test .            # the pane's tests (hooks/feed.test.ts)
 claude plugin eval . --no-publish   # the skill's cases in evals/; each run is a full headless session on the account
 ```
 
 - Engines are `ps7`, `ps5`, `sh`. The four tool test files (`Tool`, `Team`, `Faults`, `Parity`) run once per engine;
-  the four script files (`Scripts`, `Plan`, `Guard`, `Owner`) take no `-Engines`. `RELAY_TEST_ENGINES=sh` narrows a
-  run. `ps5` must be started from `powershell.exe`, the other two from `pwsh`.
+  the five script files (`Scripts`, `Plan`, `Guard`, `Owner`, `Gate`) take no `-Engines`. `RELAY_TEST_ENGINES=sh`
+  narrows a run. `ps5` must be started from `powershell.exe`, the other two from `pwsh`. The gate runs `ps7` and
+  `ps5` (`ps5` on Windows only); `sh` is deferred and runs only when asked for by hand.
+- The gate fails without PSScriptAnalyzer or Claude Code unless `-SkipAnalyzer` / `-SkipPane` is given. The
+  `ps7` suites also run on Linux and macOS (a few tests expect Windows paths or `cmd.exe` and fail there).
+- Pester 6 calls no original command for a call that no `Mock -ParameterFilter` matches: give a filtered mock a
+  default mock beside it.
 - A new test file must also be added to `$toolFiles` or `$scriptFiles` in `tests/Invoke-AllTests.ps1`, or the gate
   never runs it.
 - Iterate with `-StaticOnly` plus the one affected file on the one affected engine; run the whole gate before a commit.
@@ -63,12 +69,17 @@ in a working copy, `%LOCALAPPDATA%\agent-relay` for an installed copy, or `AGENT
   feed round) compares them, restores changes, and quarantines strangers. A new guarded file needs no extra
   registration; a new *kind* of stranger to detect does (see its candidate list).
 - Message text never travels on a command line: it is written to a draft file and the verb takes plain words.
+- Nothing follows a link in the room: an agent can put a symbolic link or a junction anywhere in it. The module
+  lists with `Get-RelayFileTree`, checks paths with `Test-RelayLinkedPath` and deletes with `Remove-RelayTree`;
+  `relay.ps1` refuses a draft, an attach folder or a file of its own that is a link.
 
-### Two tools, one behaviour
+### Two tools, one behaviour (sh deferred)
 
-`relay.ps1` (PowerShell 7 and Windows PowerShell 5.1) and `relay.sh` (POSIX sh, run under dash on Windows) must
-behave identically, including printed lines and the closing `NEXT:` line. A change to one is a change to the
-other, with a test on every engine. `Relay.Parity.Tests.ps1` pins literal expected lines;
+`relay.ps1` (PowerShell 7 and Windows PowerShell 5.1) and `relay.sh` (POSIX sh, run under dash on Windows) were
+built to behave identically, including printed lines and the closing `NEXT:` line. Since 0.2.0 `relay.sh` is
+deferred by the owner: it is frozen as it was in 0.1.1, not tested, and not changed with `relay.ps1`; the
+differences are listed in `references/protocol.md`. Do not edit it until the sh implementation is taken up
+again; then every change since 0.1.1 has to be carried over, with its test. `Relay.Parity.Tests.ps1` pins literal expected lines;
 `scripts/Test-RelayPackage.ps1` has all three engines converse in one room. `RELAY_PAUSE_AT`/`RELAY_PAUSE_DIR` are
 pause points that `Relay.Faults.Tests.ps1` uses to force races; renaming one makes the gate fail on purpose.
 
@@ -77,6 +88,9 @@ pause points that `Relay.Faults.Tests.ps1` uses to force races; renaming one mak
 - **ASCII only in every file**, Markdown and this file included (the static check fails on any byte over 127), and
   **LF line ends** (CRLF only for `*.cmd`/`*.bat`). `tests/fixtures/*.md` are byte fixtures: never reformat them.
 - Scripts must run on **Windows PowerShell 5.1**: no `&&`, `||`, `?:`, `??`, no PS7-only cmdlet parameters.
+- Text that is parsed is compared ordinally: `IndexOf([char]':')`, `StartsWith('x', [StringComparison]::Ordinal)`,
+  `-c` operators where the other reader is exact. String `IndexOf`/`StartsWith`/`EndsWith` follow the culture,
+  and under th-TH `"a: b".IndexOf(':')` is 0. Time stamps go through `Format-RelayUtc` (invariant culture).
   `Set-StrictMode -Version Latest` is on, so initialise every variable. PSScriptAnalyzer must report no
   Error/Warning (only `PSAvoidUsingWriteHost` is excluded); justified exceptions use `SuppressMessageAttribute`.
 - Tests are Pester 6 and run real child processes per engine. Every fix comes with a test that fails without it.
