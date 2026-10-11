@@ -1,6 +1,9 @@
 # The test gate of agent-relay on every push to main, every pull request, and on demand.
-# Windows runs the whole gate: the room tool and the coordinator scripts under PowerShell 7 and Windows
-# PowerShell 5.1, with PSScriptAnalyzer. Linux runs the static checks and the pane's checks quickly.
+# Linux runs the static checks (PSScriptAnalyzer included) and the pane's checks on every commit.
+# Windows runs the Pester files in two jobs side by side: one under PowerShell 7, one under Windows PowerShell
+# 5.1. They are left out when a commit changes only documents that no test reads (the Markdown at the top of the
+# repository, the skill's SKILL.md and references, the eval cases); the room package's Markdown is code.
+# Pester is pinned and kept in the Actions cache.
 # There is no sh tool and no sh test: sh is postponed by the owner. The eval cases never run here: each run is
 # a paid session on the owner's account.
 name: CI
@@ -17,6 +20,9 @@ permissions:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  PESTER_VERSION: '6.2.0'
 
 jobs:
   static:
@@ -50,25 +56,74 @@ jobs:
       - name: Test the pane
         run: claude plugin test .
 
-  gate:
-    name: Gate (Windows, PowerShell 7 and 5.1)
-    runs-on: windows-latest
-    timeout-minutes: 90
+  changes:
+    name: Code or documents only
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.look.outputs.code }}
     steps:
       - uses: actions/checkout@v5
-      - name: Install Pester 6 and PSScriptAnalyzer for PowerShell 7
+        with:
+          fetch-depth: 0
+      - name: Look at the changed files
+        id: look
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          PUSH_BASE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base="$PUSH_BASE"
+          if [ "$EVENT" = "pull_request" ]; then base="$PR_BASE"; fi
+          code=true
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "run on demand: the whole gate"
+          elif [ -z "$base" ] || [ -z "${base//0/}" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "no base commit to compare with ($base): the whole gate"
+          else
+            changed="$(git diff --name-only "$base" HEAD)"
+            printf '%s\n' "$changed"
+            others="$(printf '%s\n' "$changed" | grep -Ev '^$|^[^/]+\.md$|^skills/agent-relay/SKILL\.md$|^skills/agent-relay/references/|^evals/' || true)"
+            if [ -z "$others" ]; then
+              code=false
+              echo "documents only: the Windows gate is left out"
+            fi
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+  gate:
+    name: Gate (Windows, PowerShell ${{ matrix.edition == 'ps7' && '7' || '5.1' }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: [ps7, ps5]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Restore Pester from the cache
+        id: pester
+        uses: actions/cache@v5
+        with:
+          path: ${{ matrix.edition == 'ps7' && '~/Documents/PowerShell/Modules/Pester' || '~/Documents/WindowsPowerShell/Modules/Pester' }}
+          key: pester-${{ runner.os }}-${{ matrix.edition }}-${{ env.PESTER_VERSION }}
+      - name: Install Pester for PowerShell 7
+        if: matrix.edition == 'ps7' && steps.pester.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name Pester -MinimumVersion 6.0.0 -Scope CurrentUser -Force -SkipPublisherCheck
-          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
-      - name: Install Pester 6 for Windows PowerShell 5.1
+          Install-Module -Name Pester -RequiredVersion $env:PESTER_VERSION -Scope CurrentUser -Force -SkipPublisherCheck
+      - name: Install Pester for Windows PowerShell 5.1
+        if: matrix.edition == 'ps5' && steps.pester.outputs.cache-hit != 'true'
         shell: powershell
         run: |
           [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
           Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name Pester -MinimumVersion 6.0.0 -Scope CurrentUser -Force -SkipPublisherCheck
-      - name: The whole gate (the pane is checked on Linux)
+          Install-Module -Name Pester -RequiredVersion $env:PESTER_VERSION -Scope CurrentUser -Force -SkipPublisherCheck
+      - name: The gate for one edition (the analyzer and the pane run on Linux)
         shell: pwsh
-        run: ./tests/Invoke-AllTests.ps1 -SkipPane
+        run: ./tests/Invoke-AllTests.ps1 -SkipPane -SkipAnalyzer -Editions ${{ matrix.edition }}

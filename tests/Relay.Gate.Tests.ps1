@@ -78,3 +78,35 @@ Describe 'Invoke-Suite.ps1 counts every kind of failure (round 5)' -Tag 'Gate' {
         @($run.Lines | Where-Object { $_ -like 'FAILED `[skipped`] no test ran:*' }).Count | Should -Be 1
     }
 }
+
+Describe 'Invoke-AllTests.ps1 runs the editions it is given' -Tag 'Gate' {
+    BeforeAll {
+        $gate = Join-Path $PSScriptRoot 'Invoke-AllTests.ps1'
+
+        function Invoke-Gate {
+            # Invoke-AllTests.ps1 in a child process of this edition: its lines and exit code
+            param([string[]]$Words)
+            $host_ = (Get-Process -Id $PID).Path
+            $arguments = @('-NoProfile', '-NonInteractive')
+            if ($PSVersionTable.PSVersion.Major -lt 6) { $arguments += @('-ExecutionPolicy', 'Bypass') }
+            $output = @(& $host_ @arguments -File $gate @Words 2>&1 | ForEach-Object { [string]$_ })
+            return [pscustomobject]@{ Lines = $output; ExitCode = $LASTEXITCODE }
+        }
+    }
+
+    It 'refuses an edition it does not know' {
+        $run = Invoke-Gate @('-StaticOnly', '-SkipAnalyzer', '-Editions', 'sh')
+        $run.ExitCode | Should -Not -Be 0
+        ($run.Lines -join ' ') | Should -Match 'ps7.*ps5|ValidateSet'
+        @($run.Lines | Where-Object { $_ -like 'GATE *' }).Count | Should -Be 0
+    }
+
+    # On Windows, ps5 alone would run every Pester file under Windows PowerShell: half an hour
+    It 'names the edition it leaves out and fails when that leaves nothing to run' -Skip:([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+        $run = Invoke-Gate @('-SkipAnalyzer', '-SkipPane', '-Editions', 'ps5')
+        $run.ExitCode | Should -BeGreaterThan 0
+        @($run.Lines | Where-Object { $_ -ceq 'ps7 NOT TESTED: -Editions' }).Count | Should -Be 1
+        @($run.Lines | Where-Object { $_ -like '*no Pester run could be started*' }).Count | Should -Be 1
+        @($run.Lines | Where-Object { $_ -like 'RESULT *' }).Count | Should -Be 0
+    }
+}
