@@ -1567,3 +1567,67 @@ Describe 'Test-RelayPackage' -Tag 'Scripts' {
         [System.IO.File]::ReadAllText((Join-Path $folder 'keep.txt')) | Should -Be 'the owner''s'
     }
 }
+
+Describe 'The room tool and the coordinator''s scripts read the same room the same way' -Tag 'Scripts' {
+
+    BeforeAll {
+        function Write-ReaderFile {
+            # A message file put into an inbox by hand, as any agent can
+            param([string]$Room, [string]$Agent, [string]$Name, [string]$Id, [string]$From, [string]$To, [string]$Type, [string]$Re = '')
+            $text = "---`nid: $Id`nfrom: $From`nto: $To`ntype: $Type`nre: $Re`nsubject: by hand`nsent_utc: 2026-10-11T10:00:00Z`nexpects: none`n---`nWritten by hand.`n"
+            $path = Join-Path (Join-Path (Join-Path (Join-Path $Room 'agents') $Agent) 'inbox') $Name
+            [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false)))
+            return $path
+        }
+
+        function Get-ToolOpen {
+            # The ids the room tool says an agent owes a reply to
+            param([string]$Room, [string]$Agent)
+            $result = Invoke-RelayTool -Room $Room -Agent $Agent -Engine $engine -Words @('show', 'open')
+            if ($result.ExitCode -ne 0) { throw "show open failed for ${Agent}: $($result.Output) $($result.Error)" }
+            return @(@($result.Output -split "`n") | Where-Object { $_ -cmatch '^--- (\S+) \|' } | ForEach-Object { if ($_ -cmatch '^--- (\S+) \|') { $Matches[1] } } | Sort-Object)
+        }
+    }
+
+    It 'owes the same requests on the board as in each agent''s own tool, whatever a hand-written file says' {
+        $case = New-RelayTestId
+        $id = "readers-$case"
+        $room = (New-RelayTestRoom -Root (Join-Path $TestDrive $id) -RoomId $id).Path
+        $object = Resolve-RelayRoom $id
+        Start-TestAgent -Room $room -Names @('olivia', 'emma', 'jack')
+        # Requests the tools sent: a task to emma, a question from emma; the question is answered
+        $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "First task`n`nDo it."
+        $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'jack') -Text "Second task`n`nDo it."
+        $asked = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('ask') -Text "A question`n`nWhich one?"
+        $question = ''
+        if ($asked.Output -match 'SENT (emma-olivia-[0-9]+)') { $question = $Matches[1] }
+        $question | Should -Not -BeNullOrEmpty -Because $asked.Output
+        $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('reply', $question) -Text "The first`n`nThat one."
+        # A type in capitals is no task to the tool
+        $null = Write-ReaderFile -Room $room -Agent 'emma' -Name 'olivia-0050.md' -Id 'olivia-emma-0050' -From 'olivia' -To 'emma' -Type 'Task'
+        # A file that claims to come from the owner is never a request
+        $null = Write-ReaderFile -Room $room -Agent 'olivia' -Name 'owner-0050.md' -Id 'owner-olivia-0050' -From 'owner' -To 'olivia' -Type 'task'
+        # A name in capitals is no message to the tool
+        $null = Write-ReaderFile -Room $room -Agent 'jack' -Name 'OLIVIA-0051.md' -Id 'OLIVIA-jack-0051' -From 'OLIVIA' -To 'jack' -Type 'task'
+        # A result for jack's task that went to emma, not to the one who asked: the task stays open
+        $null = Write-ReaderFile -Room $room -Agent 'emma' -Name 'jack-0001.md' -Id 'jack-emma-0001' -From 'jack' -To 'emma' -Type 'result' -Re 'olivia-jack-0001'
+        # A hidden message file (Windows only: elsewhere only a leading dot hides a file, and the tool reads no such
+        # name) is read by the tool, so it is read here too
+        if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+            $hidden = Write-ReaderFile -Room $room -Agent 'emma' -Name 'olivia-0052.md' -Id 'olivia-emma-0052' -From 'olivia' -To 'emma' -Type 'task'
+            [System.IO.File]::SetAttributes($hidden, [System.IO.FileAttributes]::Hidden)
+        }
+        $open = @(Get-RelayOpenRequest @(Get-RelayMessage $object))
+        foreach ($agent in 'olivia', 'emma', 'jack') {
+            $board = @($open | Where-Object { $_.To -ceq $agent } | ForEach-Object { $_.Id } | Sort-Object)
+            $tool = @(Get-ToolOpen -Room $room -Agent $agent)
+            ($board -join ',') | Should -BeExactly ($tool -join ',') -Because "the board and $agent's tool must owe the same"
+        }
+        # And what that is
+        (@(Get-ToolOpen -Room $room -Agent 'jack') -join ',') | Should -BeExactly 'olivia-jack-0001'
+        $expectedEmma = 'olivia-emma-0001'
+        if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { $expectedEmma = 'olivia-emma-0001,olivia-emma-0052' }
+        (@(Get-ToolOpen -Room $room -Agent 'emma') -join ',') | Should -BeExactly $expectedEmma
+        @(Get-ToolOpen -Room $room -Agent 'olivia').Count | Should -Be 0
+    }
+}

@@ -894,7 +894,8 @@ function Read-RelayMessage {
     $to = Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent $Path))
     $from = ''
     $number = ''
-    if ($fileName -match '^([a-z][a-z0-9]{1,15})-([0-9]{4,6})$') { $from = $Matches[1]; $number = $Matches[2] }
+    # Exactly, as the room tool reads the name: a name in capitals is no message
+    if ($fileName -cmatch '^([a-z][a-z0-9]{1,15})-([0-9]{4,6})$') { $from = $Matches[1]; $number = $Matches[2] }
     $fields = @{}
     foreach ($key in 'id', 'from', 'to', 'type', 're', 'subject', 'sent_utc', 'expects') {
         $fields[$key] = ''
@@ -924,8 +925,9 @@ function Get-RelayMessage {
     foreach ($agent in @(Get-RelayRoster $Room -IncludeRetired)) {
         $inbox = Join-Path (Join-Path (Join-Path $Room.Path 'agents') $agent) 'inbox'
         if (-not (Test-Path -LiteralPath $inbox)) { continue }
-        foreach ($file in @(Get-ChildItem -LiteralPath $inbox -Filter '*.md' -File)) {
-            if ($file.Name -notmatch '^[a-z][a-z0-9]{1,15}-[0-9]{4,6}\.md$') { continue }
+        # -Force: a hidden message file is one the room tool reads too
+        foreach ($file in @(Get-ChildItem -LiteralPath $inbox -Filter '*.md' -File -Force)) {
+            if ($file.Name -cnotmatch '^[a-z][a-z0-9]{1,15}-[0-9]{4,6}\.md$') { continue }
             $message = Read-RelayMessage $file.FullName
             if ($null -ne $message) { $messages.Add($message) }
         }
@@ -1006,14 +1008,18 @@ function Add-RelayMessageFile {
     throw "could not find a free message number in $Inbox"
 }
 function Get-RelayOpenRequest {
-    # Tasks, questions and proposals no result or answer names yet, across the whole room
+    # Tasks, questions and proposals no result or answer names yet, across the whole room, by the rule of the room
+    # tool's show open: types and ids compared exactly, a file that claims to come from the owner is never a
+    # request, and a request is closed only by a result or answer of its receiver to the one who asked
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseLiteralInitializerForHashtable', '', Justification = 'Message ids are compared exactly: the table is built with the ordinal comparer, which a literal cannot take')]
     param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Messages)
-    $closed = @{}
-    foreach ($message in $Messages) { if (@('result', 'answer') -contains $message.Type -and $message.Re) { $closed["$($message.From)>$($message.Re)"] = $true } }
+    $closed = New-Object System.Collections.Hashtable -ArgumentList ([System.StringComparer]::Ordinal)
+    foreach ($message in $Messages) { if (@('result', 'answer') -ccontains $message.Type -and $message.Re) { $closed["$($message.From)>$($message.To)>$($message.Re)"] = $true } }
     $open = New-Object System.Collections.Generic.List[object]
     foreach ($message in $Messages) {
-        if (@('task', 'question', 'proposal') -notcontains $message.Type) { continue }
-        if ($closed.ContainsKey("$($message.To)>$($message.Id)")) { continue }
+        if ($message.From -ceq 'owner') { continue }
+        if (@('task', 'question', 'proposal') -cnotcontains $message.Type) { continue }
+        if ($closed.ContainsKey("$($message.To)>$($message.From)>$($message.Id)")) { continue }
         $open.Add($message)
     }
     return @($open.ToArray())
