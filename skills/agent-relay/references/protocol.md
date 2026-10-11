@@ -251,8 +251,8 @@ guarded files too.
 
 `Get-RelayRooms.ps1` prints where it is: `.local/` in the plugin's working copy, or
 `%LOCALAPPDATA%\agent-relay` for an installed copy (`AGENT_RELAY_LOCAL` overrides both). It holds
-`rooms.json` (the room index), `names.json` (which machine and role has which name), `machines.json` (known
-shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `prompts/`, `quarantine/`,
+`rooms.json` (the room index), `names.json` (which named other machine and role has which name, and the
+names handed out lately), `machines.json` (known shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `prompts/`, `quarantine/`,
 `alarms.log`, `stats.json`, `sent.log` (what the coordinator's tool sent), the coordinator's launcher
 (`relay.ps1`, `relay.cmd`) and its `draft.md`;
 `archive/` holds one zip per closed room. None of it is in git.

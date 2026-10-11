@@ -35,6 +35,18 @@ claude plugin eval . --no-publish   # the skill's cases in evals/; each run is a
 - A new test file must also be added to `$toolFiles` or `$scriptFiles` in `tests/Invoke-AllTests.ps1`, or the gate
   never runs it.
 - Iterate with `-StaticOnly` plus the one affected file on the one affected engine; run the whole gate before a commit.
+- Cloud (Linux) sessions: the proxy blocks the PowerShell Gallery (`Install-Module` fails), nuget.org and
+  github.com release assets and git reads are open. Put each module under
+  `~/.local/share/powershell/Modules/<Name>/<version>/`:
+  - `pwsh`: the `powershell-<v>-linux-x64.tar.gz` of a PowerShell GitHub release, unpacked anywhere, `chmod +x`.
+  - Pester: `https://api.nuget.org/v3-flatcontainer/pester/<v>/pester.<v>.nupkg` (a zip; the module files are
+    under `tools/`).
+  - PSScriptAnalyzer is on neither. The VS Code PowerShell extension bundles it:
+    `https://github.com/PowerShell/vscode-powershell/releases/download/v<tag>/powershell-<tag>.vsix` (a zip,
+    `git ls-remote --tags https://github.com/PowerShell/vscode-powershell` lists the tags; take a stable one),
+    module under `extension/modules/PSScriptAnalyzer/<v>/`.
+  Then the gate runs as `-Editions ps7` (there is no `ps5` there). Smoke-test a module change directly with
+  `Import-Module` while the suites run.
 
 ## Architecture
 
