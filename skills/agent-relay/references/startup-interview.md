@@ -84,7 +84,7 @@ For each named agent:
 | May that machine be changed? | `machine_care` | `in-use`; `disposable` only on the owner's word for this job |
 | Anything to know about that machine? | `machine_notes` | none |
 | Which computer name should its introduction show? | `computer` | not checked |
-| Which agent product? | `kind` | `generic`; see `agent-kinds.md` |
+| Which agent product? | `kind` | `generic`; see `agent-kinds.md`. Ask it for a named agent: the kind decides how its prompt tells it to wait. Never choose it, and do not take it from the products a known machine has |
 | How does it reach the room? | `transport` | `same-pc`, or `share` (`ssh` is refused: the bridge is not built) |
 | The room folder as that machine sees it | `room_path` | the path on this PC |
 | What is its field? | `expertise` | none |

@@ -506,3 +506,26 @@ last hour showed:
   instead (a tool that starts a process with lower rights, or a UAC prompt for the owner). That is wrong for
   the same reason as before: the room is there so that such work needs nobody's hands. Ask the owner for a
   second agent. Not changed yet: the startup interview does not ask which accounts a job's runs need.
+
+## 2026-10-11: a room with one elevated agent for one system setting (a live room, as its coordinator reported it)
+
+- **The coordinator guessed the product of a named agent, and guessed wrong.** The owner gave a name, a
+  machine and the rights, not the product. The machine was known to have two products; the coordinator chose
+  one, and the session that arrived was the other, with a prompt that told it to wait the wrong way. The seat
+  had to be issued again. Changed: the startup interview says that the product of a named agent is asked,
+  never chosen, and that the list of products a known machine has is not an answer.
+- **The first session came in not elevated, although the owner had asked for an elevated agent.** The board
+  said so, no work went out, and the owner started a second session as administrator. That worked as meant.
+  Not changed: the start prompt cannot make a terminal elevated; the line to the owner says "Run as
+  administrator" as its own step.
+- **A one-line command with variables failed at parsing, before it did anything.** The agent passed the code
+  to a second shell in double quotes, and its own shell emptied every variable first. A task that names the
+  commands in prose leaves the way to run them open. Changed: the coordinating reference says that code with
+  variables goes into a task as a script to save and run from a file, with the exact command line.
+- **Deleting the folder of a closed room stopped at a confirmation nobody could answer.** The coordinator's
+  shell is not interactive. Changed: the skill's close workflow names `-Confirm:$false` for that step, after
+  the owner chose delete in the session.
+- **The statistics script refused the room once its folder was deleted.** The close workflow removes the
+  folder before the retro, and the retro starts with that script. The numbers were still there, in the file
+  the close saved on this PC. Changed: the self-improvement reference names that file for a room whose folder
+  is gone. Not changed yet: the script does not fall back to it by itself.

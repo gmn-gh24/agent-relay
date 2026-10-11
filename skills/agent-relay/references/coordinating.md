@@ -161,6 +161,9 @@ Three things a task says when they apply:
   written to a file in the agent's own folder, and for the files with the report.
 - **A large part.** Before a team spends rounds on a part of the plan the owner did not ask for by name, ask
   the owner whether it is wanted now. A part that is stopped after three rounds cost three rounds.
+- **Code with variables.** Give it as a script: the lines to save as a file on the agent's own disk, and the
+  exact command line that runs that file. Code handed to a second shell inside quotes loses its variables to
+  the first shell and fails at parsing.
 - **An order that matters.** When the setup steps of a test only work in one order, write the order into the
   first task that needs it, not into the one after the retry.
 - **Clean-up on a guarded host.** An agent's host may refuse a delete whose command line holds several
