@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install PSScriptAnalyzer
         shell: pwsh
         run: |
@@ -45,8 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Install Claude Code
@@ -63,7 +63,7 @@ jobs:
     outputs:
       code: ${{ steps.look.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Look at the changed files
@@ -103,10 +103,10 @@ jobs:
       matrix:
         edition: [ps7, ps5]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Restore Pester from the cache
         id: pester
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ matrix.edition == 'ps7' && '~/Documents/PowerShell/Modules/Pester' || '~/Documents/WindowsPowerShell/Modules/Pester' }}
           key: pester-${{ runner.os }}-${{ matrix.edition }}-${{ env.PESTER_VERSION }}
