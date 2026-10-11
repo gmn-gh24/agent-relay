@@ -546,16 +546,35 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             (Get-Content -LiteralPath (Join-Path $room 'agents\emma\status') -Raw) | Should -Match 'state: parked'
         }
 
-        It 'lets a second wait exit at once and frees the lease of a killed one' {
+        It 'ends a second wait with 4 while the first one stays alive, and frees the lease of a killed one at once' {
             $first = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')
             Start-Sleep -Seconds 3
-            $second = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5') -TimeoutSeconds 20
+            # A second wait waits for the lease as long as a lease lives (35 s); three seconds here
+            $second = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5') -Environment @{ RELAY_LEASE_PATIENCE_SECONDS = '3' } -TimeoutSeconds 30
             $second.ExitCode | Should -Be 4
-            $second.Output | Should -Match 'another wait is already running for emma'
+            $second.Output | Should -Match ('another wait is already running for emma \(its lease was refreshed \d+ s ago by process ' + $first.Process.Id + ' on ')
+            $second.Output | Should -Match 'If it ends without printing anything, run: '
+            $first.Process.HasExited | Should -BeFalse
             $first.Process.Kill()
             $null = $first.Process.WaitForExit(5000)
             $third = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '2') -Environment @{ RELAY_MINUTE_SECONDS = '1' } -TimeoutSeconds 40
             $third.ExitCode | Should -Be 3
+        }
+
+        It 'says that its wait was stopped, and how to listen again, when its host stops it gracefully' {
+            # Ctrl+C or a host's stop lets PowerShell run the wait's cleanup: the lease goes, and before this the wait
+            # ended with exit 0 and no word, so the agent believed it still listened. Sending Ctrl+C to another
+            # process needs a console on Windows; SIGINT does the same on Linux and macOS.
+            if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { Set-ItResult -Skipped -Because 'a Ctrl+C cannot be sent to a child process without a console here'; return }
+            $waiting = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')
+            $until = [DateTime]::UtcNow.AddSeconds(30)
+            while ([DateTime]::UtcNow -lt $until -and (Get-Content -LiteralPath (Join-Path $room 'agents\emma\status') -Raw) -notmatch 'state: listening') { Start-Sleep -Milliseconds 200 }
+            & kill -INT $waiting.Process.Id
+            $stopped = Wait-RelayTool -Handle $waiting -TimeoutSeconds 30
+            $stopped.Output | Should -Match 'your wait was stopped before anything arrived: nothing listens for emma now'
+            $stopped.Output | Should -Match '(?m)^NEXT: run: .+ wait'
+            Test-Path -LiteralPath (Join-Path $room 'agents\emma\wait.lease') | Should -BeFalse
+            (Get-Content -LiteralPath (Join-Path $room 'agents\emma\journal') -Raw) | Should -Match ('wait-end process ' + $waiting.Process.Id + ' code -1')
         }
 
         It 'tells the agent once when the coordinator has gone silent' {

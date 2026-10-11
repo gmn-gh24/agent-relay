@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.1 (2026-10-11)
+
+The wait lease, after an agent in a live room was left without a wait while it believed it had one:
+
+- A second `wait` that finds the lease held no longer gives up at once. It waits up to 35 seconds (the life of a
+  lease plus a margin) and takes over when the holder ends, is killed or stops refreshing. Before, a second wait
+  started while the holder (a wait or a `check`) was ending exited 4 with "do nothing", the holder ended a moment
+  later, and nothing listened for the agent. Exit 4 now comes only from a holder that stays alive, and names its
+  process and host; `check` still answers at once.
+- A wait that ends with no answer (stopped by Ctrl+C or by its host, which removes the lease and used to exit 0 in
+  silence, or broken by an error) prints that nothing listens now and a NEXT line to wait again.
+- The journal records each wait's process (`wait`) and how it ended (`wait-end`).
+- START-HERE, the protocol references, agent kinds and the README say how a second wait behaves now.
+- Room package and relay.ps1 3.1.1. Running rooms: `scripts/Update-RelayRoom.ps1 -Room <id>`.
+
 ## 0.2.0 (2026-10-11)
 
 A full review of the plugin by five independent readers (each tool, the module, the scripts, the pane and the

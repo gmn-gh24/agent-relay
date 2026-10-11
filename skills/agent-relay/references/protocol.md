@@ -152,7 +152,13 @@ on, owner to reviewer).
 ## Waiting
 
 `wait` holds a lease (`wait.lease`: token, generation, host, process id; stale after 30 s without renewal or when
-the process is gone). It uses change events on the inbox plus a rescan every five seconds, and rebuilds the
+the process is gone). A `wait` that finds the lease held waits for it for up to 35 seconds (the life of a lease
+plus a margin) and takes it over when the holder ends, is killed or stops refreshing: a second wait that gave up
+at once left its agent without one whenever the holder (a wait or a `check` that was ending) ended a moment later.
+Only a holder that stays alive all that time ends the second wait with code 4, which names the holder's process
+and host. `check` does not wait for the lease. A wait that ends with no answer (stopped by Ctrl+C or by its host,
+which lets its cleanup run and remove the lease, or broken by an error) prints that nothing listens now and a
+`NEXT:` line to wait again; the journal records each wait's process (`wait`) and how it ended (`wait-end`). It uses change events on the inbox plus a rescan every five seconds, and rebuilds the
 watcher every ten minutes. It returns on: new messages, a proposal's time running out, pause or resume, stop,
 replacement, the coordinator's silence, and its own time limit. A wait whose inbox folder is not there takes the
 room for unreachable (a share that is gone looks the same) and ends with code 2 after thirty minutes of it; a
@@ -237,7 +243,8 @@ shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `pr
   come from the file's place, the "never" lists, the single path of authority through the coordinator, the
   owner's log on this PC, and the tamper check.
 - A wait that outlives its session keeps the lease: no new wait starts for that agent until the old process
-  ends or the agent is replaced (`Add-RelayAgent.ps1 -Replace <name>`).
+  ends or the agent is replaced (`Add-RelayAgent.ps1 -Replace <name>`). A new wait of the same session waits for
+  it for 35 seconds and then says which process holds it.
 - Two callers that both judge the same left-over lock old can each take it. The window is the moment between
   one caller's look and its removal, on a lock that was already left behind by a caller that died.
 - A send that is killed between staging its attachments and creating its message leaves them in

@@ -69,7 +69,7 @@ and does nothing, which is the right thing for it to do. On Windows it runs comm
 5.1. Its draft file lives in its working folder, under the agent's name (`relay-draft-<name>.md`), because two
 agents may share that folder.
 A long command returns control to the model after some seconds and has to be polled; the prompt tells it to
-keep waiting on the same command and not to start a second wait (a second one exits at once with code 4). It
+keep waiting on the same command and not to start a second wait (a second one waits about half a minute for the first and then exits with code 4). It
 reports exit code 1 for a wait that timed out (see above). Files to attach go into the agent's `attach`
 folder in the room, not next to the draft: the instructions name the folder in full since an agent once made
 an `attach` folder in its working folder, which was the root of a share other jobs use.
@@ -83,7 +83,7 @@ off before a minute, lower `wait_minutes` for its seat (answers field) or switch
 |---|---|---|
 | "this tool does not know who you are" | the tool was called directly, not through the wrapper | use the command printed by `start` |
 | "you have not introduced yourself" | a verb before `start` | run `start` |
-| wait exits at once with code 4 | a second wait for the same agent | keep the first one; do not start another |
+| wait exits with code 4 after about half a minute | a second wait while the first is alive (the output names its process) | keep the first one; do not start another |
 | the agent types message text after the verb | habit | the tool refuses anything but single words and says where the draft goes |
 | the agent's wait is killed by its own time limit | `wait_minutes` too long for that product | shorter wait, or `manual` |
 | the agent cannot write its draft | its file tool is confined to its workspace | a draft in its working folder (`draft` in the kind or the answers) |

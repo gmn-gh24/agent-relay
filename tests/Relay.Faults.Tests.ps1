@@ -490,6 +490,33 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
     }
 
     Context 'F4: one wait per agent, also when two start at once' {
+        It 'keeps a second wait that started while the first was ending: it takes over and delivers the next message' {
+            # The case of a real room: an agent started its next wait while the one before was on its way out. The
+            # second wait gave up at once (another wait is running, do nothing), the first ended a moment later, and
+            # nothing listened for the agent until its owner noticed. The first wait is held just before it lets its
+            # lease go, after it has printed its message.
+            if (Skip-WithoutHook 'lease-release') { return }
+            $pause = Open-Pause -Room $room -Point 'lease-release'
+            $first = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5') -Environment $pause
+            Wait-Listening -Room $room | Should -BeTrue
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "First of two`n`nIt wakes the first wait."
+            Wait-ForFile (Join-Path $pause.RELAY_PAUSE_DIR 'lease-release.reached') | Should -BeTrue
+            $second = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')
+            # Longer than one look at a held lease (its lock is tried for three seconds): the second wait had given up by now
+            Start-Sleep -Seconds (6 * $pace)
+            $second.Process.HasExited | Should -BeFalse
+            [System.IO.File]::WriteAllText((Join-Path $pause.RELAY_PAUSE_DIR 'lease-release.go'), 'go')
+            $one = Wait-RelayTool -Handle $first -TimeoutSeconds (60 * $pace)
+            $one.ExitCode | Should -Be 0
+            $one.Output | Should -Match 'First of two'
+            Wait-Listening -Room $room | Should -BeTrue
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Second of two`n`nIt reaches the wait that took over."
+            $two = Wait-RelayTool -Handle $second -TimeoutSeconds (90 * $pace)
+            $two.Output | Should -Not -Match 'another wait is already running'
+            $two.ExitCode | Should -Be 0
+            $two.Output | Should -Match 'Second of two'
+        }
+
         It 'answers as if a wait were running while another call holds the lease lock' {
             Write-Marker -Path (Join-Path $room 'agents\emma\wait.lease.lock') -Held
             $watch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -520,8 +547,9 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $second = $null
             try {
                 Wait-ForFile (Join-Path $pause.RELAY_PAUSE_DIR 'lease-judged.reached') | Should -BeTrue
-                # The second call finds the same dead lease while the first one is between judging it and replacing it
-                $second = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '1')
+                # The second call finds the same dead lease while the first one is between judging it and replacing it.
+                # It does not wait for the lease here (a patience of 0): the race of the lock is what is tested.
+                $second = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '1') -Environment @{ RELAY_LEASE_PATIENCE_SECONDS = '0' }
                 $null = $second.Process.WaitForExit(6 * $pace * 1000)
             }
             finally { [System.IO.File]::WriteAllText((Join-Path $pause.RELAY_PAUSE_DIR 'lease-judged.go'), 'go') }
