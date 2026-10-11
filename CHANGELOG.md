@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.3 (2026-10-11)
+
+How the owner starts the agents, on the owner's word after several live rooms (no change to the room package):
+
+- Codex CLI is started with `codex --yolo` (`codex exec --yolo` headless). Full access alone
+  (`codex --sandbox danger-full-access`, what 0.1.1 said) leaves the approvals on: the remote agent kept asking
+  its user and some commands stayed blocked. The note the scripts print for a Codex seat, the Codex start
+  prompt, the skill, the agent kinds reference and the README say so.
+- Claude Code: for a room without questions and interruptions the owner starts it with
+  `claude --dangerously-skip-permissions`; without it the room works and the owner answers the prompts on that
+  machine. Seats of both Claude Code kinds print a note that says so.
+- Both flags switch the product's own guard off. The coordinator says that to the owner in one line, and only
+  when the job is risky, with the advice to use a virtual machine or a throwaway computer
+  (`references/agent-kinds.md`, "Starting an agent without its own guard"; the README's security model). It
+  never goes to an agent: tests hold the join prompt, the start prompts and the scripts' output to that.
+- The join prompt says what to do when a command is refused, blocked or cannot start: change nothing, stop,
+  tell the owner the exact error, and do not work around it. An agent in a sandbox cannot run `join`, so it
+  never saw the hint of its kind. Running rooms get the new prompt and the new hints with
+  `scripts/Update-RelayRoom.ps1 -Room <id>`.
+
 ## 0.3.2 (2026-10-11)
 
 After a second live room that ran SYSTEM test cycles on a disposable VM:

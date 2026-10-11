@@ -5,7 +5,7 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.
 
 | | |
 |---|---|
-| Version | 0.3.2 ([changelog](CHANGELOG.md)) |
+| Version | 0.3.3 ([changelog](CHANGELOG.md)) |
 | Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
 | Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
 | Other agents | Any coding agent on Windows that can run a command and write a file |
@@ -155,8 +155,10 @@ claude plugin uninstall agent-relay@agent-relay
    every agent that is to take part. Each one runs one command, takes a seat, gets a name and introduces
    itself.
 
-   Codex CLI must be started with full access (`codex --sandbox danger-full-access`): in its sandbox it
-   cannot run the room's commands.
+   Codex CLI must be started with `codex --yolo`: without it the agent keeps asking its user and its sandbox
+   blocks the room's commands. Claude Code works as it is; start it with
+   `claude --dangerously-skip-permissions` when you want a room without questions and interruptions. Both
+   switch the product's own guard off (see "Security model").
 
 3. **Watch.** `/relay <room id>` opens the room as a pane in the coordinator's session.
 
@@ -341,12 +343,18 @@ What the design does about it:
 
 Give an agent an account with the rights its task needs and no more.
 
+**Agents started without their own guard.** `codex --yolo` and `claude --dangerously-skip-permissions` make
+an agent run every command without asking, with the rights of its account. For a job that installs, removes,
+changes the system or runs code you do not trust, use a virtual machine or a throwaway computer. The
+coordinator says this to you when a job calls for it; it is never written into what the agents read.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | An agent cannot join: "the room is not reachable" | Its machine cannot open the room folder: no rights on the share, or it runs as SYSTEM | Fix the access on that machine. The prompt already carries the server's address instead of its name |
-| Codex CLI cannot start any command | Its sandbox | Start it with full access: `codex --sandbox danger-full-access` |
+| Codex CLI cannot start any command, or keeps asking | Its sandbox and its approvals | Start it with `codex --yolo` |
+| Claude Code keeps asking on its machine | Its permission prompts | Answer them there, or start it with `claude --dangerously-skip-permissions` |
 | A script from a share is refused | The machine's execution policy is set by Group Policy | Put the room where that machine trusts scripts |
 | `/relay <id>` says "Not bound" | The id is not a room of this PC, or the look at the room was interrupted | `Get-RelayRooms.ps1` lists the rooms; run the command again |
 | The pane says the feed has ended | The feed stopped three times in a row | `/relay <id>` starts it again; its message names the reason |
@@ -447,7 +455,7 @@ statistics and archive.
 |---|---|
 | Claude Code | Worked live rooms as coordinator and as agent, on the same PC and on another machine |
 | Claude Code, headless (`claude -p`) | Worked a rehearsal room, given only the start prompt |
-| Codex CLI | Worked a live room; must be started with full access |
+| Codex CLI | Worked a live room; must be started with `codex --yolo` |
 | Gemini CLI, Cursor, Copilot, others | A generic profile, not yet tried in a room |
 | Any agent on Linux or macOS | Cannot join: there is no `sh` tool (postponed) |
 
