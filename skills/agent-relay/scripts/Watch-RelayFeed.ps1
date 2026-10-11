@@ -193,19 +193,30 @@ function Write-Feed {
 }
 
 function Get-MessageStamp {
-    # What tells one file in an inbox from another file that later takes the same name: a forged message the tamper
-    # check moved out and the genuine message that gets its number afterwards lie at the same path
+    # How a file in an inbox reads at a glance: its write time and size. A forged message the tamper check moved out
+    # and the genuine message that gets its number afterwards lie at the same path and read differently.
     param([Parameter(Mandatory)]$File)
-    return ('{0}|{1}|{2}' -f $File.FullName, $File.LastWriteTimeUtc.Ticks, $File.Length)
+    return ('{0}|{1}' -f $File.LastWriteTimeUtc.Ticks, $File.Length)
+}
+
+function Test-SameMessage {
+    # True when two readings of a file at one path are one message: the header fields and the text, exactly
+    param([Parameter(Mandatory)]$Held, [Parameter(Mandatory)]$Read)
+    foreach ($name in 'From', 'To', 'Type', 'Re', 'Subject', 'SentUtc', 'Expects', 'Body') {
+        if ([string]$Held.$name -cne [string]$Read.$name) { return $false }
+    }
+    return $true
 }
 
 function Get-NewMessage {
     # Messages that were not printed yet, and the ids of messages whose file is gone from the room (moved out by
-    # the tamper check, or deleted). A message never changes, so each file is read once; it is remembered as
-    # known only by Register-MessageKnown, after it was printed. A file is known by its path, write time and
-    # size, never by its path alone: a file that was moved out and another that takes its name are two messages.
+    # the tamper check, or deleted) or was replaced by another message. A message never changes, so each file is
+    # read once; it is remembered as known only by Register-MessageKnown, after it was printed. A file whose write
+    # time or size reads differently than the last time (Windows may hand out the time and size of a fresh file
+    # in two readings) is read again and compared: the same text is the same message, another text is another
+    # message that took the place of the first.
     $new = New-Object System.Collections.Generic.List[object]
-    $present = @{}
+    $removed = New-Object System.Collections.Generic.List[string]
     foreach ($agent in @(Get-RelayRoster $roomObject -IncludeRetired)) {
         $inbox = Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $agent) 'inbox'
         # Nothing is read through a link in the room: an inbox behind one, or a message file that is one, is not the room's
@@ -214,38 +225,50 @@ function Get-NewMessage {
         foreach ($file in @(Get-ChildItem -LiteralPath $inbox -Filter '*.md' -File -Force)) {
             if ($file.Name -cnotmatch '^[a-z][a-z0-9]{1,15}-[0-9]{4,6}\.md$') { continue }
             if ((($file.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) -and (Test-RelayLink $file.FullName)) { continue }
-            $present[$file.FullName] = $true
+            $path = [string]$file.FullName
             $stamp = Get-MessageStamp $file
-            if ($script:known.ContainsKey($stamp)) { continue }
-            $message = Read-RelayMessage $file.FullName
+            if ($script:known.ContainsKey($path) -and [string]$script:known[$path] -ceq $stamp) { continue }
+            $message = Read-RelayMessage $path
             if ($null -eq $message) { continue }
             $message | Add-Member -NotePropertyName Stamp -NotePropertyValue $stamp
+            if ($script:collected.ContainsKey($path)) {
+                $held = $script:collected[$path]
+                if (Test-SameMessage $held $message) {
+                    # The same message, whose file reads differently now: known under this reading from here on
+                    $held.Stamp = $stamp
+                    if ($script:known.ContainsKey($path)) { $script:known[$path] = $stamp } else { $new.Add($held) }
+                    continue
+                }
+                # Another message at the place of one collected before: the first is gone from the room
+                $null = $script:messages.Remove($held)
+                $script:collected.Remove($path)
+                if ($script:known.ContainsKey($path)) { $script:known.Remove($path); $removed.Add([string]$held.Id) }
+            }
             $new.Add($message)
         }
     }
-    # What was collected and is gone from the room is gone from the feed too, as the board (which reads the room
+    # What was collected and whose file is gone is gone from the feed too, as the board (which reads the room
     # afresh) no longer shows it: an open request it made is no longer open
-    $removed = New-Object System.Collections.Generic.List[string]
     foreach ($message in @($script:messages.ToArray())) {
-        if ($present.ContainsKey([string]$message.Path)) { continue }
+        $path = [string]$message.Path
+        if ([System.IO.File]::Exists($path)) { continue }
         $null = $script:messages.Remove($message)
-        $null = $script:collected.Remove([string]$message.Stamp)
-        $null = $script:known.Remove([string]$message.Stamp)
-        $removed.Add([string]$message.Id)
+        $script:collected.Remove($path)
+        if ($script:known.ContainsKey($path)) { $script:known.Remove($path); $removed.Add([string]$message.Id) }
     }
     $sorted = @($new | Sort-Object Time, Id)
     foreach ($message in $sorted) {
-        if ($script:collected.ContainsKey($message.Stamp)) { continue }
-        $script:collected[$message.Stamp] = $true
+        if ($script:collected.ContainsKey([string]$message.Path)) { continue }
+        $script:collected[[string]$message.Path] = $message
         $script:messages.Add($message)
     }
     return [pscustomobject]@{ New = $sorted; Removed = @($removed.ToArray()) }
 }
 
 function Register-MessageKnown {
-    # What was printed is not printed again
+    # What was printed is not printed again: the path of its file, with the reading it was printed under
     param([object[]]$Message)
-    foreach ($item in @($Message)) { $script:known[[string]$item.Stamp] = $true }
+    foreach ($item in @($Message)) { $script:known[[string]$item.Path] = [string]$item.Stamp }
 }
 function Get-WaitingState {
     $open = @(Get-RelayOpenRequest $script:messages.ToArray())
