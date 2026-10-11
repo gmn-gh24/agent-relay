@@ -386,3 +386,25 @@ last hour showed:
   `relay.sh`, the sh wrappers, the sh engine of the tests and the sh line of the join prompt are gone, and an
   agent on Linux or macOS cannot join. sh (and ssh) is built and tested if and when the need and the time come,
   from `relay.ps1` as it is then; nothing is kept in step with it meanwhile.
+
+## 2026-10-11: an agent without a wait that believed it had one (a live room, one agent of Claude Code)
+
+- **A second wait gave up at once, and the one it gave way to ended a moment later.** The agent kept a wait running
+  in the background while it worked, as its instructions say, and started another when its report's NEXT line
+  told it to. The second exited 4 ("another wait is already running, its lease refreshed 2 s ago: do nothing").
+  Shortly after, the first ended without a word and without its lease, and nothing listened for the agent: a
+  message from the coordinator lay unread until the owner restarted the wait by hand.
+- **The lease of two seconds was not the wait that had just woken the agent.** A wait gives its lease back when
+  it ends (reproduced: no lease right after it exits on a message). A lease refreshed two seconds earlier belongs
+  to a wait that was still alive: the one the agent had started for the work, which refreshes every ten seconds.
+- **A stopped wait ended in silence.** Ctrl+C, or a host that stops a command gracefully, lets PowerShell run the
+  wait's cleanup: the lease goes, the exit code is 0, and nothing is printed (reproduced). A plain kill leaves the
+  lease, and the next wait on that machine frees it at once by the process id. From the outside the silent stop
+  looks exactly like what the owner saw.
+- **Changed:** a second `wait` waits up to 35 seconds for the lease (the life of a lease plus a margin) and takes
+  over when the holder ends; exit 4 now comes only from a holder that stays alive, and names its process. A wait
+  that ends with no answer says that nothing listens and tells the agent to wait again. The journal records each
+  wait's process and how it ended, so the next such case can be read off the room. The NEXT line after a report
+  still says to run `wait`: a second wait is harmless now.
+- **Not changed yet:** the board cannot tell a dead coordinator wait while the feed keeps the coordinator's
+  heartbeat alive. Kept for the review of how the coordinator recovers its wait.

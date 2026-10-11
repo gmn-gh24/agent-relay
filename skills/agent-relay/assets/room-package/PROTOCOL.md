@@ -136,8 +136,10 @@ Exit codes: 0 done or something for you; 1 usage or error; 2 room unreachable; 3
 4 another wait already runs for you; 5 stop (room closed, or you were stopped, replaced or retired); 6 parked.
 
 `wait` also returns when a proposal's time has run out, when you are paused or resumed, and when the
-coordinator has shown no sign of life for some minutes. Only one `wait` runs per agent: a second one exits at
-once.
+coordinator has shown no sign of life for some minutes. Only one `wait` runs per agent: a second one waits up to
+35 seconds for the first to end and then listens in its place; it exits with code 4 only when the first one is
+still alive after that, and says which process it is. A wait that is stopped before anything arrived (Ctrl+C, or
+its host stops it) says so and tells you to run `wait` again.
 
 ## Wake modes
 

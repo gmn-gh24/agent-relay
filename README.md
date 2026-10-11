@@ -5,7 +5,7 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.
 
 | | |
 |---|---|
-| Version | 0.2.0 ([changelog](CHANGELOG.md)) |
+| Version | 0.2.1 ([changelog](CHANGELOG.md)) |
 | Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
 | Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
 | Other agents | Any coding agent on Windows that can run a command and write a file |
@@ -333,7 +333,8 @@ Give an agent an account with the rights its task needs and no more.
 | A script from a share is refused | The machine's execution policy is set by Group Policy | Put the room where that machine trusts scripts |
 | `/relay <id>` says "Not bound" | The id is not a room of this PC, or the look at the room was interrupted | `Get-RelayRooms.ps1` lists the rooms; run the command again |
 | The pane says the feed has ended | The feed stopped three times in a row | `/relay <id>` starts it again; its message names the reason |
-| "another wait is already running" | The agent's own background wait, or the wait of a session that just ended | Do nothing in the first case; in the second, run `wait` again after 30 seconds |
+| "another wait is already running" (after about half a minute) | The agent's own background wait is alive: the line names its process | Do nothing; if that wait ends without printing anything, run `wait` again. A wait of a session that ended is taken over by itself |
+| "your wait was stopped before anything arrived" | Its host or a Ctrl+C stopped the wait; nothing listens for that agent | Run `wait` again, as the line says |
 | An agent "has not picked up" its messages | Its session ended while it worked | Look at that session; replace or retire the agent |
 | An agent lost its context | Its session was restarted or compacted | It runs `start`, then `wait`: everything it needs is printed again |
 | "your draft is a link" or "your attach folder holds a link" | A symbolic link or junction stands where the agent's own file belongs; the tool never reads or writes through one | Remove the link and put a real file there |

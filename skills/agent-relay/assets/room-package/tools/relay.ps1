@@ -29,7 +29,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.1.0'
+$script:ToolVersion = '3.1.1'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -2455,10 +2455,29 @@ function Invoke-Wait {
     $token = [guid]::NewGuid().ToString('N')
     $shareNow = Write-Alive
     $holder = Request-Lease $token $shareNow
+    if ($holder -ge 0 -and -not $Once) {
+        # The lease may belong to a wait or a check that is ending at this moment: a second wait that gave up at once
+        # left the agent without one when that holder ended right after. It waits for the lease as long as a lease
+        # lives, and takes over when the holder ends, is killed or stops refreshing. Only a holder that stays alive
+        # all that time is another running wait.
+        $patience = 35
+        $custom = 0
+        if ([int]::TryParse([string]$env:RELAY_LEASE_PATIENCE_SECONDS, [ref]$custom) -and $custom -ge 0) { $patience = $custom }
+        $askedSince = [DateTime]::UtcNow
+        while ($holder -ge 0 -and ([DateTime]::UtcNow - $askedSince).TotalSeconds -lt $patience) {
+            Start-Sleep -Seconds 1
+            $shareNow = Write-Alive
+            $holder = Request-Lease $token $shareNow
+        }
+    }
     if ($holder -ge 0) {
-        Add-Journal 'second-wait' ''
-        Say "=== another wait is already running for $($script:Me) (its lease was refreshed $holder s ago) ==="
-        Say 'NEXT: if that is your own background wait, do nothing: its exit wakes you. If your session just restarted, run wait again in 30 seconds.'
+        $lease = Get-Lease
+        $holderText = "its lease was refreshed $holder s ago"
+        if ((Get-Value $lease 'pid' '') -and (Get-Value $lease 'host' '')) { $holderText += " by process $(Get-Value $lease 'pid' '') on $(Get-Value $lease 'host' '')" }
+        Add-Journal 'second-wait' $holderText
+        Say "=== another wait is already running for $($script:Me) ($holderText) ==="
+        if ($Once) { Say "NEXT: that wait delivers what arrives; nothing to do now. If no wait of yours is running, run: $(Get-Call) wait$(Get-WaitMode)" }
+        else { Say "NEXT: that wait stayed alive while this one waited for it, so it is yours and it listens for you: do nothing, its exit wakes you. If it ends without printing anything, run: $(Get-Call) wait$(Get-WaitMode)" }
         return 4
     }
     $pollSeconds = 5
@@ -2479,6 +2498,7 @@ function Invoke-Wait {
     $lastSilenceCheck = [DateTime]::MinValue
     $unreachableSince = $null
     $code = -1
+    if (-not $Once) { Add-Journal 'wait' "process $PID listens" }
     Write-Status 'listening' ''
     # While this agent listens, its tab says who it is
     if (-not $Once) { Start-TabTitle -Hold }
@@ -2606,6 +2626,13 @@ function Invoke-Wait {
         }
         Clear-Lease $token
         if ($code -eq 3) { Write-Status 'idle' 'wait timed out' }
+        if (-not $Once) { Add-Journal 'wait-end' "process $PID code $code" }
+        # A wait that ends with no answer (stopped by its host or by Ctrl+C, or broken by an error) says so: an exit
+        # without a word would leave the agent believing it still listens, with nobody listening for it
+        if ($code -lt 0 -and -not $Once) {
+            Say "=== your wait was stopped before anything arrived: nothing listens for $($script:Me) now ==="
+            Say "NEXT: run: $(Get-Call) wait$(Get-WaitMode)"
+        }
     }
     return $code
 }
