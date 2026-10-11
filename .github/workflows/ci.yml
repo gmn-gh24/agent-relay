@@ -1,5 +1,6 @@
 # The static part of the test gate of agent-relay on every push to main, every pull request, and on demand.
-# Linux runs the static checks (PSScriptAnalyzer included) and the pane's checks on every commit.
+# Linux runs the static checks (PSScriptAnalyzer included) on every commit and the pane's checks on every commit
+# that touches what the pane reads.
 # The Pester files (PowerShell 7 and Windows PowerShell 5.1) do not run here: they need Windows, and Windows
 # minutes are the expensive ones. The owner runs them on a dev machine before a commit:
 # tests\Invoke-AllTests.ps1 (the full gate) or -Editions ps7 / ps5.
@@ -20,6 +21,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Both tools are pinned and cached, so a release upstream cannot turn a commit red and a run does not download
+# them again. Bump a version on purpose, in a commit of its own, and run the gate locally with it first.
+env:
+  PSSCRIPTANALYZER_VERSION: '1.24.0'
+  CLAUDE_CODE_VERSION: '2.1.296'
+
 jobs:
   static:
     name: Static checks (Linux)
@@ -27,11 +34,18 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+      - name: Restore PSScriptAnalyzer from the cache
+        id: analyzer
+        uses: actions/cache@v5
+        with:
+          path: ~/.local/share/powershell/Modules/PSScriptAnalyzer
+          key: psscriptanalyzer-${{ runner.os }}-${{ env.PSSCRIPTANALYZER_VERSION }}
       - name: Install PSScriptAnalyzer
+        if: steps.analyzer.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+          Install-Module -Name PSScriptAnalyzer -RequiredVersion $env:PSSCRIPTANALYZER_VERSION -Scope CurrentUser -Force
       - name: Static checks of the gate
         shell: pwsh
         run: ./tests/Invoke-AllTests.ps1 -StaticOnly
@@ -42,12 +56,51 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # The pane's checks only read hooks/, types/, the manifests and the two scripts the pane starts (and what
+      # they import). A commit that touches none of them leaves the rest of this job out; the job stays green.
+      - name: Look at the changed files
+        id: look
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          PUSH_BASE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base="$PUSH_BASE"
+          if [ "$EVENT" = "pull_request" ]; then base="$PR_BASE"; fi
+          pane=true
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "run on demand: the pane checks run"
+          elif [ -z "$base" ] || [ -z "${base//0/}" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "no base commit to compare with ($base): the pane checks run"
+          else
+            changed="$(git diff --name-only "$base" HEAD)"
+            printf '%s\n' "$changed"
+            hits="$(printf '%s\n' "$changed" | grep -E '^hooks/|^types/|^\.claude-plugin/|^skills/agent-relay/scripts/(Watch-RelayFeed\.ps1|Send-RelayOwner\.ps1|RelayCommon\.psm1)$|^\.github/workflows/ci\.yml$' || true)"
+            if [ -z "$hits" ]; then
+              pane=false
+              echo "nothing the pane reads changed: the pane checks are left out"
+            fi
+          fi
+          echo "pane=$pane" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v5
+        if: steps.look.outputs.pane == 'true'
         with:
           node-version: '22'
+      - name: Restore the npm download cache
+        if: steps.look.outputs.pane == 'true'
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-claude-code-${{ env.CLAUDE_CODE_VERSION }}
       - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
+        if: steps.look.outputs.pane == 'true'
+        run: npm install -g @anthropic-ai/claude-code@${{ env.CLAUDE_CODE_VERSION }}
       - name: Validate the plugin
+        if: steps.look.outputs.pane == 'true'
         run: claude plugin validate .
       - name: Test the pane
+        if: steps.look.outputs.pane == 'true'
         run: claude plugin test .
