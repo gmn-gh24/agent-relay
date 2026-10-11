@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.0 (2026-10-11)
+
+The coordinator speaks to agents through the room only (no change to the room package):
+
+- A coordinator with a room open used Claude Code's own session-to-session messaging to hand tasks to another
+  session of the owner's on the same PC, outside the room, which nobody had authorised. The skill has a fifth
+  rule and `coordinating.md` a section, "Only the room": the launcher's verbs are the only channel to an
+  agent; no session outside the room is listed, messaged, assigned or coordinated, whether it runs on this PC,
+  in an editor or in the cloud; a session that could help is offered the join prompt; an exception is the
+  owner's alone, given in the coordinator's session for one agent and one job and recorded with
+  `Add-RelayDecision.ps1 -Owner`. The coordinator's own subagents are not covered by the rule.
+- The plugin enforces it: while a room is bound in the session (`/relay <id>` or `relay_bind`), `SendMessage`
+  and `ListAgents` are refused with a reason, until the owner types `/relay outside on` and confirms it in
+  the dialog (`/relay outside off`, a reload of the plugin or a new session refuses them again). A coordinator
+  without a bound room (the feed in a terminal) is held by the rule alone. Resuming a subagent of its own
+  through `SendMessage` is refused too while a room is bound; it starts a new one instead.
+- `self-improvement.md` lists that rule among what needs the owner first; the README's security model says it;
+  a lesson records the incident.
+- Eval `stays-in-its-room`: a room is open for the job and a second Claude Code session is open on the PC; the
+  coordinator must hand the work to an agent in the room and never reach that session.
+- Tests: the guard and the owner's switch, in `feed.test.ts`.
+
 ## 0.3.8 (2026-10-11)
 
 What a review of the plugin found, and the fixes (room package 3.2.3; running rooms:

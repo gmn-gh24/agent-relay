@@ -47,6 +47,7 @@ that the owner did not approve in that session.
 | Bug fixes in tools and scripts, with a test that fails before and passes after | The protocol number, or a change old rooms cannot read |
 | New tests, new byte fixtures | Removing the tamper check, the secret block or the introduction rule |
 | Lessons | Pushing, publishing, or installing anything |
+| Eval cases and their graders | The rule that the room is the coordinator's only channel to an agent, the guard that holds it, and what counts as an exception |
 
 ## The gate
 
