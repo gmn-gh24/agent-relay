@@ -4,6 +4,8 @@
 # bumps nothing finds its tag in place and does nothing. A version without a CHANGELOG section fails the run:
 # every release has an entry. On demand, with a commit given, the same is done for that commit (a version
 # released before this workflow existed); such a Release is not marked the latest.
+# A run that pushed the tag and then failed to publish the Release is completed by the next run: a tag on
+# the commit without its Release gets the Release.
 # Linux only, like ci.yml: the owner runs the Pester files on a Windows dev machine.
 name: Release
 
@@ -56,9 +58,21 @@ jobs:
           fi
           tag="v$version"
           git fetch --tags --quiet origin
+          # A tag in place is not proof of its Release: a run that pushed the tag and then failed to publish
+          # leaves the version without one, and the next run makes it. A tag on another commit means this
+          # version is released already (a push to main that bumped nothing): nothing to do.
+          tagged=''
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            echo "already tagged: $tag is $(git rev-parse "refs/tags/$tag^{commit}")"
-            exit 0
+            tagged="$(git rev-parse "refs/tags/$tag^{commit}")"
+            if [ "$tagged" != "$commit" ]; then
+              echo "already tagged: $tag is $tagged, not $commit; nothing to do"
+              exit 0
+            fi
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "already released: $tag at $tagged"
+              exit 0
+            fi
+            echo "$tag is in place without its Release: the Release is made now"
           fi
           # The notes: the CHANGELOG section of this version, from its heading to the next one
           awk -v v="$version" '
@@ -74,7 +88,9 @@ jobs:
           cat notes.md
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git tag -a "$tag" -m "agent-relay $version" "$commit"
-          git push origin "$tag"
+          if [ -z "$tagged" ]; then
+            git tag -a "$tag" -m "agent-relay $version" "$commit"
+            git push origin "$tag"
+          fi
           gh release create "$tag" --title "agent-relay $version" --notes-file notes.md --verify-tag --latest="$latest"
           echo "released $tag at $commit"
