@@ -382,5 +382,7 @@ last hour showed:
   could not start PowerShell; four of five branches came back unrun and one test of each kind above failed on
   the first run. Before handing out work, check that the builders can run the gate where they are; otherwise
   plan the runs, and the round trips, with whoever can.
-- **Not changed yet: relay.sh is deferred.** The owner took the sh implementation out of the gate. Every fix of
-  0.2.0 in `relay.ps1` has to be carried over to `relay.sh`, with its test, when sh is taken up again.
+- **sh is removed and postponed.** The owner first took the sh implementation out of the gate, then removed it:
+  `relay.sh`, the sh wrappers, the sh engine of the tests and the sh line of the join prompt are gone, and an
+  agent on Linux or macOS cannot join. sh (and ssh) is built and tested if and when the need and the time come,
+  from `relay.ps1` as it is then; nothing is kept in step with it meanwhile.

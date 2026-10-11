@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Claude Code plugin (`agent-relay`) that lets one session (the "coordinator") hand out work to any number of other
 coding agents through a shared folder (a "room"). There is no build step and no package manager: the product is
-PowerShell scripts, two room tools (`relay.ps1` / `relay.sh`, the latter deferred), Markdown instructions, and a
-TypeScript pane.
+PowerShell scripts, one room tool (`relay.ps1`), Markdown instructions, and a TypeScript pane. There is no sh
+tool: see "One room tool; no sh" below.
 `README.md` is the user-facing document; read its "How it works" and "Security model" sections first.
 
 ## Commands
@@ -23,10 +23,10 @@ claude plugin test .            # the pane's tests (hooks/feed.test.ts)
 claude plugin eval . --no-publish   # the skill's cases in evals/; each run is a full headless session on the account
 ```
 
-- Engines are `ps7`, `ps5`, `sh`. The four tool test files (`Tool`, `Team`, `Faults`, `Parity`) run once per engine;
-  the five script files (`Scripts`, `Plan`, `Guard`, `Owner`, `Gate`) take no `-Engines`. `RELAY_TEST_ENGINES=sh`
-  narrows a run. `ps5` must be started from `powershell.exe`, the other two from `pwsh`. The gate runs `ps7` and
-  `ps5` (`ps5` on Windows only); `sh` is deferred and runs only when asked for by hand.
+- Engines are `ps7` and `ps5`. The four tool test files (`Tool`, `Team`, `Faults`, `Parity`) run once per engine;
+  the five script files (`Scripts`, `Plan`, `Guard`, `Owner`, `Gate`) take no `-Engines`. `RELAY_TEST_ENGINES=ps7`
+  narrows a run. `ps5` must be started from `powershell.exe`, `ps7` from `pwsh`. The gate runs both (`ps5` on
+  Windows only).
 - The gate fails without PSScriptAnalyzer or Claude Code unless `-SkipAnalyzer` / `-SkipPane` is given. The
   `ps7` suites also run on Linux and macOS (a few tests expect Windows paths or `cmd.exe` and fail there).
 - Pester 6 calls no original command for a call that no `Mock -ParameterFilter` matches: give a filtered mock a
@@ -46,7 +46,7 @@ Three parts that share a protocol (currently 3, `skills/agent-relay/assets/room-
    Editing SKILL.md or a reference changes how the coordinator behaves; `evals/` holds cases (prompt + graders)
    for when it must or must not load.
 2. **Room package** - `skills/agent-relay/assets/room-package/` is what every new room gets: `tools/relay.ps1`,
-   `tools/relay.sh`, `PROTOCOL.md`, and `*.tmpl` files expanded per room/agent/seat (`Expand-RelayTemplate`).
+   `PROTOCOL.md`, and `*.tmpl` files expanded per room/agent/seat (`Expand-RelayTemplate`).
    Agents never see the SKILL or the scripts, only this package and one start prompt. A room keeps the package it
    was created with; `Update-RelayRoom.ps1` upgrades a running room.
 3. **Pane** - `hooks/register.tsx` (command `/relay`, tool `relay_bind`, engine integration), `hooks/feed.ts` (pure
@@ -73,16 +73,21 @@ in a working copy, `%LOCALAPPDATA%\agent-relay` for an installed copy, or `AGENT
   lists with `Get-RelayFileTree`, checks paths with `Test-RelayLinkedPath` and deletes with `Remove-RelayTree`;
   `relay.ps1` refuses a draft, an attach folder or a file of its own that is a link.
 
-### Two tools, one behaviour (sh deferred)
+### One room tool; no sh (owner decision, final)
 
-`relay.ps1` (PowerShell 7 and Windows PowerShell 5.1) and `relay.sh` (POSIX sh, run under dash on Windows) were
-built to behave identically, including printed lines and the closing `NEXT:` line. Since 0.2.0 `relay.sh` is
-deferred by the owner: it is frozen as it was in 0.1.1, not tested, and not changed with `relay.ps1`; the
-differences are listed in `references/protocol.md`. Do not edit it until the sh implementation is taken up
-again; then every change since 0.1.1 has to be carried over, with its test. `Relay.Parity.Tests.ps1` pins literal expected lines;
-`scripts/Test-RelayPackage.ps1` has all three engines converse in one room. `RELAY_PAUSE_AT`/`RELAY_PAUSE_DIR` are
-pause points that `Relay.Faults.Tests.ps1` uses to force races; renaming one makes the gate fail on purpose.
+`relay.ps1` (PowerShell 7 and Windows PowerShell 5.1) is the only room tool. Agents run on Windows and call it
+through their wrapper from PowerShell, cmd or Git Bash (`powershell -File` on the `.ps1` wrapper); an answers
+file with `os` other than `windows` or `shell: sh` is refused. `ssh` is refused as a transport.
 
+**There is no sh implementation, and none is planned.** `relay.sh`, the sh wrappers, the sh engine of the tests
+and the sh line of the join prompt were removed in 0.2.0. The owner has postponed sh (and ssh) indefinitely: it
+will be designed, built and tested if and when the need and the time come, at the owner's word. Until then do not
+plan, propose, write or test sh work, do not add sh branches "for later", and do not ask the owner about it again.
+Rooms made before 0.2.0 keep the sh files their canonical copy holds; nothing migrates them.
+
+`Relay.Parity.Tests.ps1` pins literal expected lines; `scripts/Test-RelayPackage.ps1` has both PowerShell
+engines converse in one room. `RELAY_PAUSE_AT`/`RELAY_PAUSE_DIR` are pause points that `Relay.Faults.Tests.ps1`
+uses to force races; renaming one makes the gate fail on purpose.
 
 ## Conventions the gate enforces or relies on
 

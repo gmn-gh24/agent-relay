@@ -17,7 +17,7 @@
     run wait again; 4 another wait already runs for you; 5 stop (room closed, or you were stopped, replaced or
     retired); 6 parked, wait for the owner.
 
-    No param block on purpose: arguments are plain words, exactly as in relay.sh. ASCII only.
+    No param block on purpose: arguments are plain words, and the tool reads them itself. ASCII only.
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -108,6 +108,7 @@ function Get-CallerShell {
     if ($script:Seat -and $script:Seat.Contains('shell') -and $script:Seat['shell']) { $shell = [string]$script:Seat['shell'] }
     $caller = (Get-CallerName).ToLowerInvariant()
     if ($caller) {
+        # Git Bash, or another POSIX shell of Git for Windows or MSYS2: it starts the .ps1 wrapper as Git Bash does
         if (@('bash.exe', 'sh.exe', 'dash.exe', 'zsh.exe') -contains $caller) { $shell = 'bash' }
         elseif (@('pwsh.exe', 'powershell.exe') -contains $caller) { $shell = 'powershell' }
         elseif ($caller -eq 'cmd.exe' -or $script:WrapperStyle -eq 'cmd') { $shell = 'cmd' }
@@ -130,7 +131,7 @@ function ConvertTo-PowerShellLiteral {
 }
 
 function ConvertTo-ShellLiteral {
-    # Text as an sh string in single quotes: a single quote ends the string, is written escaped, and the string goes on
+    # Text as a Git Bash string in single quotes: a single quote ends the string, is written escaped, and the string goes on
     param([string]$Text)
     return ("'" + $Text.Replace("'", "'\''") + "'")
 }
@@ -148,7 +149,6 @@ function Format-Call {
     }
     if ($shell -eq 'cmd') { return '"' + $Wrapper + '"' }
     if ($shell -eq 'bash') { return (ConvertTo-ShellLiteral ($Wrapper -replace '\\', '/')) }
-    if ($shell -eq 'sh') { return 'sh ' + (ConvertTo-ShellLiteral $Wrapper) }
     return '& ' + (ConvertTo-PowerShellLiteral $Wrapper)
 }
 
@@ -510,7 +510,7 @@ function Get-OpenRequest {
         if ($entry.From -eq 'owner') { continue }
         $message = Read-Message $entry.Path
         if ($null -eq $message) { continue }
-        # Types and ids are compared exactly, as relay.sh compares them
+        # Types and ids are compared exactly, with regard to case
         if (@('task', 'question', 'proposal') -cnotcontains $message.Type) { continue }
         if (-not $closedBySender.ContainsKey($entry.From)) {
             $closed = New-Object System.Collections.Hashtable -ArgumentList ([System.StringComparer]::Ordinal)
@@ -606,7 +606,7 @@ function Test-MaySendTo {
     param([string]$To)
     if ($script:IsCoordinator) { return $true }
     if ($To -eq $script:Coordinator) { return $true }
-    # A blank is a space or a tab, nothing else; the name is compared exactly, as relay.sh compares it
+    # A blank is a space or a tab, nothing else; the name is compared exactly, with regard to case
     foreach ($line in ((Read-Text (Join-Path $script:MyDir 'lines')) -split "`n")) { if ($line.Trim(' ', "`t") -ceq $To) { return $true } }
     return $false
 }
@@ -717,9 +717,9 @@ function Send-Message {
             $final = Join-Path $inbox ('{0}-{1:0000}.md' -f $script:Me, $number)
             $wanted = Join-Path $script:FilesDir $id
             if ([System.IO.File]::Exists($final)) { $number++; continue }
-            # The number is claimed before anything is placed: the claim is created exclusively, the same name in
-            # relay.sh. A claim older than two minutes is left over from a sender that died: it is removed, and
-            # the number is skipped in this attempt.
+            # The number is claimed before anything is placed: the claim is created exclusively. A claim older than
+            # two minutes is left over from a sender that died: it is removed, and the number is skipped in this
+            # attempt.
             $claimPath = Join-Path $inbox ('.claim-{0}-{1:0000}' -f $script:Me, $number)
             try {
                 $stream = [System.IO.File]::Open($claimPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
@@ -892,7 +892,7 @@ function Show-NewRule {
 
 function Read-Proposal {
     # One line per proposal: "id minutes seen state". seen is - or seconds since 1970 on this machine's own
-    # clock; state is open, due or closed. The same file format as relay.sh.
+    # clock; state is open, due or closed.
     $list = New-Object System.Collections.Generic.List[object]
     foreach ($line in ((Read-Text (Join-Path $script:MyDir 'proposals')) -split "`n")) {
         $parts = @($line.Trim() -split ' ')
@@ -1296,8 +1296,8 @@ function Save-Baseline {
 }
 
 function Get-AssignmentMark {
-    # A fingerprint of this agent's assignment and assigned paths; relay.sh computes the same one. Empty when one
-    # of the two files is there and cannot be read now: what cannot be read is not a changed assignment.
+    # A fingerprint of this agent's assignment and assigned paths. Empty when one of the two files is there and
+    # cannot be read now: what cannot be read is not a changed assignment.
     $bytes = New-Object System.Collections.Generic.List[byte]
     foreach ($name in 'ASSIGNMENT.md', 'scope') {
         $path = Join-Path $script:MyDir $name
@@ -1453,12 +1453,6 @@ function Get-Audit {
                     $addedKey.Sort([System.StringComparer]::Ordinal)
                     foreach ($key in $addedKey) { $entries.Add("A  $key") }
                 }
-            }
-            elseif (Test-Path -LiteralPath "$base.list") {
-                # relay.sh keeps its baseline in other files; this tool cannot read them
-                $lines.Add("root: $($scope.Root) (the baseline was taken by the other tool: NOT COMPARED)")
-                $skipped++
-                continue
             }
             else {
                 $lines.Add("root: $($scope.Root) (too large to list at start: NOT COMPARED)")
@@ -2065,11 +2059,11 @@ function Request-Seat {
 }
 
 function Enter-FileLock {
-    # A critical section: the lock file is created exclusively (relay.sh makes a folder of that name). Tried every
-    # 200 milliseconds for up to 3 seconds, whatever the reason it cannot be had (it is there, the share is gone,
-    # the folder is not writable, a stale one cannot be removed). A lock older than 15 seconds on the room's clock
-    # was left over from a caller that died and is removed; without the room's time nothing is judged old.
-    # False when the lock could not be taken.
+    # A critical section: the lock file is created exclusively, so a file or a folder of that name keeps it taken.
+    # Tried every 200 milliseconds for up to 3 seconds, whatever the reason it cannot be had (it is there, the
+    # share is gone, the folder is not writable, a stale one cannot be removed). A lock older than 15 seconds on
+    # the room's clock was left over from a caller that died and is removed; without the room's time nothing is
+    # judged old. False when the lock could not be taken.
     param([string]$Lock)
     $began = [DateTime]::UtcNow
     $roomNow = $null
@@ -3010,8 +3004,8 @@ try {
         'wait' {
             $minutes = $script:WaitMinutes
             if (@($tokens).Count -ge 1) {
-                # Digits only, nine at most, as relay.sh takes them: no sign (-0 is no number of minutes). Decimal,
-                # whatever zeros stand in front.
+                # Digits only, nine at most: no sign (-0 is no number of minutes). Decimal, whatever zeros stand in
+                # front.
                 if ($tokens[0] -cnotmatch '^[0-9]{1,9}$') { Exit-WithError 'wait takes a number of minutes, or nothing' "example: $(Get-Call) wait 9" }
                 $minutes = [int]::Parse($tokens[0], [System.Globalization.CultureInfo]::InvariantCulture)
             }

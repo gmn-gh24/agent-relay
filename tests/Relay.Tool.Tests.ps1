@@ -1,11 +1,10 @@
 #Requires -Version 5.1
 
 <#
-    Behaviour of the room tools, the same cases for every engine: relay.ps1 under PowerShell 7 and under Windows
-    PowerShell 5.1, relay.sh under dash. Every tool call is a real child process. Pester 6. ASCII only.
+    Behaviour of the room tool, the same cases for every engine: relay.ps1 under PowerShell 7 and under Windows
+    PowerShell 5.1. Every tool call is a real child process. Pester 6. ASCII only.
 
-    relay.sh is frozen from round 5 on: a case that only relay.ps1 was fixed for skips itself under sh. The last
-    block reads the source of relay.ps1 for what no child process can show (a clock change, an old .NET).
+    The last block reads the source of relay.ps1 for what no child process can show (a clock change, an old .NET).
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester: a variable set in BeforeAll or BeforeEach is read in the It blocks')]
@@ -61,12 +60,12 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $hello['Body'] | Should -Match 'ipv4:\s+\S'
             # What a coordinator hands out work by comes first and in words: the kind of agent with its model
             # and effort, its rights, its shell
-            $card | Should -Match '(?m)^elevation: (elevated|SYSTEM|root|not elevated|not root)'
+            $card | Should -Match '(?m)^elevation: (elevated|SYSTEM|not elevated)'
             $card | Should -Match '(?m)^agent_process:'
             $card | Should -Match '(?m)^shells:'
-            $hello['subject'] | Should -Match '^hello from Emma: test-product, (elevated|SYSTEM|root|not elevated|not root).*, on \S+'
+            $hello['subject'] | Should -Match '^hello from Emma: test-product, (elevated|SYSTEM|not elevated).*, on \S+'
             $hello['Body'] | Should -Match '(?m)^I am Emma, a test-product agent \(model test-model, effort low'
-            $hello['Body'] | Should -Match '(?m)^Rights: (elevated|SYSTEM|root|not elevated|not root)'
+            $hello['Body'] | Should -Match '(?m)^Rights: (elevated|SYSTEM|not elevated)'
             $hello['Body'] | Should -Match '(?m)^Shell: \S'
 
             $again = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('start')
@@ -760,9 +759,8 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         }
     }
 
-    Context 'Round 5: what the tool prints, and how it spells its own command (relay.ps1; relay.sh is frozen)' {
+    Context 'Round 5: what the tool prints, and how it spells its own command' {
         It 'reads a message in the room as UTF-8 only, as the coordinator''s board does: UTF-16 is for drafts' {
-            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
             $text = "---`nid: olivia-emma-0001`nfrom: olivia`nto: emma`ntype: note`nre: `nsubject: Wide subject`nsent_utc: 2026-10-10T08:00:00Z`nexpects: none`n---`nWide text`n"
             [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\inbox\olivia-0001.md'), $text, (New-Object System.Text.UnicodeEncoding($false, $true)))
             $shown = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
@@ -771,7 +769,6 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         }
 
         It 'leaves control, escape and direction characters out of what it prints, and nothing else' {
-            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
             $esc = [string][char]27
             $strays = @($esc, [string][char]7, [string][char]0x9B, [string][char]0x200B, [string][char]0x202E, [string][char]0x2028, [string][char]0xFEFF)
             $subject = 'Clean' + $esc + '[31m red' + [char]0x202E + 'txt'
@@ -786,7 +783,6 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         }
 
         It 'counts and lists the hidden files of an attachment folder too' {
-            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
             $files = Join-Path $room 'files\olivia-emma-0001'
             $null = New-Item -ItemType Directory -Path $files -Force
             [System.IO.File]::WriteAllText((Join-Path $files 'seen.txt'), "seen`n")
@@ -806,7 +802,6 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         }
 
         It 'spells its own command as a literal the shell takes, whatever quotes the path holds' {
-            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
             # PowerShell reads the typographic single quotes as single quotes too; the test file stays ASCII
             $curly = [string][char]0x2019
             $wrapper = Join-Path (Join-Path $room ("o'neil" + $curly + 's room')) 'relay.ps1'
@@ -840,9 +835,7 @@ Describe 'Self-audit on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         [System.IO.File]::WriteAllText((Join-Path $work 'src\a.txt'), "a`n")
         [System.IO.File]::WriteAllText((Join-Path $work 'src\gone.txt'), "gone`n")
         [System.IO.File]::WriteAllText((Join-Path $work 'docs\readme.txt'), "readme`n")
-        $workForTool = $work
-        if ($engine -eq 'sh') { $workForTool = $work -replace '\\', '/' }
-        $agents = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $workForTool; may = @('src/*') }) })
+        $agents = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $work; may = @('src/*') }) })
     }
 
     It 'lists what changed in a plain folder and marks what lies outside the assigned paths' {
@@ -869,7 +862,7 @@ Describe 'Self-audit on <Engine>' -Tag 'Tool' -ForEach $engineCases {
     It 'gives the same paths whether an assigned folder is written in its long or in its short (8.3) form' {
         $short = ''
         try { $short = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($work).ShortPath } catch { $null = $_ }
-        if ($engine -eq 'sh' -or -not $short -or $short -eq $work) { Set-ItResult -Skipped -Because 'this volume gives the folder no short path that differs from its long one'; return }
+        if (-not $short -or $short -eq $work) { Set-ItResult -Skipped -Because 'this volume gives the folder no short path that differs from its long one'; return }
         $shortAgents = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $short; may = @('src/*') }) })
         $room = (New-RelayTestRoom -Root (Join-Path $root "r$number") -RoomId "audit-$engine-$number" -Agents $shortAgents).Path
         foreach ($agent in 'olivia', 'emma') { (Invoke-RelayTool -Room $room -Agent $agent -Engine $engine -Words @('start', 'p', 'm', 'e')).ExitCode | Should -Be 0 }
@@ -896,7 +889,7 @@ Describe 'Self-audit on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         # Changed before the assignment existed: not this assignment's business
         [System.IO.File]::WriteAllText((Join-Path $work 'docs\readme.txt'), "changed before the assignment`n")
         $file = Join-Path $root "assign-$number.json"
-        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -Depth 5 -InputObject ([ordered]@{ role = 'tester'; work = 'testing'; task = 'Run the checks in the work folder.'; done_when = 'A report with the output is sent.'; roots = @(@{ root = $workForTool; may = @('src/*') }) })))
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -Depth 5 -InputObject ([ordered]@{ role = 'tester'; work = 'testing'; task = 'Run the checks in the work folder.'; done_when = 'A report with the output is sent.'; roots = @(@{ root = $work; may = @('src/*') }) })))
         $assigned = (& (Join-Path (Get-RelayTestPath scripts) 'Add-RelayAgent.ps1') -Room $room -Assign $name -AnswersFile $file) -join "`n"
         $assigned | Should -Match "ASSIGNED ${name}: tester \(testing\) on \S+, machine in-use"
 
@@ -921,9 +914,7 @@ Describe 'Self-audit on <Engine>' -Tag 'Tool' -ForEach $engineCases {
     It 'counts every file of a work folder that did not exist at start as added' {
         # An agent told to create its work folder: without this its report read "0 changed" for what it made
         $later = Join-Path $root "later-$number"
-        $laterForTool = $later
-        if ($engine -eq 'sh') { $laterForTool = $later -replace '\\', '/' }
-        $late = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $laterForTool; may = @('*') }) })
+        $late = @([ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $later; may = @('*') }) })
         $room = (New-RelayTestRoom -Root (Join-Path $root "r$number") -RoomId "audit-$engine-$number" -Agents $late).Path
         foreach ($agent in 'olivia', 'emma') { (Invoke-RelayTool -Room $room -Agent $agent -Engine $engine -Words @('start', 'p', 'm', 'e')).ExitCode | Should -Be 0 }
         $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Make things`n`nCreate your work folder and two files."

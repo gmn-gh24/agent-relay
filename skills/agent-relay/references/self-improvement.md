@@ -46,9 +46,9 @@ pwsh -NoProfile -File tests\Invoke-AllTests.ps1
 Static checks (PSScriptAnalyzer without findings, ASCII only, LF line ends, the wrapper templates parse, every
 test file listed), the pane's checks (`claude plugin validate`, `claude plugin test`), then Pester 6: the room
 tool and the coordinator scripts under PowerShell 7 and Windows PowerShell 5.1. A tool change also runs
-`scripts/Test-RelayPackage.ps1` (the engines talk to each other in one room). `relay.sh` is deferred by the
-owner: it is frozen, not tested and not changed with `relay.ps1`. A lesson that concerns it is recorded as
-"Not changed yet: relay.sh is deferred".
+`scripts/Test-RelayPackage.ps1` (the engines talk to each other in one room). There is no `sh` tool and no
+`sh` test: the owner has postponed sh (and ssh). A lesson that would need one is recorded with "Not changed:
+sh is postponed", and nothing is built for it.
 
 ## Commit
 

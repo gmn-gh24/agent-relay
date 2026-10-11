@@ -2,23 +2,24 @@
 
 <#
 .SYNOPSIS
-    Conformance run of the room package: the three engines talk to each other in one room and must agree.
+    Conformance run of the room package: the two engines talk to each other in one room and must agree.
 
 .DESCRIPTION
     Builds a throw-away room on this PC and runs, with every tool call a real child process:
 
-    1. A scripted conversation between three agents and the coordinator in which every seat uses a different
-       engine (relay.ps1 under PowerShell 7, relay.ps1 under Windows PowerShell 5.1, relay.sh under dash), with
-       a task, a question, a proposal, results and a note to all. Every engine must then see the same set of
-       messages with the same headers and the same text, and nobody may owe anything.
+    1. A scripted conversation between three agents and the coordinator in which the seats take the engines in
+       turn (relay.ps1 under PowerShell 7 and relay.ps1 under Windows PowerShell 5.1), with a task, a question,
+       a proposal, results and a note to all. Every engine must then see the same set of messages with the same
+       headers and the same text, and nobody may owe anything.
     2. The team plan: a plan written by hand into the room, progress lines from two seats on different engines,
        the changed plan shown once with the next delivery, and team from every seat, which must print the same
        on every engine apart from the YOU: line.
-    3. A load run: three senders, one per engine, send -Messages messages each to the coordinator at the same
+    3. A load run: three senders, the engines in turn, send -Messages messages each to the coordinator at the same
        time. Nothing may be lost, no id may appear twice, and one wait per receiver must deliver every message
        exactly once.
 
-    An engine that is not installed is left out and named. Exit code 0 when everything agrees, 1 otherwise.
+    An engine that is not installed is left out and named; both are needed, so the run is for Windows. There is
+    no sh engine: sh is postponed by the owner. Exit code 0 when everything agrees, 1 otherwise.
 
 .PARAMETER Messages
     Messages per sender in the load run. Default 50.
@@ -83,7 +84,7 @@ function Get-MessageGraph {
 try {
     $engines = @(Get-RelayTestEngine)
     "engines: $($engines -join ', ')"
-    foreach ($missing in @('ps7', 'ps5', 'sh') | Where-Object { $engines -notcontains $_ }) { "  NOT INSTALLED, left out: $missing" }
+    foreach ($missing in @('ps7', 'ps5') | Where-Object { $engines -notcontains $_ }) { "  NOT INSTALLED, left out: $missing" }
     if ($engines.Count -lt 2) { throw 'The conformance run needs at least two engines' }
 
     # One seat per engine; the coordinator takes the first engine, the agents take the engines in turn
@@ -180,7 +181,7 @@ try {
         'part: tests | jack | todo | tool-ps | - | Tests for both verbs',
         'files: tool-ps | skills/agent-relay/assets/room-package/tools/relay.ps1',
         'files: tests | tests/Relay.Team.Tests.ps1',
-        'note: tool-ps | Output must match relay.sh line for line',
+        'note: tool-ps | Output must match PROTOCOL.md line for line',
         'end: 1'
     ) -join "`n"
     [System.IO.File]::WriteAllText((Join-Path $room 'PLAN'), ($plan + "`n"), (New-Object System.Text.UTF8Encoding($false)))
@@ -231,7 +232,7 @@ try {
         ('  {0,-12}  {1,-8}  {2,-9}  {3}' -f 'tool-ps', 'doing', 'Emma', 'The verbs in relay.ps1'),
         '      reviewer: Henry',
         '      files: skills/agent-relay/assets/room-package/tools/relay.ps1',
-        '      note: Output must match relay.sh line for line',
+        '      note: Output must match PROTOCOL.md line for line',
         ('  {0,-12}  {1,-8}  {2,-9}  {3}' -f 'tests', 'todo', 'Jack', 'Tests for both verbs'),
         '      depends on: tool-ps',
         '      files: tests/Relay.Team.Tests.ps1',
@@ -284,7 +285,7 @@ exit $failed
 '@
     $runnerPath = Join-Path $WorkFolder 'load-runner.ps1'
     [System.IO.File]::WriteAllText($runnerPath, $runner)
-    # henry said bye above; a bye does not stop an agent from sending, and all three engines must take part
+    # henry said bye above; a bye does not stop an agent from sending, and every engine must take part
     $shell = (Get-Process -Id $PID).Path
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($name in $names) {

@@ -18,10 +18,11 @@ or `claude`, otherwise `generic`.
 | `copilot` | `loop`, 1 minute, parks after 10 | untested: generic profile |
 | `generic` | `loop`, 1 minute, parks after 10 | the fallback |
 
-The test suite checks every profile's mechanics (waiting, time-outs, parking, the draft file) on all three
-engines. What it cannot check is how a real agent of that product behaves when it reads the prompts: that is
-what the status column is about. After a product's first room, set its numbers from what was seen and change
-its status line here and in `agent-kinds.json`; that is part of the retro.
+The test suite checks every profile's mechanics (waiting, time-outs, parking, the draft file) on both engines
+(`relay.ps1` under PowerShell 7 and Windows PowerShell 5.1). What it cannot check is how a real agent of that
+product behaves when it reads the prompts: that is what the status column is about. After a product's first
+room, set its numbers from what was seen and change its status line here and in `agent-kinds.json`; that is part
+of the retro.
 
 ## What the wake mode costs
 

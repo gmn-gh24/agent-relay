@@ -13,16 +13,15 @@ which files this PC writes, how the pieces fit, and where state lives.
   DECISIONS.md              standing rules and owner decisions (Add-RelayDecision.ps1 only)
   PLAN                      the team plan: parts, owners, status (Set-RelayPlan.ps1 only); see "The team plan"
   PROTOCOL.md               agents' reference
-  join.cmd, join            only in rooms with open seats
+  join.cmd, join.ps1        only in rooms with open seats
   PROMPT-JOIN.txt           the join prompt; PROMPT-<name>.txt for each named agent
-  tools/relay.ps1           Windows PowerShell 5.1 and PowerShell 7
-  tools/relay.sh            POSIX sh; deferred, see "Where the two tools differ"
+  tools/relay.ps1           the room tool: Windows PowerShell 5.1 and PowerShell 7
   tools/kinds               how each agent kind waits (from agent-kinds.json)
   tools/VERSION
   agents/<name>/
     seat  gen  control  scope  lines  retired        written by this PC, guarded
     START-HERE.md  ASSIGNMENT.md                      written by this PC, guarded
-    g<N>/relay.cmd  g<N>/relay                        written by this PC, guarded
+    g<N>/relay.cmd  g<N>/relay.ps1                    written by this PC, guarded
     claim                                             open seat only: who took it (written by the tool)
     card  status  alive  state  journal  delivered    written by the agent's tool
     proposals  progress  wait.lease  baseline/
@@ -42,7 +41,7 @@ moves a file that does not belong out to `quarantine/`, and logs an alarm in `al
 
 ## Identity
 
-An agent is its wrapper. `g<N>/relay.cmd` (or `g<N>/relay`) sets `RELAY_NAME`, `RELAY_GEN`, `RELAY_ROOM_ID`
+An agent is its wrapper. `g<N>/relay.cmd` (or `g<N>/relay.ps1`) sets `RELAY_NAME`, `RELAY_GEN`, `RELAY_ROOM_ID`
 and `RELAY_WRAPPER` and runs the tool. There is no `-Me` argument to get wrong. A replaced session has an old
 generation in its wrapper; the tool compares it with `gen` and tells it to stop.
 
@@ -54,18 +53,16 @@ starts this PC's canonical copy of the tool. `relay.ps1` takes the room folder f
 is set: a room it cannot reach at that moment (a share that is briefly gone, a mangled path) is "not
 reachable" (exit code 2), as for every agent. It never works on its own place then, which for the launcher is
 this PC's canonical copy: the tamper check would later write that copy's stale files over the room's.
-`relay.sh` (deferred) still takes its own place when `RELAY_ROOM` names a folder without a `ROOM` file.
 
 An open seat has `open: yes` and `wake: auto` in its `seat`. `join` creates `claim` exclusively, so two
 sessions can never get the same seat, then carries on as that agent's `start`.
 
 The `card` is what the tool read off the machine at `start`, plus the three words the agent gave: `product`,
-`model`, `effort`; `agent_process` (the program the agent runs in, from the parent processes); `computer`,
-`ipv4`, `os`, `user`; `elevation` (`elevated`, `SYSTEM`, `not elevated, can elevate (UAC prompt)`,
-`not elevated, no administrator rights`; on Linux `root`, `not root`, `not root, in group <g> (sudo may
-work)`); `shell` (the shell that called, with its version) and `shells` (the others the machine has);
-`host_app`, `process_chain`, `cwd`. The `hello` message says the same in sentences first. On Windows the tool
-also names the terminal tab after the agent (`tab_titles: no` in `ROOM` or `RELAY_NO_TITLE=1` in the agent's
+`model`, `effort`; `agent_process` (the program the agent runs in, from the parent processes); `computer`, `ipv4`,
+`os`, `user`; `elevation` (`elevated`, `SYSTEM`, `not elevated, can elevate (UAC prompt)`, `not elevated, no
+administrator rights`); `shell` (the shell that called, with its version) and `shells` (the others the machine
+has); `host_app`, `process_chain`, `cwd`. The `hello` message says the same in sentences first. On Windows the
+tool also names the terminal tab after the agent (`tab_titles: no` in `ROOM` or `RELAY_NO_TITLE=1` in the agent's
 environment turns that off).
 
 ## Messages
@@ -134,7 +131,7 @@ on, owner to reviewer).
   show it.
 - A plan whose revision is higher than the agent's `plan_seen` is shown once, in front of the `NEXT:` line of
   `start` and of the next delivery. A plan change alone does not end a wait.
-- Both tools and the board read a plan the same way and never fail on one. A line counts only when it starts
+- The tool and the board read a plan the same way and never fail on one. A line counts only when it starts
   with a key and its colon, in lower case; of two `plan:`, `goal:`, `updated_utc:` or `end:` lines the first
   counts; a `part:` line with fewer than six fields or an id seen before is ignored; the title is what follows
   the fifth separator; a revision is a number of one to nine digits above 0 (`007` is 7), anything else means
@@ -154,34 +151,32 @@ on, owner to reviewer).
 
 ## Waiting
 
-`wait` holds a lease (`wait.lease`: token, generation, host, process id; stale after 30 s without renewal or
-when the process is gone). On Windows it uses change events on the inbox plus a rescan every five seconds,
-and rebuilds the watcher every ten minutes; `relay.sh` polls once a second. It returns on: new messages, a
-proposal's time running out, pause or resume, stop, replacement, the coordinator's silence, and its own time
-limit. A wait whose inbox folder is not there takes the room for unreachable (a share that is gone looks the
-same) and ends with code 2 after thirty minutes of it; a folder that comes back starts the count again,
-whether the agent is paused or not. A `control` file that is there but gives no `state:` at that moment (this
-PC writes it by emptying and filling it) says nothing in that round: no pause, no resume, no delivery. A
-number given to `wait` or `propose` is decimal: `wait 08` waits eight minutes.
+`wait` holds a lease (`wait.lease`: token, generation, host, process id; stale after 30 s without renewal or when
+the process is gone). It uses change events on the inbox plus a rescan every five seconds, and rebuilds the
+watcher every ten minutes. It returns on: new messages, a proposal's time running out, pause or resume, stop,
+replacement, the coordinator's silence, and its own time limit. A wait whose inbox folder is not there takes the
+room for unreachable (a share that is gone looks the same) and ends with code 2 after thirty minutes of it; a
+folder that comes back starts the count again, whether the agent is paused or not. A `control` file that is there
+but gives no `state:` at that moment (this PC writes it by emptying and filling it) says nothing in that round: no
+pause, no resume, no delivery. A number given to `wait` or `propose` is decimal: `wait 08` waits eight minutes.
 
-Every age the tools judge (a lease, a lock, a claim, an unreadable file, the coordinator's silence) is the
+Every age the tool judges (a lease, a lock, a claim, an unreadable file, the coordinator's silence) is the
 difference of two times the room's file system gave: the heartbeat the tool has just written, and the file in
 question. When the heartbeat cannot be written or read back, the room's time is not known and nothing is
 judged old in that call; the machine's own clock never stands in for it.
 
-One wait per agent, also when two start together: judging the lease, taking it, refreshing it and giving it
-back each happen inside `wait.lease.lock`, a name created exclusively (a file for `relay.ps1`, a folder for
-`relay.sh`, so each refuses while the other holds it), tried for three seconds and taken away when older than
-fifteen; one that is gone again when its age is asked for was given back, and nothing is removed. A refresh
-writes the first byte of the lease again with the byte it has, so that its time comes from the room's file
-system and not from the machine's clock. A wait confirms its lease that way directly before it says anything
-its agent acts on. A lease that holds another wait's token ends it with code 4 and nothing delivered. A lock
-it cannot get, or a lease that is there but gives no token at that moment, means nothing is known: it says
-nothing in that round and asks again in the next. A lease that is not there at all is written again by the
-wait that asks, inside the lock, and the wait goes on; so is one that has been there without a token for 30
-seconds, because nobody refreshes such a file and a wait that only waited for it would say nothing for good.
-A wait that starts treats a lease without a token as somebody's while it is young, and takes it over after 30
-seconds.
+One wait per agent, also when two start together: judging the lease, taking it, refreshing it and giving it back
+each happen inside `wait.lease.lock`, a file created exclusively (whatever else holds that name keeps the lock
+taken), tried for three seconds and taken away when older than fifteen; one that is gone again when its age is
+asked for was given back, and nothing is removed. A refresh writes the first byte of the lease again with the byte
+it has, so that its time comes from the room's file system and not from the machine's clock. A wait confirms its
+lease that way directly before it says anything its agent acts on. A lease that holds another wait's token ends it
+with code 4 and nothing delivered. A lock it cannot get, or a lease that is there but gives no token at that
+moment, means nothing is known: it says nothing in that round and asks again in the next. A lease that is not
+there at all is written again by the wait that asks, inside the lock, and the wait goes on; so is one that has
+been there without a token for 30 seconds, because nobody refreshes such a file and a wait that only waited for it
+would say nothing for good. A wait that starts treats a lease without a token as somebody's while it is young, and
+takes it over after 30 seconds.
 
 `proposals` is the agent's own note of what it proposed: id, minutes, when the coordinator received it, and
 `open`, `due` or `closed`. The inbox is the authority: an `answer` there closes the proposal whatever the note
@@ -209,7 +204,7 @@ minute is), `RELAY_PAUSE_AT` with `RELAY_PAUSE_DIR` (the tool stops at a named p
   from what lies in the inbox. `Test-RelayOwnerMessage` (the board, the feed) checks every file that claims
   to come from the owner against that log.
 - A message from `owner` in the coordinator's inbox is not acted on by its header. Whatever its type and
-  subject, both tools print for it: look at the board first, act only if it says verified there.
+  subject, the tool prints for it: look at the board first, act only if it says verified there.
 - Cards (`owner/cards/<NNNN>.md` plus `.answer`) are the coordinator's questions to the owner. They live on
   this PC only. The text of a card, and of a standing rule, is read from a file on this PC (by default the
   coordinator's `draft.md` in the machine state); a file inside the room folder is refused.
@@ -245,8 +240,6 @@ shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `pr
   ends or the agent is replaced (`Add-RelayAgent.ps1 -Replace <name>`).
 - Two callers that both judge the same left-over lock old can each take it. The window is the moment between
   one caller's look and its removal, on a lock that was already left behind by a caller that died.
-- What a Linux SMB mount answers for a file's time in the first second after a write is not verified: the
-  ages above were measured on Windows clients and on local folders.
 - A send that is killed between staging its attachments and creating its message leaves them in
   `files/.staging-*`. Nothing reads that folder; it is removed by hand or with the room.
 - Some damage is left for a person to mend, because every way a tool could mend it alone is a guess: a file
@@ -256,33 +249,22 @@ shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `pr
   written) a left-over lock is never taken away, so every call waits its three seconds for it.
 - The SSH bridge is not built: every agent needs a folder that the coordinator's PC can reach too.
 
-## Where the two tools differ
+## Details of the tool
 
-`relay.sh` is deferred: from this version on it is not kept in step with `relay.ps1`, and the tests no longer
-hold it to the same behaviour. Until it is taken up again, the differences below are known, and so is everything `relay.ps1`
-does that this file does not ask of `relay.sh`: the draft, attach-folder and link checks, the UTF-16 and UTF-32
-drafts, the control characters left out of what is printed, `state.lock`, a git that cannot be read at report
-time, and `RELAY_ROOM` without a fallback. An agent uses one tool for the life of its generation.
-
-- The self-audit: each tool keeps its own baseline, and one never compares against the other's. `relay.sh`
-  tells a changed file by its time alone, does not follow folder links and leaves hidden files of Windows
-  out; `relay.ps1` compares size and time, follows links and lists them. Neither lists a file git ignores in
-  a git repository. A git that cannot read the repository makes the folder `NOT COMPARED` in `relay.ps1`, with
-  git's reason; `relay.ps1` also turns off `core.fsmonitor` for every git call, because a repository's own
-  config could otherwise run a command while git looks at the files.
-- The assigned paths (`may:` in `scope`) are matched without regard to case by `relay.ps1` and with regard to
-  case by `relay.sh`.
-- A wait of the other tool for the same agent on the same machine is taken over, not refused: each tool can
-  only ask its own kind of process whether it is alive. The wait that was taken over ends with code 4.
-- A failed move of an attachment names the file in `relay.sh` and gives the system's message in `relay.ps1`.
-- The attach folder: `relay.sh` moves everything in it, empty folders and links too; `relay.ps1` moves the
-  files, hidden ones too, with their folders, and refuses the send when the folder holds a link.
-- A draft that is a link, or that still holds NUL characters once read, is refused by `relay.ps1`. It reads a
-  draft with a byte order mark of UTF-16 or UTF-32 in that encoding; `relay.sh` reads every draft as UTF-8.
-- In a draft, `relay.ps1` takes every Unicode blank for a blank; `relay.sh` a space, a tab and a line end.
-- An age exactly at its limit (two minutes, fifteen seconds) is already over it in `relay.sh`, which counts
-  whole seconds, and not yet in `relay.ps1`.
-- The files of `show <id>` are listed in byte order by both tools; `relay.ps1` names a link there and does not
-  follow it. The keys in `state`, `card` and `status` come in another order.
-- `relay.ps1` compares names, types and ids exactly, as `relay.sh` does, and sorts agents and seats in byte
-  order whatever the culture of the machine; it writes its times with the invariant culture.
+- The self-audit compares the size and time of every file of a plain folder, follows folder links and lists
+  them. In a git repository it never lists a file git ignores. A git that cannot read the repository makes the
+  folder `NOT COMPARED`, with git's reason; `core.fsmonitor` is turned off for every git call, because a
+  repository's own config could otherwise run a command while git looks at the files.
+- The assigned paths (`may:` in `scope`) are matched without regard to case.
+- A failed move of an attachment gives the system's message.
+- The attach folder: the files are moved, hidden ones too, with their folders; the send is refused when the
+  folder holds a link.
+- A draft that is a link, or that still holds NUL characters once read, is refused. A draft with a byte order
+  mark of UTF-16 or UTF-32 is read in that encoding. In a draft every Unicode blank counts as a blank.
+- An age exactly at its limit (two minutes, fifteen seconds) is not yet over it.
+- The files of `show <id>` are listed in byte order; a link there is named and not followed.
+- Names, types and ids are compared exactly; agents and seats are sorted in byte order whatever the culture of
+  the machine; times are written with the invariant culture.
+- There is no sh tool: sh is postponed by the owner, so agents run on Windows. A room made before 0.2.0 may
+  still hold `tools/relay.sh`, a `join` and `g<N>/relay` files from that time; this PC's copy keeps them as
+  they are, and nothing writes them again.

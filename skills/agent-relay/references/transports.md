@@ -35,30 +35,27 @@ What was measured and what follows from it:
   "access denied"; the tools treat both as "taken, try the next".
 - Every agent has two Windows wrappers. PowerShell and Git Bash use `relay.ps1`:
   `powershell -NoProfile -ExecutionPolicy Bypass -File '//address/share/.../relay.ps1' <verb>` (forward
-  slashes work in both). cmd uses `relay.cmd`: `"\\address\share\...\relay.cmd" <verb>`. The tools print the
-  spelling for the wrapper and shell they were called with.
+  slashes work in both). cmd uses `relay.cmd`: `"\\address\share\...\relay.cmd" <verb>`. The tool prints the
+  spelling for the wrapper and shell it was called with.
 - Why two: an agent's working folder is often the share itself, and `cmd.exe` cannot stand in a network
   folder. Through `relay.cmd` every command then prints "UNC paths are not supported", runs in the Windows
   folder, records that as the agent's working folder, and looks for a working-folder draft in the wrong
   place. `relay.ps1` has no `cmd.exe` in between and keeps the folder.
 - Windows PowerShell runs the tool with `-ExecutionPolicy Bypass`. A machine whose policy is set by Group
   Policy can still refuse scripts from a share; the error says so. Then the room has to live somewhere that
-  machine trusts, or the agent uses `relay.sh` from Git Bash.
+  machine trusts.
 - A sandboxed agent may not reach a share at all (Codex CLI in its workspace-write mode does not, whatever
   extra folder is added). Such an agent needs full-access mode, or a room on its own disk.
-- A machine that reaches the share under another path (a mapped drive, a mount point on Linux or macOS)
-  uses that path. The wrappers find the tools relative to themselves, so any path to the same folder works.
-  The join prompt says so for `sh`.
+- A machine that reaches the share under another path (a mapped drive) uses that path. The wrappers find the
+  tool relative to themselves, so any path to the same folder works.
 - An agent running as SYSTEM, or as a user without rights on the share, cannot reach it. Its `join` or
   `start` fails with "the room is not reachable"; the fix is on that machine, by its owner.
 
 ## SSH
 
-Planned, not available in this version: `Start-RelayBridge.ps1` on the coordinator's PC, one per SSH agent,
-keeping `~/agent-relay/<room id>/` on the remote machine in step with the room. Until it exists the scripts
-refuse `ssh` as a transport (`the SSH bridge is not built yet: use share or same-pc`), and a Linux or macOS
-machine joins by mounting the share and running `sh '<mount point>/<room id>/join' ...` (`relay.sh` is deferred:
-it works as it did in 0.1.1, without the later fixes of `relay.ps1`).
+Not built. The owner has postponed an SSH bridge, like sh, until it is needed: it is not planned for any
+version. The scripts refuse `ssh` as a transport (`the SSH bridge is not built yet: use share or same-pc`),
+and a Linux or macOS machine cannot take part at all: there is no `sh` tool.
 
 ## Traps seen so far
 
@@ -71,7 +68,5 @@ it works as it did in 0.1.1, without the later fixes of `relay.ps1`).
 | Windows PowerShell writes a byte order mark into a child's standard input | the first line of piped text is damaged | the scripts read bytes and strip it |
 | Text on a command line | quoting breaks on `$`, backticks, pipes, quotes | text only ever travels in the draft file |
 | JSON read by PowerShell 7 | text that looks like a time becomes a date | `ConvertFrom-RelayJson` keeps it as text |
-| Git's `sh.exe` or `dash.exe` started outside Git Bash | no `cat`, `ls`, `awk` on the path | put Git's `usr\bin` on `PATH` first |
-| An absolute Windows path handed to `relay.sh` | treated as relative | recognised as absolute |
 | An agent works in a folder on the share | it is slow, and some tools do not run there: Pester 6 fails when its working folder is a network path | every agent's instructions say to copy what it needs and work on its own disk |
 | A typed list handed on as `@($list)` in a PowerShell script | "Argument types do not match", and the script ends | the scripts hand on `$list.ToArray()` |

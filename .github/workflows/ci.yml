@@ -1,8 +1,8 @@
 # The test gate of agent-relay on every push to main, every pull request, and on demand.
 # Windows runs the whole gate: the room tool and the coordinator scripts under PowerShell 7 and Windows
 # PowerShell 5.1, with PSScriptAnalyzer. Linux runs the static checks and the pane's checks quickly.
-# relay.sh is deferred (owner decision): the gate runs no sh. The eval cases never run here: each run is a
-# paid session on the owner's account.
+# There is no sh tool and no sh test: sh is postponed by the owner. The eval cases never run here: each run is
+# a paid session on the owner's account.
 name: CI
 
 on:
