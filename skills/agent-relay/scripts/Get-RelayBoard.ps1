@@ -3,7 +3,7 @@
 <#
 .SYNOPSIS
     One view of a room: every agent and its state, what waits on the coordinator, what waits on the owner,
-    open requests, owner messages and alarms.
+    open requests, owner messages, alarms and how many entries the agents recorded with `remember`.
 
 .DESCRIPTION
     The coordinator reads this on every wake. It also verifies each message that claims to come from the owner
@@ -101,6 +101,15 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
             if ($part.status -cne 'done' -and $waits.Count -gt 0) { "      waits for: $($waits -join ', ')" }
             if ($part.reviewer -cne '-') { "      reviewer: $($part.reviewer)" }
         }
+    }
+    # What the agents recorded with `remember`: counted here, read with Get-RelayMemory.ps1
+    if ($board.memory.entries -gt 0) {
+        ''
+        $entryWord = 'entries'
+        if ($board.memory.entries -eq 1) { $entryWord = 'entry' }
+        $agentWord = 'agents'
+        if ($board.memory.authors -eq 1) { $agentWord = 'agent' }
+        "memory: $($board.memory.entries) $entryWord from $($board.memory.authors) $agentWord"
     }
     ''
     # A request whose header names another sender, receiver or number than the place of its file is marked

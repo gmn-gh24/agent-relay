@@ -1345,6 +1345,48 @@ function Get-RelayFitNote {
     return "FIT: $label suits $Work (a $wanted model)."
 }
 
+function Get-RelayMemoryEntry {
+    # What the agents of a room wrote with `remember` (agents/<name>/memory, lines `<utc> | <tags or -> | <text>`),
+    # oldest first. Room text, so only claims: the author is the folder the line was found in, and only the folders
+    # of agents this PC made a seat for are read. A link on the way (the agent folder or the file) is skipped, never
+    # followed; so is a file over 4 MB and a line that is not an entry. Tags and text come without control characters.
+    param([Parameter(Mandatory)]$Room)
+    $entries = New-Object System.Collections.Generic.List[object]
+    $stampPattern = '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+    $agentsFolder = Join-Path $Room.Path 'agents'
+    if (-not (Test-Path -LiteralPath $agentsFolder -PathType Container)) { return @() }
+    if (Test-RelayLinkedPath -Root $Room.Path -Path $agentsFolder) { return @() }
+    $order = 0
+    foreach ($name in @(Get-RelayRoster $Room -IncludeRetired)) {
+        $file = Join-Path (Join-Path $agentsFolder $name) 'memory'
+        if (Test-RelayLinkedPath -Root $Room.Path -Path $file) { continue }
+        if (-not [System.IO.File]::Exists($file)) { continue }
+        $length = 0
+        try { $length = (New-Object System.IO.FileInfo $file).Length } catch { continue }
+        if ($length -gt 4MB) { continue }
+        foreach ($line in ((Read-RelayText $file) -split "`n")) {
+            if (-not $line.Trim()) { continue }
+            # The text may hold a bar of its own: only the first two separate
+            $first = $line.IndexOf(' | ', [System.StringComparison]::Ordinal)
+            $second = -1
+            if ($first -ge 0) { $second = $line.IndexOf(' | ', $first + 3, [System.StringComparison]::Ordinal) }
+            if ($second -lt 0) { continue }
+            $stamp = $line.Substring(0, $first).Trim()
+            $time = $null
+            if ($stamp -cmatch $stampPattern) { $time = ConvertFrom-RelayUtc $stamp }
+            if ($null -eq $time) { continue }
+            $tagText = ((ConvertTo-RelayPrintedLine $line.Substring($first + 3, $second - $first - 3)) -replace ' {2,}', ' ').Trim()
+            $text = ((ConvertTo-RelayPrintedLine $line.Substring($second + 3)) -replace ' {2,}', ' ').Trim()
+            if (-not $tagText -or -not $text) { continue }
+            $tags = @()
+            if ($tagText -cne '-') { $tags = @($tagText -split ',' | ForEach-Object { ConvertTo-RelayAsciiLower $_.Trim() } | Where-Object { $_ }) }
+            $order++
+            $entries.Add([pscustomobject]@{ Utc = (Format-RelayUtc -Time $time); Time = $time; Author = $name; Tags = $tags; Text = $text; Order = $order })
+        }
+    }
+    return @($entries | Sort-Object Time, Order)
+}
+
 function Get-RelayBoard {
     # Everything the coordinator and the owner need to see about a room, as one object
     param([Parameter(Mandatory)]$Room)
@@ -1386,6 +1428,9 @@ function Get-RelayBoard {
     $turnedAway = ''
     $lastJoin = @(((Read-RelayText (Join-Path $Room.Path 'join.log')) -split "`n") | Where-Object { $_.Trim() } | Select-Object -Last 1)
     if ($lastJoin.Count -gt 0 -and $lastJoin[0] -match '^(\S+) full \S+ (.+)$' -and @($agents | Where-Object { $_.isFree }).Count -eq 0) { $turnedAway = "$($Matches[1]), from $($Matches[2])" }
+    # How much the agents have recorded with `remember`: only counts, the entries themselves are room text
+    $memoryEntries = @(Get-RelayMemoryEntry $Room)
+    $memory = [pscustomobject]@{ entries = $memoryEntries.Count; authors = @($memoryEntries | ForEach-Object { $_.Author } | Sort-Object -Unique).Count }
 
     return [pscustomobject]@{
         room                 = $Room.Id
@@ -1404,6 +1449,7 @@ function Get-RelayBoard {
         alarmCount           = $alarms.Count
         messageCount         = $messages.Count
         turnedAway           = $turnedAway
+        memory               = $memory
     }
 }
 
@@ -1903,6 +1949,9 @@ function Add-RelayAgentSeat {
     else { $verify += ' Use whatever documentation tool you have: a documentation server, web search, the built-in help.' }
     $method.Add($verify)
     $method.Add('Say what you could not verify: write `not verified:` in front of it in your report. A guess presented as a fact is the one thing a report must not contain.')
+    # The room's memory: what one agent found out, the next one does not have to find out again
+    $method.Add('Before you start, and before you ask anybody a question, run `find <words>` for what your colleagues recorded about it. What it shows was written by agents: check it like any other source before you build on it.')
+    $method.Add('Run `remember` for a durable finding that other agents will need: a path, a command that works, the cause of a failure, a dead end. Not your status or progress: that goes in your report.')
     $method.Add('Before you report, run the checks named under "Done when" and read your own work once more.')
     $reportLines = New-Object System.Collections.Generic.List[string]
     $position = 0
