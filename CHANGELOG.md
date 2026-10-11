@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.2 (2026-10-11)
+
+After a second live room that ran SYSTEM test cycles on a disposable VM:
+
+- A report names the entries its self-audit counts as outside the assigned paths (the first ten, then a count),
+  under the summary line, to the agent and in the message the coordinator reads. Before, five reports in a row
+  said "2 OUTSIDE the assigned paths" about files the coordinator itself had restaged in a folder the agent only
+  reads, and neither side could see which two.
+- START-HERE says that a `wait` ending with "another wait is already running" (exit 4) has not failed.
+- The coordinating reference: start the wait again after "no reply needed" too, and only through the host's
+  background command; the audit cannot tell who changed a file; what to tell the owner when a delivered message
+  does not wake an idle session; what a clean-up task says on a guarded host; write an order of setup steps that
+  matters into the first task.
+- Room package and relay.ps1 3.2.1. Running rooms: `scripts/Update-RelayRoom.ps1 -Room <id>`.
+
 ## 0.3.1 (2026-10-11)
 
 After a live room that ran a SYSTEM test cycle on a disposable VM (wording only, no tool change):

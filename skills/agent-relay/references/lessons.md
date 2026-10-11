@@ -431,3 +431,35 @@ last hour showed:
   the harness's folder were gone after the run, and a bundle log of a fixed name from an earlier run looked like
   this run's. Not a plugin matter; written here because the pattern (evidence written into a folder the test
   re-creates) will recur: tell the agent in the task where to write what must survive.
+
+## 2026-10-11: a second SYSTEM test room on a disposable VM, twelve hours and a rewrite long (a live room, one agent of Claude Code)
+
+- **The self-audit blamed the agent for the coordinator's files.** The coordinator put new copies of two files
+  into a folder that was one of the agent's read-only roots. Five reports in a row said "2 OUTSIDE the assigned
+  paths", and neither side could tell from the report which two; the agent said so in its bye. Changed: a report
+  names the entries outside the assigned paths under its summary line (the first ten, then a count), to the
+  agent and in the message the coordinator reads; the coordinating reference says that the audit cannot tell who
+  changed a file and that the coordinator names its own. Not changed: the baseline is not taken again when the
+  coordinator changes a root; the coordinator has no way to tell the tool yet.
+- **A second wait that exits 4 still read as a failure, a second time.** Four times for the agent, once for the
+  coordinator, harmless each time. Changed: START-HERE says in one sentence that this outcome is no failure and
+  that the first wait still listens. Not changed: the exit code stays 4, since `check` and the hosts' loop
+  wrappers read it.
+- **A delivered message did not wake an agent whose session sat idle.** The first task was delivered and the
+  agent's wait had ended, the board said "working, woken by 1 message", and nothing followed until the owner
+  spoke to that session; the owner asked whether the message was lost. Changed: the coordinating reference has
+  that board line in its table with what to tell the owner. Not changed: the board does not mark it ATTENTION by
+  itself; "has not picked up" only covers undelivered messages.
+- **The coordinator ended turns without a wait, and once started one that could wake nobody.** After a result
+  that needed no reply the wait was not started again, and a note lay unread until the owner asked. Earlier a
+  wait was started as a detached hidden process: it held the lease and had to be found and stopped. Changed: the
+  loop in the coordinating reference says the wait is started again after "no reply needed" too, and only
+  through the host's background command.
+- **A guarded host cost the clean-up several rounds.** The agent's host refused deletes whose command line held
+  several statements or a path with a space, and a helper process started as another user from a foreground
+  call held that call until it ended. Not a plugin matter. Changed: the coordinating reference lists both under
+  what a task says (one delete per command and the allowed other way; long-lived helpers from a background
+  command), and that an order of setup steps that matters is written into the first task that needs it.
+- **What held:** stop at the first unexpected result with a precise question, a short pass or fail table per
+  report, one folder with the files under test and their hashes for the agent to confirm, fixes returned between
+  rounds. Seven requests, all answered, none asked twice, no owner card.

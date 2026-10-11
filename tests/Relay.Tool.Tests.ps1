@@ -874,6 +874,11 @@ Describe 'Self-audit on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $report = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('report') -Text "Done`n`n1. Result: done."
         $report.ExitCode | Should -Be 0
         $report.Output | Should -Match 'self-audit: 4 changed since start, 1 OUTSIDE the assigned paths'
+        # The report itself names the entry outside, to the agent and in the message the coordinator reads
+        $report.Output | Should -Match '(?m)^  OUTSIDE  M  docs/readme\.txt  \(in .+\)\s*$'
+        $message = (Get-Content -LiteralPath (Join-Path $room 'agents\olivia\inbox\emma-0002.md') -Raw) -replace "`r", ''
+        $message | Should -Match '(?m)^  OUTSIDE  M  docs/readme\.txt  \(in .+\)$'
+        $message | Should -Not -Match '(?m)^  ok       M  src/a\.txt'
         $audit = (Get-Content -LiteralPath (Join-Path $room 'files\emma-olivia-0002\self-audit.txt') -Raw) -replace "`r", ''
         $audit | Should -Match '(?m)^  ok       M  src/a\.txt$'
         $audit | Should -Match '(?m)^  ok       A  src/new\.txt$'
