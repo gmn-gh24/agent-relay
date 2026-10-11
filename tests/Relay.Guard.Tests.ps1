@@ -10,7 +10,8 @@
     stamps do not depend on the culture, the owner's log hashes the bytes meant to be sent, templates expand in
     one pass, the launcher survives a folder outside ASCII, every PowerShell quote is doubled, and the feed says
     once that a room folder cannot be reached. A message under the coordinator's name counts only when the
-    coordinator's own tool sent it: the tamper check moves out one that is not on this PC's record (G15).
+    coordinator's own tool sent it: the tamper check moves out one that is not on this PC's record (G15). A guarded
+    file in the room is replaced in one step, so that an agent's tool never reads a part of it (G16).
     Runs under PowerShell 7 and Windows PowerShell 5.1. Pester 6. ASCII only.
 #>
 
@@ -1193,5 +1194,70 @@ Describe 'A message under the coordinator''s name counts only when the coordinat
         $sent.Output | Should -Match 'record of what the coordinator sends'
         @(Get-ChildItem -LiteralPath $inbox -Force -File).Count | Should -Be 0
         [System.IO.File]::Exists($draft) | Should -BeTrue
+    }
+}
+
+Describe 'A guarded file in the room is replaced in one step, never written in place (G16)' -Tag 'Guard' {
+
+    BeforeAll {
+        function Read-GuardHolder {
+            # Whatever the open file behind the stream holds now, read from its start
+            param([System.IO.FileStream]$Stream)
+            $null = $Stream.Seek(0, [System.IO.SeekOrigin]::Begin)
+            $buffer = New-Object byte[] 65536
+            $count = $Stream.Read($buffer, 0, $buffer.Length)
+            return [System.Text.Encoding]::UTF8.GetString($buffer, 0, $count)
+        }
+    }
+
+    BeforeEach {
+        $case = New-RelayTestId
+        $root = Join-Path $TestDrive "whole-$case"
+        $id = "whole-$case"
+        $room = (New-RelayTestRoom -Root $root -RoomId $id).Path
+        $object = Resolve-RelayRoom $id
+        $share = [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete
+    }
+
+    It 'leaves a reader that opened the old file with all of the old file, and puts the new one in its place' {
+        $roomFile = Join-Path $room 'DECISIONS.md'
+        $old = Get-GuardFile $roomFile
+        $holder = New-Object System.IO.FileStream($roomFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, $share)
+        try {
+            Write-RelayGuardedText $object 'DECISIONS.md' ("# Rules`n`n" + ('x' * 5000) + "`n")
+            $seen = Read-GuardHolder $holder
+        }
+        finally { $holder.Dispose() }
+        # Written in place, the reader would have found the new text in the file it holds, or a part of it
+        $seen | Should -BeExactly $old
+        (Get-GuardFile $roomFile) | Should -Match 'x{5000}'
+        Get-RelayFileHash $roomFile | Should -Be (Get-RelayFileHash (Join-Path $object.Canon 'DECISIONS.md'))
+        @(Get-ChildItem -LiteralPath $room -Force -File | Where-Object { $_.Name -like '*.tmp' }).Count | Should -Be 0
+    }
+
+    It 'restores a changed file the same way, and copies a package file the same way' {
+        $roomFile = Join-Path $room 'DECISIONS.md'
+        [System.IO.File]::AppendAllText($roomFile, "`nplanted`n")
+        $holder = New-Object System.IO.FileStream($roomFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, $share)
+        try {
+            $null = @(Test-RelayTamper $object -Repair)
+            $seen = Read-GuardHolder $holder
+        }
+        finally { $holder.Dispose() }
+        $seen | Should -Match 'planted'
+        Get-RelayFileHash $roomFile | Should -Be (Get-RelayFileHash (Join-Path $object.Canon 'DECISIONS.md'))
+
+        $tool = Join-Path $room 'tools\relay.ps1'
+        $source = Join-Path $root 'tool-source.ps1'
+        [System.IO.File]::WriteAllText($source, "# a newer tool`n")
+        $holder = New-Object System.IO.FileStream($tool, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, $share)
+        try {
+            Copy-RelayGuardedFile $object 'tools/relay.ps1' $source
+            $seen = Read-GuardHolder $holder
+        }
+        finally { $holder.Dispose() }
+        $seen | Should -Not -Match 'a newer tool'
+        (Get-GuardFile $tool) | Should -BeExactly "# a newer tool`n"
+        Get-RelayFileHash $tool | Should -Be (Get-RelayFileHash (Join-Path $object.Canon 'tools/relay.ps1'))
     }
 }

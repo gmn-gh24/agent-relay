@@ -194,6 +194,50 @@ function Write-RelayTextAtomic {
     }
 }
 
+function ConvertTo-RelayTextByte {
+    # The bytes Write-RelayText writes for a text: UTF-8 (with a BOM for -Bom), LF line ends unless -Crlf
+    param([string]$Text, [switch]$Crlf, [switch]$Bom)
+    $normalized = ($Text -replace "`r`n", "`n") -replace "`r", "`n"
+    if ($Crlf) { $normalized = $normalized -replace "`n", "`r`n" }
+    $body = $script:Utf8.GetBytes($normalized)
+    if (-not $Bom) { return , $body }
+    $all = New-Object byte[] ($body.Length + 3)
+    $all[0] = 0xEF; $all[1] = 0xBB; $all[2] = 0xBF
+    [System.Array]::Copy($body, 0, $all, 3, $body.Length)
+    return , $all
+}
+
+function Write-RelayRoomByte {
+    # A file in the room written so that an agent's tool reading it finds the old bytes or the new, never a part:
+    # a temporary file beside it replaces it. A reader that holds the file at that moment makes the replacement
+    # fail on Windows, so it is tried again; where it still fails, the file is written in place, as it was before.
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][AllowEmptyCollection()][byte[]]$Bytes)
+    $Path = Resolve-RelayFullPath $Path
+    $folder = Split-Path -Parent $Path
+    if ($folder -and -not (Test-Path -LiteralPath $folder)) { $null = New-Item -ItemType Directory -Path $folder -Force }
+    $temporary = Join-Path $folder ('.{0}.{1}.tmp' -f (Split-Path -Leaf $Path), [guid]::NewGuid().ToString('N'))
+    $placed = $false
+    try {
+        [System.IO.File]::WriteAllBytes($temporary, $Bytes)
+        for ($try = 0; $try -lt 6 -and -not $placed; $try++) {
+            try {
+                # [NullString]: PowerShell hands a plain $null over to a string parameter as an empty string
+                if ([System.IO.File]::Exists($Path)) { [System.IO.File]::Replace($temporary, $Path, [NullString]::Value) }
+                else { [System.IO.File]::Move($temporary, $Path) }
+                $placed = $true
+            }
+            catch { Start-Sleep -Milliseconds 150 }
+        }
+    }
+    catch { $null = $_ }
+    finally { if (-not $placed) { try { [System.IO.File]::Delete($temporary) } catch { $null = $_ } } }
+    if ($placed) { return }
+    for ($try = 0; ; $try++) {
+        try { [System.IO.File]::WriteAllBytes($Path, $Bytes); return }
+        catch { if ($try -ge 5) { throw }; Start-Sleep -Milliseconds 150 }
+    }
+}
+
 function Add-RelayLine {
     param([string]$Path, [string]$Line)
     $Path = Resolve-RelayFullPath $Path
@@ -602,18 +646,20 @@ function Write-RelayGuardedText {
     $roomTarget = Join-Path $Room.Path $Relative
     Assert-RelayRoomTarget $Room $roomTarget
     Write-RelayText (Join-Path $Room.Canon $Relative) $Text -Crlf:$Crlf
-    Write-RelayText $roomTarget $Text -Crlf:$Crlf
+    # The room's copy in one step: an agent's tool reads these files while the coordinator writes them
+    Write-RelayRoomByte $roomTarget (ConvertTo-RelayTextByte $Text -Crlf:$Crlf)
 }
 
 function Copy-RelayGuardedFile {
     param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Relative, [Parameter(Mandatory)][string]$Source)
     $roomTarget = Join-Path $Room.Path $Relative
     Assert-RelayRoomTarget $Room $roomTarget
-    foreach ($target in (Join-Path $Room.Canon $Relative), $roomTarget) {
-        $folder = Split-Path -Parent $target
-        if (-not (Test-Path -LiteralPath $folder)) { $null = New-Item -ItemType Directory -Path $folder -Force }
-        [System.IO.File]::WriteAllBytes($target, [System.IO.File]::ReadAllBytes($Source))
-    }
+    $bytes = [System.IO.File]::ReadAllBytes($Source)
+    $canonTarget = Join-Path $Room.Canon $Relative
+    $folder = Split-Path -Parent $canonTarget
+    if (-not (Test-Path -LiteralPath $folder)) { $null = New-Item -ItemType Directory -Path $folder -Force }
+    [System.IO.File]::WriteAllBytes($canonTarget, $bytes)
+    Write-RelayRoomByte $roomTarget $bytes
 }
 
 function Get-RelayGuardedFile {
@@ -765,7 +811,7 @@ function Test-RelayTamper {
                     if (-not (Test-Path -LiteralPath $quarantine)) { $null = New-Item -ItemType Directory -Path $quarantine -Force }
                     try { [System.IO.File]::WriteAllBytes($keep, [System.IO.File]::ReadAllBytes($roomPath)) } catch { $null = $_ }
                 }
-                [System.IO.File]::WriteAllBytes($roomPath, [System.IO.File]::ReadAllBytes($canonPath))
+                Write-RelayRoomByte $roomPath ([System.IO.File]::ReadAllBytes($canonPath))
             }
             $findings.Add([pscustomobject]@{ Relative = $relative; Kind = $kind; Repaired = [bool]$Repair; Reason = '' })
         }
