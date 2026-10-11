@@ -1169,6 +1169,24 @@ Describe 'A message under the coordinator''s name counts only when the coordinat
         @(Test-RelayTamper $object -Repair | ForEach-Object { "$($_.Kind) $($_.Relative)" }) | Should -Be @('forged agents/emma/inbox/olivia-0002.md')
     }
 
+    It 'starts no record for a room whose tool does not keep one, until the room is updated' {
+        # A room in flight on an older package: its tool sends without the record. A new launcher (the coordinator
+        # replaced) must not start one, or the tamper check would move the coordinator's real messages out.
+        [System.IO.File]::Delete((Get-RelaySentLogPath $object))
+        $older = "# an older tool that keeps no record`n"
+        [System.IO.File]::WriteAllText((Join-Path $object.Canon 'tools/relay.ps1'), $older)
+        [System.IO.File]::WriteAllText((Join-Path $room 'tools/relay.ps1'), $older)
+        $text = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'olivia' -NoClipboard) -join "`n"
+        $text | Should -Match 'REPLACED olivia'
+        [System.IO.File]::Exists((Get-RelaySentLogPath $object)) | Should -BeFalse
+        Write-GuardForgery -Path (Join-Path $inbox 'olivia-0001.md') -Id 'olivia-emma-0001' -To 'emma'
+        @(Test-RelayTamper $object -Repair | Where-Object { $_.Kind -eq 'forged' }).Count | Should -Be 0
+        # Updated, the room gets the tool and then the record, which counts what is there as sent
+        $null = & (Join-Path $scripts 'Update-RelayRoom.ps1') -Room $id
+        (Get-GuardFile (Get-RelaySentLogPath $object)) | Should -Match "(?m)^\S+`tolivia-emma-0001`t[0-9a-f]{64}`tbefore the record$"
+        @(Test-RelayTamper $object -Repair).Count | Should -Be 0
+    }
+
     It 'judges nothing while the record cannot be read, and says so' {
         Write-GuardForgery -Path (Join-Path $inbox 'olivia-0001.md') -Id 'olivia-emma-0001' -To 'emma'
         $log = Get-RelaySentLogPath $object
