@@ -452,6 +452,22 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             Test-Path -LiteralPath $claim | Should -BeTrue
         }
 
+        It 'skips a number whose final name is taken by a folder, instead of failing on it every time' {
+            $inbox = Join-Path $room 'agents\olivia\inbox'
+            $folder = Join-Path $inbox 'emma-0002.md'
+            $null = New-Item -ItemType Directory -Path $folder -Force
+            [System.IO.File]::WriteAllText((Join-Path $folder 'inside.txt'), "somebody's folder`n")
+            $sent = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('note') -Text "Past a folder`n`nText."
+            $sent.ExitCode | Should -Be 0 -Because $sent.Output
+            $sent.Output | Should -Match 'SENT emma-olivia-0003 '
+            Test-Path -LiteralPath (Join-Path $folder 'inside.txt') | Should -BeTrue
+            @(Get-DotEntry $inbox).Count | Should -Be 0
+            # The next send takes the next number: the folder blocks nothing after it either
+            $again = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('note') -Text "Past a folder again`n`nText."
+            $again.ExitCode | Should -Be 0 -Because $again.Output
+            $again.Output | Should -Match 'SENT emma-olivia-0004 '
+        }
+
         It 'gives a send without attachments another number than one that has placed its files and not yet its message' {
             if (Skip-WithoutHook 'send-placed') { return }
             $pause = Open-Pause -Room $room -Point 'send-placed'
@@ -1422,6 +1438,66 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             Test-Path -LiteralPath (Join-Path $target 'keep.txt') | Should -BeTrue
             $sent.ExitCode | Should -Be 0
             $sent.Output | Should -Match 'SENT emma-olivia-\d+ \(note\)'
+        }
+
+        It 'leaves a left-over claim that is a folder with a link inside alone: nothing behind the link is deleted, the number is skipped' -Tag 'MaySkip' {
+            $target = Join-Path $root ('claimed-folder-' + (New-RelayTestId))
+            $null = New-Item -ItemType Directory -Path $target -Force
+            [System.IO.File]::WriteAllText((Join-Path $target 'keep.txt'), "keep`n")
+            $claim = Join-Path $room 'agents\olivia\inbox\.claim-emma-0002'
+            $null = New-Item -ItemType Directory -Path $claim -Force
+            $link = Join-Path $claim 'linked'
+            if (-not (New-TestLink -Path $link -Target $target)) { Set-ItResult -Skipped -Because 'this account may make no link here'; return }
+            try {
+                # Two tool minutes of one second each: the folder is a claim left over by a dead sender after three
+                Start-Sleep -Seconds 3
+                $sent = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('note') -Text "Past a folder claim`n`nThe claim is a folder with a link in it." -Environment @{ RELAY_MINUTE_SECONDS = '1' }
+                Test-Path -LiteralPath (Join-Path $target 'keep.txt') | Should -BeTrue
+                [System.IO.File]::ReadAllText((Join-Path $target 'keep.txt')) | Should -Be "keep`n"
+                # The folder is not the tool's to empty: it stays, with its link, and the number it holds is skipped
+                Test-Path -LiteralPath $link | Should -BeTrue
+                $sent.ExitCode | Should -Be 0
+                $sent.Output | Should -Match 'SENT emma-olivia-0003 \(note\)'
+            }
+            finally { if (Test-Path -LiteralPath $link) { Remove-TestLink $link } }
+        }
+
+        It 'removes a link inside its own placed files folder as a link when a send is undone, and nothing behind it' -Tag 'MaySkip' {
+            if (Skip-WithoutHook 'send-placed') { return }
+            $target = Join-Path $root ('placed-' + (New-RelayTestId))
+            $null = New-Item -ItemType Directory -Path $target -Force
+            [System.IO.File]::WriteAllText((Join-Path $target 'keep.txt'), "keep`n")
+            # Every number but 2 is taken by a folder under files: the send places its files under 2, and when that
+            # number is lost it finds no other and is undone
+            $files = Join-Path $room 'files'
+            $null = New-Item -ItemType Directory -Path $files -Force
+            foreach ($number in 1..700) { if ($number -ne 2) { $null = [System.IO.Directory]::CreateDirectory((Join-Path $files ('emma-olivia-{0:0000}' -f $number))) } }
+            $attach = Join-Path $room 'agents\emma\attach'
+            $null = New-Item -ItemType Directory -Path $attach -Force
+            [System.IO.File]::WriteAllText((Join-Path $attach 'mine.txt'), "mine`n")
+            Set-RelayTestDraft -Room $room -Agent 'emma' -Text "With files`n`nUndone."
+            $pause = Open-Pause -Room $room -Point 'send-placed'
+            $placed = Join-Path $files 'emma-olivia-0002'
+            $link = Join-Path $placed 'linked'
+            $made = ''
+            $send = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('note') -Environment $pause
+            try {
+                Wait-ForFile (Join-Path $pause.RELAY_PAUSE_DIR 'send-placed.reached') | Should -BeTrue
+                Test-Path -LiteralPath (Join-Path $placed 'mine.txt') | Should -BeTrue
+                # While the files are placed and the message is not: another agent puts a link into the placed folder and
+                # takes the number with a file of the final name
+                $made = New-TestLink -Path $link -Target $target
+                Write-InboxFile -Room $room -Agent 'olivia' -Name 'emma-0002.md' -Text (Get-ReadableMessage -From 'emma' -To 'olivia' -Number '0002')
+            }
+            finally { [System.IO.File]::WriteAllText((Join-Path $pause.RELAY_PAUSE_DIR 'send-placed.go'), 'go') }
+            $done = Wait-RelayTool -Handle $send -TimeoutSeconds (240 * $pace)
+            if (-not $made) { Set-ItResult -Skipped -Because 'this account may make no link here'; return }
+            $done.ExitCode | Should -Be 2
+            $done.Output | Should -Match '(?m)^ERROR: could not find a free message number'
+            Test-Path -LiteralPath (Join-Path $target 'keep.txt') | Should -BeTrue
+            [System.IO.File]::ReadAllText((Join-Path $target 'keep.txt')) | Should -Be "keep`n"
+            Test-Path -LiteralPath $placed | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $attach 'mine.txt') | Should -BeTrue
         }
 
         It 'sends nothing and moves nothing when the attach folder holds a link' -Tag 'MaySkip' {

@@ -46,7 +46,7 @@ Four rules hold in every workflow:
    seat, and a start prompt for each agent named in advance. One prompt goes on the clipboard.
 4. Introduce yourself: `<your command> start claude-code <model> <effort>`.
 5. Give the owner the prompts and say which one is on the clipboard. The join prompt is pasted into as many
-   agents as there are free seats; add seats with `scripts/Add-RelayAgent.ps1 -OpenSeats <n>`. Say with it
+   agents as there are free seats; add seats with `scripts/Add-RelayAgent.ps1 -Room <id> -OpenSeats <n>`. Say with it
    how each product is started: Codex CLI with `codex --yolo`, always (without it the agent keeps asking its
    user and its sandbox blocks the room's commands); Claude Code with
    `claude --dangerously-skip-permissions` when the owner wants a room without questions and interruptions.
@@ -104,7 +104,7 @@ for). If your old session is gone for good, take a new generation first:
 A **closed** room: `scripts/Reopen-RelayRoom.ps1 -Room <id>` first. It works only on the PC that closed the
 room (it needs the local canonical copy), restores the folder from the verified archive if it was deleted,
 clears the closed state and keeps the old transcript aside as `TRANSCRIPT-closed-<stamp>.md`. The old agent
-sessions stay stopped: bring agents back with `Add-RelayAgent.ps1 -Replace <name>` or `-OpenSeats <n>`.
+sessions stay stopped: bring agents back with `Add-RelayAgent.ps1 -Room <id> -Replace <name>` or `-OpenSeats <n>`.
 Memory and rules carry over. `Update-RelayRoom.ps1` and `Add-RelayAgent.ps1` refuse a closed room until it is
 reopened.
 
