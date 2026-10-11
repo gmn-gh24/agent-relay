@@ -525,6 +525,12 @@ Describe 'Add-RelayAgent' -Tag 'Scripts' {
         { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $file -NoClipboard } | Should -Throw "*OS 'linux' is refused*sh are postponed*"
         @(Get-RelayRoster (Resolve-RelayRoom $id)).Count | Should -Be 4
         Test-Path -LiteralPath (Join-Path $room 'agents\zoe') | Should -BeFalse
+        # A wanted name that is reserved in the second entry: the names are chosen before the first seat is added
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -Depth 6 @{ agents = @([ordered]@{ name = 'zoe'; role = 'writer' }, [ordered]@{ name = 'owner'; role = 'builder' }) }))
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $file -NoClipboard } | Should -Throw "*'owner' is reserved*"
+        @(Get-RelayRoster (Resolve-RelayRoom $id)).Count | Should -Be 4
+        Test-Path -LiteralPath (Join-Path $room 'agents\zoe') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $room 'PROMPT-zoe.txt') | Should -BeFalse
         { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'emma' -Kind 'codx' -NoClipboard } | Should -Throw "*'codx' is not one of*"
         (Get-Content -LiteralPath (Join-Path $room 'agents\emma\gen') -Raw).Trim() | Should -Be '1'
         (Read-RelayKeyValue (Join-Path $room 'agents\emma\seat'))['kind'] | Should -Be 'generic'
@@ -978,14 +984,19 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         $listed | Should -Match 'flow  closed \S+  archive: yes'
         $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -WhatIf
         Test-Path -LiteralPath $room | Should -BeTrue
+        # Closed is what this PC says: an agent that deleted the CLOSED in the room does not keep the owner from removing it
+        Remove-Item -LiteralPath (Join-Path $room 'CLOSED') -Force
         $removed = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -Confirm:$false) -join "`n"
         $removed | Should -Match 'REMOVED the folder of room flow'
         Test-Path -LiteralPath $room | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $root 'local\archive\flow.zip') | Should -BeTrue
     }
 
-    It 'does not remove a room that is still open or has no archive' {
+    It 'does not remove a room that is still open or has no archive, also when the room folder holds a CLOSED that somebody put there' {
         { & (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -Confirm:$false } | Should -Throw '*not closed*'
+        [System.IO.File]::WriteAllText((Join-Path $room 'CLOSED'), "closed_utc: 2026-10-10T00:00:00Z`nby: olivia`n")
+        { & (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -Confirm:$false } | Should -Throw '*not closed*'
+        Remove-Item -LiteralPath (Join-Path $room 'CLOSED') -Force
         $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force
         Remove-Item -LiteralPath (Join-Path $root 'local\archive\flow.zip') -Force
         { & (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -Confirm:$false } | Should -Throw '*no archive*'
@@ -1060,11 +1071,21 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         $again = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow') -join "`n"
         $again | Should -Match 'marks the room flow closed now'
         $again | Should -Match 'its archive was missing and is made now'
+        # The statistics still cannot be written (the folder is still there): said, and the archive is made all the same
+        $again | Should -Match 'STATISTICS NOT WRITTEN'
         [string]@(Get-RelayRoomIndex | Where-Object { $_.id -eq 'flow' })[0].closed_utc | Should -Be $stamp
         ((& (Join-Path $scripts 'Close-RelayRoom.ps1') -ListClosed) -join "`n") | Should -Match ('flow  closed ' + [regex]::Escape($stamp) + '  archive: yes')
+        # Once the reason is gone, the next call writes the statistics the cut-short close never wrote
+        Remove-Item -LiteralPath (Join-Path $object.Local 'stats.json') -Recurse -Force
         $third = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow') -join "`n"
-        $third | Should -Match 'already closed'
-        $third | Should -Not -Match 'closed now'
+        $third | Should -Match 'its statistics were missing and are written now'
+        $third | Should -Match '(?m)^NEXT: nothing is left to do here'
+        Test-Path -LiteralPath (Join-Path $object.Local 'stats.json') -PathType Leaf | Should -BeTrue
+        (ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path $object.Local 'stats.json') -Raw)).PSObject.Properties['memoryEntries'] | Should -Not -BeNullOrEmpty
+        $fourth = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow') -join "`n"
+        $fourth | Should -Match 'already closed'
+        $fourth | Should -Not -Match 'closed now'
+        $fourth | Should -Not -Match 'statistics'
     }
 
     It 'archives the room without what a link in it points at, names the link, and removes the folder without following it' {

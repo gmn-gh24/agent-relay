@@ -1,6 +1,49 @@
 # Changelog
 
-## Unreleased
+## 0.3.8 (2026-10-11)
+
+What a review of the plugin found, and the fixes (room package 3.2.3; running rooms:
+`scripts/Update-RelayRoom.ps1 -Room <id>`):
+
+- `relay.ps1`: a left-over claim or lock is removed as a file, or as an empty folder, never recursively. Any
+  agent could put a folder with a junction inside where the tool expects its claim or lock, and Windows
+  PowerShell 5.1 would have emptied the folder behind the junction with the rights of the agent whose tool ran.
+  The staging folder of a send that is undone is removed the same way: every link inside goes as a link first.
+- `relay.ps1`: a folder named like a message file (any agent can make one) blocked every later send of that
+  sender to that inbox: the number was taken for free, the move into place failed, and the send gave up after
+  five tries. Anything at the final name now takes the number, and the send goes on with the next.
+- The tamper check: a folder where only a file of this PC may be (a planted `retired`, `seat`, `control`) was
+  moved out with `Move-Item`, which across volumes carries over what lies behind a junction inside it. A folder
+  that holds a link is not moved and each link is an alarm; one without a link has its files kept on this PC
+  and goes as a tree, links as links.
+- Nothing reads a message through a link: the board, the feed and the room tool skip a message file that is a
+  link and an inbox that lies behind one. The owner's message is never written through a link that stands in
+  place of the coordinator's inbox.
+- The feed knew a message by the path of its file for the room's life. A forged message under the coordinator's
+  name that the tamper check moved out kept its path, and the coordinator's own message that took the same
+  number afterwards was never shown, while the forgery stayed in the pane. A message is now known by its path
+  with the write time and size of its file; a file that reads differently is read again and compared (the same
+  text is the same message, another text has taken its place); one whose file is gone is dropped and the feed
+  says so (`removed`), and the pane drops it too. The pane also marks a message whose header names another sender, receiver or number than its file, as the
+  terminal feed did.
+- `Reopen-RelayRoom.ps1` stopped every seat, open seats nobody had taken included: the first agent to join the
+  reopened room got the lowest free seat and was told it was stopped. An untaken open seat keeps running.
+- `Add-RelayAgent.ps1 -AnswersFile` chooses every name before the first seat is added: a reserved or taken name
+  in the second entry left the first agent added.
+- `Close-RelayRoom.ps1`: `-Remove` decided by the CLOSED in the room, which any agent can delete; it decides by
+  this PC's marker. A close cut short after the marker never got its statistics: the next call writes them.
+- This PC's own files are read strictly where a wrong answer would be written back or acted on: the canonical
+  `ROOM` (an unreadable one made `Update-RelayRoom.ps1` write a `ROOM` without a coordinator), the owner's log
+  (an unreadable one called the owner's own message a forgery) and the room index when a room is resolved (a
+  corrupt index said the room did not exist).
+- `Watch-RelayFeed.ps1 -EndWithParent` finds its parent under PowerShell 7 on every platform. Index entries
+  without a property end no listing. The skill names `-Room` for `Add-RelayAgent.ps1 -OpenSeats`; the README
+  names seven coordinator test files and the 15 seconds of the tamper check.
+- Tests: Faults R4 (a folder claim with a link inside, an undone send with a link in its placed folder) and F3 (a
+  folder at the final name); Guard round 5 (a stranger folder with a link inside, no message read through a
+  link) and G15 (the feed after a forgery is moved out); Scripts (a reserved name in the second entry, the
+  statistics of a cut-short close, `-Remove` without the room's CLOSED); Reopen (an untaken open seat); the pane
+  (the `removed` line and the mismatch mark).
 
 CI only (no change to the plugin):
 
@@ -9,6 +52,7 @@ CI only (no change to the plugin):
   Pester files run on a dev machine before a commit (`tests\Invoke-AllTests.ps1`).
 - PSScriptAnalyzer (1.24.0) and Claude Code (2.1.296) are pinned and cached in CI, and the pane's steps are left
   out when a commit touches nothing the pane reads.
+
 
 ## 0.3.7 (2026-10-11)
 

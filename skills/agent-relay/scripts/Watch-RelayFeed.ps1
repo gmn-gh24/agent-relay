@@ -16,8 +16,8 @@
     When the room folder cannot be reached (a share that is down, a folder that was moved), the feed says so in
     one alarm, checks and writes nothing in the room, and says so again when the folder is back.
 
-    -Json prints one JSON object per line, ASCII only: first a "snapshot", then "message", "agents", "waiting",
-    "alarm", "tick" and finally "closed". Without -Json the same is printed for reading. It ends when the room
+    -Json prints one JSON object per line, ASCII only: first a "snapshot", then "message", "removed" (a message
+    whose file is gone from the room), "plan", "agents", "waiting", "alarm", "tick" and finally "closed". Without -Json the same is printed for reading. It ends when the room
     is closed (this PC says so: the CLOSED marker of the canonical copy; a CLOSED that anybody else puts into the room
     is moved out by the tamper check and closes nothing), when the process named by -ParentProcessId is gone, or after -MaxSeconds.
 
@@ -67,7 +67,9 @@ Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { $null = $_ }
 if ($Follow -and $Json) { throw 'Give -Json or -Follow, not both' }
 if ($EndWithParent -and $ParentProcessId -eq 0) {
-    try { $ParentProcessId = [int](Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$PID" -Property ParentProcessId -ErrorAction Stop).ParentProcessId } catch { $ParentProcessId = 0 }
+    # PowerShell 7 knows its parent on every platform; Windows PowerShell asks WMI
+    if ($PSVersionTable.PSVersion.Major -ge 6) { try { $ParentProcessId = [int](Get-Process -Id $PID -ErrorAction Stop).Parent.Id } catch { $ParentProcessId = 0 } }
+    if ($ParentProcessId -eq 0) { try { $ParentProcessId = [int](Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$PID" -Property ParentProcessId -ErrorAction Stop).ParentProcessId } catch { $ParentProcessId = 0 } }
 }
 
 $roomObject = Resolve-RelayRoom $Room
@@ -157,6 +159,7 @@ function Write-Feed {
             Write-Line ''
         }
         'message' { Write-MessageText $Item.message }
+        'removed' { Write-Line "$clock  * the message $($Item.id) is gone from the room (moved out by the tamper check, or deleted)" }
         'plan' {
             if ($null -eq $Item.plan) { Write-Line "$clock  * the team plan is gone" }
             else { Write-Line "$clock  * the team plan changed"; Write-PlanText $Item.plan }
@@ -189,35 +192,83 @@ function Write-Feed {
     }
 }
 
+function Get-MessageStamp {
+    # How a file in an inbox reads at a glance: its write time and size. A forged message the tamper check moved out
+    # and the genuine message that gets its number afterwards lie at the same path and read differently.
+    param([Parameter(Mandatory)]$File)
+    return ('{0}|{1}' -f $File.LastWriteTimeUtc.Ticks, $File.Length)
+}
+
+function Test-SameMessage {
+    # True when two readings of a file at one path are one message: the header fields and the text, exactly
+    param([Parameter(Mandatory)]$Held, [Parameter(Mandatory)]$Read)
+    foreach ($name in 'From', 'To', 'Type', 'Re', 'Subject', 'SentUtc', 'Expects', 'Body') {
+        if ([string]$Held.$name -cne [string]$Read.$name) { return $false }
+    }
+    return $true
+}
+
 function Get-NewMessage {
-    # Messages that were not printed yet. A message never changes, so each file is read once; it is remembered as
-    # known only by Register-MessageKnown, after it was printed.
+    # Messages that were not printed yet, and the ids of messages whose file is gone from the room (moved out by
+    # the tamper check, or deleted) or was replaced by another message. A message never changes, so each file is
+    # read once; it is remembered as known only by Register-MessageKnown, after it was printed. A file whose write
+    # time or size reads differently than the last time (Windows may hand out the time and size of a fresh file
+    # in two readings) is read again and compared: the same text is the same message, another text is another
+    # message that took the place of the first.
     $new = New-Object System.Collections.Generic.List[object]
+    $removed = New-Object System.Collections.Generic.List[string]
     foreach ($agent in @(Get-RelayRoster $roomObject -IncludeRetired)) {
         $inbox = Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $agent) 'inbox'
-        if (-not (Test-Path -LiteralPath $inbox)) { continue }
+        # Nothing is read through a link in the room: an inbox behind one, or a message file that is one, is not the room's
+        if (-not (Test-Path -LiteralPath $inbox) -or (Test-RelayLinkedPath -Root $roomObject.Path -Path $inbox)) { continue }
         # -Force and an exact name, as the room tool lists an inbox
         foreach ($file in @(Get-ChildItem -LiteralPath $inbox -Filter '*.md' -File -Force)) {
-            if ($script:known.ContainsKey($file.FullName)) { continue }
             if ($file.Name -cnotmatch '^[a-z][a-z0-9]{1,15}-[0-9]{4,6}\.md$') { continue }
-            $message = Read-RelayMessage $file.FullName
+            if ((($file.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) -and (Test-RelayLink $file.FullName)) { continue }
+            $path = [string]$file.FullName
+            $stamp = Get-MessageStamp $file
+            if ($script:known.ContainsKey($path) -and [string]$script:known[$path] -ceq $stamp) { continue }
+            $message = Read-RelayMessage $path
             if ($null -eq $message) { continue }
+            $message | Add-Member -NotePropertyName Stamp -NotePropertyValue $stamp
+            if ($script:collected.ContainsKey($path)) {
+                $held = $script:collected[$path]
+                if (Test-SameMessage $held $message) {
+                    # The same message, whose file reads differently now: known under this reading from here on
+                    $held.Stamp = $stamp
+                    if ($script:known.ContainsKey($path)) { $script:known[$path] = $stamp } else { $new.Add($held) }
+                    continue
+                }
+                # Another message at the place of one collected before: the first is gone from the room
+                $null = $script:messages.Remove($held)
+                $script:collected.Remove($path)
+                if ($script:known.ContainsKey($path)) { $script:known.Remove($path); $removed.Add([string]$held.Id) }
+            }
             $new.Add($message)
         }
     }
+    # What was collected and whose file is gone is gone from the feed too, as the board (which reads the room
+    # afresh) no longer shows it: an open request it made is no longer open
+    foreach ($message in @($script:messages.ToArray())) {
+        $path = [string]$message.Path
+        if ([System.IO.File]::Exists($path)) { continue }
+        $null = $script:messages.Remove($message)
+        $script:collected.Remove($path)
+        if ($script:known.ContainsKey($path)) { $script:known.Remove($path); $removed.Add([string]$message.Id) }
+    }
     $sorted = @($new | Sort-Object Time, Id)
     foreach ($message in $sorted) {
-        if ($script:collected.ContainsKey($message.Path)) { continue }
-        $script:collected[$message.Path] = $true
+        if ($script:collected.ContainsKey([string]$message.Path)) { continue }
+        $script:collected[[string]$message.Path] = $message
         $script:messages.Add($message)
     }
-    return $sorted
+    return [pscustomobject]@{ New = $sorted; Removed = @($removed.ToArray()) }
 }
 
 function Register-MessageKnown {
-    # What was printed is not printed again
+    # What was printed is not printed again: the path of its file, with the reading it was printed under
     param([object[]]$Message)
-    foreach ($item in @($Message)) { $script:known[[string]$item.Path] = $true }
+    foreach ($item in @($Message)) { $script:known[[string]$item.Path] = [string]$item.Stamp }
 }
 function Get-WaitingState {
     $open = @(Get-RelayOpenRequest $script:messages.ToArray())
@@ -312,7 +363,8 @@ try {
             }
 
             if ($isReachable) {
-                $new = @(Get-NewMessage)
+                $looked = Get-NewMessage
+                $new = @($looked.New)
                 foreach ($item in @(Test-OwnerMessage)) {
                     Add-RelayAlarm $roomObject $item.Text
                     $script:checkedOwner[$item.Id] = $true
@@ -353,6 +405,7 @@ try {
                     $isFirst = $false
                 }
                 else {
+                    foreach ($id in @($looked.Removed)) { Write-Feed ([pscustomobject]@{ type = 'removed'; id = $id }) }
                     foreach ($message in $new) {
                         Write-Feed ([pscustomobject]@{ type = 'message'; message = (ConvertTo-RelayMessageRow $message) })
                         Register-MessageKnown $message
