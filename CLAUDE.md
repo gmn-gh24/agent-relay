@@ -17,7 +17,7 @@ All from the repo root, in `pwsh`. Start tests from a folder on a local disk (Pe
 ```
 pwsh -NoProfile -File tests\Invoke-AllTests.ps1                  # the full gate: static, pane, ps7 and ps5 runs
 pwsh -NoProfile -File tests\Invoke-AllTests.ps1 -StaticOnly      # seconds: PSScriptAnalyzer, ASCII/LF, wrapper templates parse, test files listed
-pwsh -NoProfile -File tests\Invoke-AllTests.ps1 -Editions ps7    # the gate with one edition's Pester runs (CI runs ps7 and ps5 as two jobs)
+pwsh -NoProfile -File tests\Invoke-AllTests.ps1 -Editions ps7    # the gate with one edition's Pester runs (CI runs neither; the Pester runs are done on a dev machine)
 pwsh -NoProfile -File tests\Invoke-Suite.ps1 -Path tests\Relay.Faults.Tests.ps1 -Engines ps7 -Label 'Faults ps7'   # one file, one engine
 claude plugin validate .        # manifests and hooks module
 claude plugin test .            # the pane's tests (hooks/feed.test.ts)
@@ -34,6 +34,9 @@ claude plugin eval . --no-publish   # the skill's cases in evals/; each run is a
   default mock beside it.
 - A new test file must also be added to `$toolFiles` or `$scriptFiles` in `tests/Invoke-AllTests.ps1`, or the gate
   never runs it.
+- **No Windows jobs in CI (owner decision).** GitHub Actions runs only the Linux static and pane jobs. The Pester
+  runs (ps7 and ps5) are done locally on a Windows dev machine before a commit. Do not add a Windows runner or
+  a Pester job to `.github/workflows/ci.yml`, and say in the PR's Gate section which edition runs were done locally.
 - Iterate with `-StaticOnly` plus the one affected file on the one affected engine; run the whole gate before a commit.
 
 ## Architecture
