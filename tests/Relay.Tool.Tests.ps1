@@ -761,6 +761,15 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
     }
 
     Context 'Round 5: what the tool prints, and how it spells its own command (relay.ps1; relay.sh is frozen)' {
+        It 'reads a message in the room as UTF-8 only, as the coordinator''s board does: UTF-16 is for drafts' {
+            if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
+            $text = "---`nid: olivia-emma-0001`nfrom: olivia`nto: emma`ntype: note`nre: `nsubject: Wide subject`nsent_utc: 2026-10-10T08:00:00Z`nexpects: none`n---`nWide text`n"
+            [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\inbox\olivia-0001.md'), $text, (New-Object System.Text.UnicodeEncoding($false, $true)))
+            $shown = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+            $shown.Output | Should -Not -Match 'Wide subject'
+            $shown.Output | Should -Not -Match 'Wide text'
+        }
+
         It 'leaves control, escape and direction characters out of what it prints, and nothing else' {
             if ($engine -eq 'sh') { Set-ItResult -Skipped -Because 'relay.sh is frozen; this round-5 fix is in relay.ps1 only'; return }
             $esc = [string][char]27

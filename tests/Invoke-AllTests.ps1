@@ -305,7 +305,7 @@ function Complete-Run {
     $Handle.Process.WaitForExit()
     $exitCode = $Handle.Process.ExitCode
     $text = ([string]$Handle.Output.Result) -replace "`r", ''
-    $lines = @($text -split "`n" | Where-Object { $_ -match '^(RESULT|FAILED) ' })
+    $lines = @($text -split "`n" | Where-Object { $_ -match '^(RESULT|FAILED|SKIPPED) ' })
     foreach ($line in $lines) { $line }
     $resultLines = @($lines | Where-Object { $_ -match '^RESULT ' })
     $failedLines = @($lines | Where-Object { $_ -match '^FAILED ' })
@@ -323,12 +323,11 @@ function Complete-Run {
     foreach ($line in $resultLines) {
         if ($line -match ' passed=(\d+) ' -and [int]$Matches[1] -eq 0) { $problems.Add("[$($Handle.Run.Label)] no test passed: $line") }
     }
-    # A fault test that skips itself tests nothing. On Windows, under PowerShell, none of them has a reason to:
-    # they skip where a file cannot be held open without sharing, and where one call took longer than a test's
-    # margin, which shows in the RESULT line.
+    # A fault test that skips itself tests nothing. On Windows, under PowerShell, none has a reason to unless it
+    # is tagged MaySkip (it needs a right the account may not have): every other skip is named on a SKIPPED line.
     if ($Handle.Run.Label -like 'Faults ps*' -and $onWindows) {
-        foreach ($line in @($resultLines | Where-Object { $_ -match ' skipped=([1-9][0-9]*) ' })) {
-            $problems.Add("[$($Handle.Run.Label)] skipped tests in the fault tests: $line")
+        foreach ($line in @($lines | Where-Object { $_ -match '^SKIPPED ' })) {
+            $problems.Add("[$($Handle.Run.Label)] a fault test skipped itself: $line")
         }
     }
 }

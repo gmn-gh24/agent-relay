@@ -74,6 +74,11 @@ else {
         foreach ($container in @($result.FailedContainers)) {
             "FAILED [$Label] the test file did not load or failed outside its tests: $([string]$container.Item): $(Get-FailureText $container.ErrorRecord)"
         }
+        # A skipped test is named unless it is tagged MaySkip: it may skip for a reason of the machine (no right to
+        # make a symbolic link, an account that can read every folder), which the gate does not count against it
+        foreach ($test in @($result.Skipped)) {
+            if (@($test.Tag) -notcontains 'MaySkip') { "SKIPPED [$Label] $($test.ExpandedPath)" }
+        }
         $failures += $result.FailedCount + $result.FailedBlocksCount + $result.FailedContainersCount
         $passed = $result.PassedCount
         $skipped = $result.SkippedCount

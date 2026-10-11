@@ -17,7 +17,8 @@
     machine state folder. A link in the room (a symbolic link or a junction) is left out of the zip and named: what
     it points at is not the room's. The room folder itself stays where it is. If the zip could not be made, run
     this again on the closed room: it makes the archive and says so. A close that was cut short is completed the
-    same way. -WhatIf shows what closing would do and changes nothing; -Confirm asks first.
+    same way. -WhatIf shows what closing would do and closes, archives and records nothing (only the alarms of
+    its look at the room are noted on this PC); -Confirm asks first.
 
     -ListClosed shows closed rooms whose folder still exists. -Remove deletes the folder of one closed room; it
     needs the archive to exist and asks for confirmation (-Confirm:$false to skip, -WhatIf to see only). A link in

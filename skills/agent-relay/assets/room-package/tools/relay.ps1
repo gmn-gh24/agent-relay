@@ -190,12 +190,18 @@ function ConvertFrom-TextByte {
 }
 
 function Read-Text {
-    # Whole file as text: no BOM, no carriage returns; empty when the file is missing
-    param([string]$Path)
+    # Whole file as text: no BOM, no carriage returns; empty when the file is missing. Room files are UTF-8, as
+    # the coordinator's scripts read them; -AnyEncoding (the draft only) also takes UTF-16 and UTF-32.
+    param([string]$Path, [switch]$AnyEncoding)
     for ($try = 0; $try -lt 6; $try++) {
         try {
             if (-not [System.IO.File]::Exists($Path)) { return '' }
-            $text = ConvertFrom-TextByte ([System.IO.File]::ReadAllBytes($Path))
+            $bytes = [System.IO.File]::ReadAllBytes($Path)
+            if ($AnyEncoding) { $text = ConvertFrom-TextByte $bytes }
+            else {
+                $text = $script:Utf8.GetString($bytes)
+                if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+            }
             return ($text -replace "`r", '')
         }
         catch { Start-Sleep -Milliseconds 150 }
@@ -204,12 +210,17 @@ function Read-Text {
 }
 
 function Test-Link {
-    # True when the path is a link of the file system (a symbolic link, a junction, any other reparse point),
+    # True when the path is a link of the file system (a symbolic link or a junction),
     # judged by the link itself and not by what it points at. Any agent can put one in the room where a file is
     # expected; what lies behind it is not the room's.
     param([string]$Path)
-    try { return ((([System.IO.File]::GetAttributes($Path)) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) }
-    catch { return $false }
+    $attributes = [System.IO.FileAttributes]::Normal
+    try { $attributes = [System.IO.File]::GetAttributes($Path) } catch { return $false }
+    if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) { return $false }
+    # Not every reparse point leads elsewhere: a cloud file (OneDrive) or a deduplicated file is a file like any
+    # other. Only a symbolic link or a junction does; one whose kind cannot be told is taken for a link.
+    try { return (@('SymbolicLink', 'Junction') -contains [string](Get-Item -LiteralPath $Path -Force -ErrorAction Stop).LinkType) }
+    catch { return $true }
 }
 
 function Write-Text {
@@ -270,7 +281,7 @@ function Get-FileTree {
             continue
         }
         foreach ($entry in $entries) {
-            if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { $links.Add($entry.FullName); continue }
+            if ((($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) -and (Test-Link $entry.FullName)) { $links.Add($entry.FullName); continue }
             if ($entry -is [System.IO.DirectoryInfo]) { $pending.Push($entry.FullName) }
             else { $files.Add([System.IO.FileInfo]$entry) }
         }
@@ -559,7 +570,7 @@ function Read-DraftText {
     # draft that still holds NUL characters once it is decoded is no text and ends the call too.
     param([string]$Path)
     if (Test-Link $Path) { Exit-WithError "your draft $Path is a link (a symbolic link or a junction), not a file of its own; nothing was sent and the link was left as it is" 'delete the link (only the link, not what it points at), write your message into a new file of that name with your file tool and run the same command again. If you did not make the link, tell the coordinator.' }
-    $text = Read-Text $Path
+    $text = Read-Text $Path -AnyEncoding
     if ($text.IndexOf([char]0) -ge 0) { Exit-WithError "your draft $Path holds NUL characters, so it is not plain text; nothing was sent" 'write the draft again as plain text (UTF-8) with your file tool and run the same command again' }
     return $text
 }
