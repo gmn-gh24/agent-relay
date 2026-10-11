@@ -362,9 +362,13 @@ if (Test-Path -LiteralPath $archive -PathType Leaf) {
 # Every agent's old session stays stopped. Closing told them to stop (the CLOSED marker) and a bye ends nothing
 # in the tool: once the marker is gone, an old session whose generation is still the current one would run again.
 # The stop in its control file ends it at its next command; -Replace writes a new generation with "run".
+# An open seat that nobody took has no session to stop and keeps "run": join hands the seats out in order, and a
+# stopped one would tell the first agent to join the reopened room that it was stopped.
 $stopped = New-Object System.Collections.Generic.List[string]
 foreach ($name in @(Get-RelayRoster $roomObject)) {
     if ($name -ceq $roomObject.Coordinator) { continue }
+    $seat = Read-RelayKeyValue (Join-Path (Join-Path (Join-Path $roomObject.Canon 'agents') $name) 'seat')
+    if ((Get-RelayValue $seat 'open' '') -eq 'yes' -and -not (Test-Path -LiteralPath (Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $name) 'claim') -PathType Leaf)) { continue }
     Write-RelayGuardedText $roomObject "agents/$name/control" "state: stop`nnote: the room was closed and is reopened for new sessions only`n"
     $stopped.Add($name)
 }
