@@ -23,7 +23,8 @@ Room memory, a reviewed close, and reopening a closed room:
   `TRANSCRIPT-closed-<stamp>.md`. Old sessions stay stopped; memory and rules carry over.
 - New eval case `closes-with-memory-review`.
 - Room package 3.2.0 (protocol still 3). Running rooms: `scripts/Update-RelayRoom.ps1 -Room <id>` to get the
-  new verbs.
+  new verbs. Until then `Add-RelayAgent.ps1` refuses to write a seat into such a room (add, `-Replace`,
+  `-Assign`, `-OpenSeats`): the instructions would name verbs its tool does not have.
 
 ## 0.2.2 (2026-10-11)
 

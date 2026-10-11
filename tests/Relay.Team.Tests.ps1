@@ -2051,6 +2051,53 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $asked.Output | Should -Match 'SENT jack-olivia-\d+ \(question\)'
         }
 
+        It 'goes on telling about new entries once an author''s file is at its 200 lines, and after it shrank' {
+            function Get-EmmaLine { param([int]$From, [int]$To) return @($From..$To | ForEach-Object { '2026-10-10T{0:D2}:{1:D2}:00Z | - | Entry {2} of emma.' -f [int][Math]::Floor($_ / 60), ($_ % 60), $_ }) }
+            Write-TeamMemory 'emma' (Get-EmmaLine 1 200)
+            $null = Invoke-Team 'jack' @('start')
+            # At the cap the oldest line goes for each new one: the number of entries stays 200
+            Write-TeamMemory 'emma' (Get-EmmaLine 2 201)
+            $lines = Get-TeamLine (Invoke-Team 'jack' @('start')).Output
+            $at = [array]::IndexOf($lines, 'room memory: 200 entries, 1 new - run: find <words> before you start or ask')
+            $at | Should -BeGreaterThan 0
+            $lines[$at + 1] | Should -BeExactly '  2026-10-10T03:21:00Z Emma [-] Entry 201 of emma.'
+            $lines[$at + 2] | Should -Not -Match 'of emma'
+            # A file that shrank does not turn old entries into new ones, and the next entry is new again
+            Write-TeamMemory 'emma' ((Get-EmmaLine 150 201) + (Get-EmmaLine 202 202))
+            $lines = Get-TeamLine (Invoke-Team 'jack' @('start')).Output
+            $lines | Should -Contain 'room memory: 53 entries, 1 new - run: find <words> before you start or ask'
+            $lines | Should -Contain '  2026-10-10T03:22:00Z Emma [-] Entry 202 of emma.'
+            # The entry seen last is gone: what is newer than its time is new
+            Write-TeamMemory 'emma' @((Get-EmmaLine 150 201) + (Get-EmmaLine 203 204))
+            $lines = Get-TeamLine (Invoke-Team 'jack' @('start')).Output
+            $lines | Should -Contain 'room memory: 54 entries, 2 new - run: find <words> before you start or ask'
+        }
+
+        It 'takes the count an earlier tool kept as everything seen so far, and tells about what comes after' {
+            $null = Invoke-Team 'jack' @('start')
+            $state = Join-Path $room 'agents\jack\state'
+            Write-TeamFile $state (([System.IO.File]::ReadAllText($state)).TrimEnd() + "`nmemory_seen: 3`n")
+            Write-TeamMemory 'emma' @(1..5 | ForEach-Object { '2026-10-10T08:0{0}:00Z | - | Entry {0} of emma.' -f $_ })
+            $first = Invoke-Team 'jack' @('start')
+            $first.ExitCode | Should -Be 0
+            Get-TeamLine $first.Output | Should -Contain 'room memory: 5 entries, 0 new - run: find <words> before you start or ask'
+            Write-TeamMemory 'emma' @(1..6 | ForEach-Object { '2026-10-10T08:0{0}:00Z | - | Entry {0} of emma.' -f $_ })
+            $lines = Get-TeamLine (Invoke-Team 'jack' @('start')).Output
+            $lines | Should -Contain 'room memory: 6 entries, 1 new - run: find <words> before you start or ask'
+            $lines | Should -Contain '  2026-10-10T08:06:00Z Emma [-] Entry 6 of emma.'
+        }
+
+        It 'keeps the memory hint of a question that an empty draft stopped for the question that is sent' {
+            Write-TeamMemory 'emma' @('2026-10-10T08:00:00Z | - | The answer may be here already.')
+            $empty = Invoke-Team 'jack' @('ask')
+            $empty.ExitCode | Should -Not -Be 0
+            $empty.Output | Should -Match 'nothing to send'
+            $empty.Output | Should -Not -Match 'room memory:'
+            $asked = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('ask') -Text "Where?`n`nWhere is it?"
+            $asked.ExitCode | Should -Be 0
+            Get-TeamLine $asked.Output | Should -Contain 'room memory: 1 entries, 1 new - run: find <words> before you start or ask'
+        }
+
         It 'gives the tip to remember with a report only while the agent has recorded nothing' {
             $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'adam') -Text "First`n`nDo it."
             $first = Get-TeamLine (Send-RelayTestMessage -Room $room -Agent 'adam' -Engine $engine -Words @('report') -Text "Done`n`n1. Result: done.").Output

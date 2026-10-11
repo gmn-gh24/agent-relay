@@ -387,6 +387,7 @@ if ($saved.IsMade) { "archive: $archive" } else { "ARCHIVE FAILED: the room fold
 Get-LinkLine $saved.Links
 "statistics: " + (Join-Path $roomObject.Local 'stats.json')
 if ($stillHere.Count -gt 0) { 'closed with -Force; no bye from: ' + ((@($stillHere | ForEach-Object { $_.name })) -join ', ') }
-# The shared folder stays until the owner says otherwise: the coordinator asks, with the room memory reviewed first
-if ($saved.IsMade) { "NEXT: review the room memory (Get-RelayMemory.ps1 -Room $($roomObject.Id)) and propose what to promote, then ask the owner whether to delete the shared folder (the archive stays on this PC) or keep it: on delete run Close-RelayRoom.ps1 -Remove $($roomObject.Id). Then run the retro (workflow `"Improve`"): Get-RelayStats.ps1, the byes, lessons.md." }
-else { "NEXT: run Close-RelayRoom.ps1 -Room $($roomObject.Id) again until it names an archive; the shared folder is the only copy until then, so do not offer to delete it. Review the room memory (Get-RelayMemory.ps1 -Room $($roomObject.Id)), then run the retro (workflow `"Improve`"): Get-RelayStats.ps1, the byes, lessons.md." }
+# The memory review and the owner's one question come before the close (SKILL.md, workflow "Close"): what is
+# left is to carry out the owner's answer. The shared folder stays until the owner chose delete.
+if ($saved.IsMade) { "NEXT: apply the promotions the owner approved (Add-RelayLocalMemory.ps1 for local notes, the Improve procedure for project lessons). If the owner chose delete, run Close-RelayRoom.ps1 -Remove $($roomObject.Id) (the archive stays on this PC); if keep, leave the folder. Then run the retro (workflow `"Improve`"): Get-RelayStats.ps1, the byes, lessons.md." }
+else { "NEXT: run Close-RelayRoom.ps1 -Room $($roomObject.Id) again until it names an archive; the shared folder is the only copy until then, so do not remove it, even if the owner chose delete. Apply the promotions the owner approved (Add-RelayLocalMemory.ps1 for local notes, the Improve procedure for project lessons), then run the retro (workflow `"Improve`"): Get-RelayStats.ps1, the byes, lessons.md." }

@@ -213,6 +213,58 @@ Describe 'Reopen-RelayRoom' -Tag 'Scripts' {
         Test-Path -LiteralPath $archive | Should -BeTrue
     }
 
+    It 'makes no folder through a link that appears in the half-restored folder while the archive is unpacked' -Tag 'MaySkip' {
+        $outside = Join-Path $root 'outside'
+        $null = New-Item -ItemType Directory -Path $outside -Force
+        # A link to a folder: a symbolic link, or a junction where the account may not make one
+        $probe = Join-Path $root 'probe'
+        $kind = ''
+        try { $null = New-Item -ItemType SymbolicLink -Path $probe -Target $outside -ErrorAction Stop; $kind = 'SymbolicLink' } catch { $null = $_ }
+        if (-not $kind) { try { $null = New-Item -ItemType Junction -Path $probe -Target $outside -ErrorAction Stop; $kind = 'Junction' } catch { $null = $_ } }
+        if (-not $kind) { Set-ItResult -Skipped -Because 'this account can make neither a symbolic link nor a junction'; return }
+        [System.IO.Directory]::Delete($probe, $false)
+        Close-TestRoom -Remove
+        # Many entries first, so that the link is in place before the last one: a file in a folder not made yet
+        Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipFile]::Open($archive, [System.IO.Compression.ZipArchiveMode]::Update)
+        try {
+            $bytes = [System.Text.Encoding]::ASCII.GetBytes('filler')
+            foreach ($number in 1..1500) {
+                $stream = $zip.CreateEntry("work/fill-$number.txt").Open()
+                try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+            }
+            $stream = $zip.CreateEntry('a/sub/x.txt').Open()
+            try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+        }
+        finally { $zip.Dispose() }
+        # Somebody who can write beside the room puts the link in as soon as the half-restored folder is there
+        $planter = [powershell]::Create()
+        $null = $planter.AddScript({
+                param($Rooms, $Target, $Kind)
+                $until = [DateTime]::UtcNow.AddSeconds(120)
+                while ([DateTime]::UtcNow -lt $until) {
+                    $building = @(Get-ChildItem -LiteralPath $Rooms -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '.reo.reopen-*' })
+                    if ($building.Count -gt 0) {
+                        $null = New-Item -ItemType $Kind -Path (Join-Path $building[0].FullName 'a') -Target $Target -ErrorAction Stop
+                        return 'planted'
+                    }
+                    Start-Sleep -Milliseconds 2
+                }
+                return 'timed out'
+            }).AddArgument((Join-Path $root 'rooms')).AddArgument($outside).AddArgument($kind)
+        $handle = $planter.BeginInvoke()
+        try {
+            { & $reopen -Room 'reo' } | Should -Throw '*could not be restored*would go through a link*Nothing was restored*'
+            [string]@($planter.EndInvoke($handle))[0] | Should -Be 'planted'
+        }
+        finally { $planter.Dispose() }
+        Test-Path -LiteralPath (Join-Path $outside 'sub') | Should -BeFalse
+        @(Get-ChildItem -LiteralPath $outside -Force).Count | Should -Be 0
+        Test-Path -LiteralPath $room | Should -BeFalse
+        @(Get-ChildItem -LiteralPath (Join-Path $root 'rooms') -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '.reo.reopen-*' }).Count | Should -Be 0
+        Test-Path -LiteralPath (Join-Path $object.Canon 'CLOSED') | Should -BeTrue
+    }
+
     It 'refuses a removed folder without an archive that opens' {
         Close-TestRoom -Remove
         Remove-Item -LiteralPath $archive -Force
@@ -310,5 +362,20 @@ Describe 'Reopen-RelayRoom' -Tag 'Scripts' {
         ((& $reopen -Room 'reo') -join "`n") | Should -Match 'earlier reopen was cut short'
         Get-TestClosedStamp | Should -Be ''
         { & $reopen -Room 'reo' } | Should -Throw '*is not closed*'
+    }
+
+    It 'removes the room''s CLOSED as well when the cut came between this PC''s marker and the room''s' {
+        Close-TestRoom
+        $null = & $reopen -Room 'reo'
+        # As the cut leaves it: this PC's marker gone, the room's still there, the index still closed
+        [System.IO.File]::WriteAllText((Join-Path $room 'CLOSED'), "closed_utc: 2020-01-01T00:00:00Z`n")
+        $index = @(Get-RelayRoomIndex)
+        foreach ($entry in $index) { if ($entry.id -eq 'reo') { $entry.closed_utc = '2020-01-01T00:00:00Z' } }
+        Save-RelayRoomIndex $index
+        (Invoke-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('check')).ExitCode | Should -Be 5
+        ((& $reopen -Room 'reo') -join "`n") | Should -Match 'earlier reopen was cut short'
+        Test-Path -LiteralPath (Join-Path $room 'CLOSED') | Should -BeFalse
+        Get-TestClosedStamp | Should -Be ''
+        (Invoke-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('check')).ExitCode | Should -Not -Be 5
     }
 }
