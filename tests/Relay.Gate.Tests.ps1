@@ -89,16 +89,26 @@ Describe 'Invoke-AllTests.ps1 runs the editions it is given' -Tag 'Gate' {
             $host_ = (Get-Process -Id $PID).Path
             $arguments = @('-NoProfile', '-NonInteractive')
             if ($PSVersionTable.PSVersion.Major -lt 6) { $arguments += @('-ExecutionPolicy', 'Bypass') }
-            $output = @(& $host_ @arguments -File $gate @Words 2>&1 | ForEach-Object { [string]$_ })
-            return [pscustomobject]@{ Lines = $output; ExitCode = $LASTEXITCODE }
+            # Windows PowerShell turns each line a program writes to standard error into an error, and under Stop
+            # the first one ends the test
+            $previous = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $output = @(& $host_ @arguments -File $gate @Words 2>&1 | ForEach-Object { [string]$_ })
+                return [pscustomobject]@{ Lines = $output; ExitCode = $LASTEXITCODE }
+            }
+            finally { $ErrorActionPreference = $previous }
         }
     }
 
     It 'refuses an edition it does not know' {
         $run = Invoke-Gate @('-StaticOnly', '-SkipAnalyzer', '-Editions', 'sh')
         $run.ExitCode | Should -Not -Be 0
-        ($run.Lines -join ' ') | Should -Match 'ps7.*ps5|ValidateSet'
-        @($run.Lines | Where-Object { $_ -like 'GATE *' }).Count | Should -Be 0
+        # Windows PowerShell wraps an error record at the width of its console: compare without the white space
+        $said = ($run.Lines -join '') -replace '\s', ''
+        $said | Should -Match 'Cannotvalidateargument'
+        $said | Should -Match 'Editions'
+        @($run.Lines | Where-Object { $_ -like 'GATE *' -or $_ -like '* NOT TESTED*' }).Count | Should -Be 0
     }
 
     # On Windows, ps5 alone would run every Pester file under Windows PowerShell: half an hour
