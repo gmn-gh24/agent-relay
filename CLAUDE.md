@@ -64,10 +64,11 @@ in a working copy, `%LOCALAPPDATA%\agent-relay` for an installed copy, or `AGENT
 
 - Which rooms exist: `rooms.json` in `<local>`, never a folder scan. What a room is (`ROOM`, `CLOSED`, settings,
   retired state, generation): the **canon** copy, never the file in the room. Owner messages count only when they
-  match this PC's owner log. See `Get-RelayRoomObject` / `Resolve-RelayRoom`.
+  match this PC's owner log, and the coordinator's own messages only when they match `sent.log`, which its tool
+  writes through the launcher. See `Get-RelayRoomObject` / `Resolve-RelayRoom`.
 - Files that only the coordinator may write (tools, wrappers, instructions, plan, rules, markers) go through
-  `Write-RelayGuardedText` / `Copy-RelayGuardedFile`: canon first, room second. `Test-RelayTamper` (run on every
-  feed round) compares them, restores changes, and quarantines strangers. A new guarded file needs no extra
+  `Write-RelayGuardedText` / `Copy-RelayGuardedFile`: canon first, room second. `Test-RelayTamper` (run every
+  15 s by the feed) compares them, restores changes, and quarantines strangers. A new guarded file needs no extra
   registration; a new *kind* of stranger to detect does (see its candidate list).
 - Message text never travels on a command line: it is written to a draft file and the verb takes plain words.
 - Nothing follows a link in the room: an agent can put a symbolic link or a junction anywhere in it. The module

@@ -12,7 +12,8 @@
 
         RELAY_PAUSE_AT=<point>  RELAY_PAUSE_DIR=<folder>
             At the named point the tool creates <folder>/<point>.reached, then waits until <folder>/<point>.go exists
-            (60 seconds at most). Points: send-placed, lease-judged, proposals-write.
+            (60 seconds at most). Points: send-staged, send-placed, proposals-write, lease-judged, lease-refresh,
+            lease-release.
 
     A test that needs the hook skips itself while the source of the tool does not contain the text RELAY_PAUSE_AT.
     RELAY_FAULTS_RUN_HOOK_TESTS=1 runs them anyway (to see them fail against a tool without the hook).
@@ -561,6 +562,44 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $readers.Count | Should -Be 1
             @(@($one, $two) | Where-Object { $_.ExitCode -eq 4 }).Count | Should -Be 1
             Test-Path -LiteralPath (Join-Path $room 'agents\emma\wait.lease.lock') | Should -BeFalse
+        }
+
+        It 'leaves the lock to a call that took it over from a holder that kept it past 15 seconds' {
+            # The first call holds the lease lock (held at lease-judged) until the lock looks left over; the second
+            # takes it and is held at the same point. When the first one goes on, the lock is not its own any more:
+            # it must stay with the second, whose critical section is still running.
+            if (Skip-WithoutHook 'lease-judged') { return }
+            $pause = Open-Pause -Room $room -Point 'lease-judged'
+            $secondDir = Join-Path $room 'pause-second'
+            $null = New-Item -ItemType Directory -Path $secondDir -Force
+            $lease = Join-Path $room 'agents\emma\wait.lease'
+            $lock = "$lease.lock"
+            [System.IO.File]::WriteAllText($lease, "token: dead`ngen: 1`nhost: elsewhere`npid: 1`n")
+            (Get-Item -LiteralPath $lease).LastWriteTimeUtc = [DateTime]::UtcNow.AddSeconds(-120)
+            $first = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -Environment $pause
+            $second = $null
+            $taken = ''
+            $kept = $false
+            $after = ''
+            try {
+                Wait-ForFile (Join-Path $pause.RELAY_PAUSE_DIR 'lease-judged.reached') | Should -BeTrue
+                (Get-Item -LiteralPath $lock -Force).LastWriteTimeUtc = [DateTime]::UtcNow.AddSeconds(-40)
+                $second = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -Environment @{ RELAY_PAUSE_AT = 'lease-judged'; RELAY_PAUSE_DIR = $secondDir }
+                Wait-ForFile (Join-Path $secondDir 'lease-judged.reached') | Should -BeTrue
+                $taken = [System.IO.File]::ReadAllText($lock)
+                [System.IO.File]::WriteAllText((Join-Path $pause.RELAY_PAUSE_DIR 'lease-judged.go'), 'go')
+                $null = Wait-RelayTool -Handle $first -TimeoutSeconds (60 * $pace)
+                $kept = Test-Path -LiteralPath $lock
+                if ($kept) { $after = [System.IO.File]::ReadAllText($lock) }
+            }
+            finally {
+                [System.IO.File]::WriteAllText((Join-Path $pause.RELAY_PAUSE_DIR 'lease-judged.go'), 'go')
+                [System.IO.File]::WriteAllText((Join-Path $secondDir 'lease-judged.go'), 'go')
+            }
+            $null = Wait-RelayTool -Handle $second -TimeoutSeconds (60 * $pace)
+            $kept | Should -BeTrue -Because 'the first call must not remove the lock the second one holds'
+            $after | Should -BeExactly $taken
+            Test-Path -LiteralPath $lock | Should -BeFalse -Because 'the second call gives back its own lock'
         }
 
         It 'ends a wait whose lease another wait has taken, and delivers nothing' {

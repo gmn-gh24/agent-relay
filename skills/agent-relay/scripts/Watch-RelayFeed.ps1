@@ -196,9 +196,10 @@ function Get-NewMessage {
     foreach ($agent in @(Get-RelayRoster $roomObject -IncludeRetired)) {
         $inbox = Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $agent) 'inbox'
         if (-not (Test-Path -LiteralPath $inbox)) { continue }
-        foreach ($file in @(Get-ChildItem -LiteralPath $inbox -Filter '*.md' -File)) {
+        # -Force and an exact name, as the room tool lists an inbox
+        foreach ($file in @(Get-ChildItem -LiteralPath $inbox -Filter '*.md' -File -Force)) {
             if ($script:known.ContainsKey($file.FullName)) { continue }
-            if ($file.Name -notmatch '^[a-z][a-z0-9]{1,15}-[0-9]{4,6}\.md$') { continue }
+            if ($file.Name -cnotmatch '^[a-z][a-z0-9]{1,15}-[0-9]{4,6}\.md$') { continue }
             $message = Read-RelayMessage $file.FullName
             if ($null -eq $message) { continue }
             $new.Add($message)
