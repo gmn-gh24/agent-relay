@@ -115,13 +115,20 @@ switch ($PSCmdlet.ParameterSetName) {
             $null = Get-RelayWorkKind ([string]$spec['work'])
             $specs.Add($spec)
         }
+        # The names too: a wanted name that is reserved, malformed or taken in the third entry must not leave two added
         $taken = New-Object System.Collections.Generic.List[string]
         foreach ($name in $all) { $taken.Add($name) }
-        $lastPrompt = ''
-        $lastName = ''
+        $names = New-Object System.Collections.Generic.List[string]
         foreach ($spec in $specs) {
             $name = Select-RelayName -Machine $spec['machine'] -Role $spec['role'] -Taken $taken.ToArray() -Wanted $spec['wanted_name']
             $taken.Add($name)
+            $names.Add($name)
+        }
+        $lastPrompt = ''
+        $lastName = ''
+        for ($index = 0; $index -lt $specs.Count; $index++) {
+            $spec = $specs[$index]
+            $name = $names[$index]
             $lastPrompt = Add-RelayAgentSeat -Room $roomObject -Name $name -Spec $spec -Generation 1
             $lastName = $name
             "ADDED $name ($($spec['role']), $($spec['kind']), $($spec['transport'])) to room $($roomObject.Id)"

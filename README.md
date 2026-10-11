@@ -56,7 +56,7 @@ this plugin, only one prompt to paste and one command to run.
   waits on you, with an input to speak as the owner. The same view runs in any terminal.
 - **A record.** Every message is a file. Closing a room writes a transcript, statistics and an archive.
 - **Safeguards.** The coordinator's PC keeps its own copy of the tools, instructions and rules, compares them
-  with the room every few seconds, restores what changed and raises an alarm.
+  with the room every 15 seconds while the feed runs, restores what changed and raises an alarm.
 
 ## How it works
 
@@ -413,7 +413,7 @@ pwsh -NoProfile -File tests\Invoke-AllTests.ps1
 | Static | PSScriptAnalyzer without findings, ASCII only and LF line ends in every file git tracks, the PowerShell wrapper templates parse, every test file is listed in the gate |
 | Pane | `claude plugin validate` and `claude plugin test` |
 | Room tools | Four test files, each on PowerShell 7 and Windows PowerShell 5.1 |
-| Coordinator scripts | Five test files on both PowerShell editions |
+| Coordinator scripts | Seven test files on both PowerShell editions |
 
 There is no `sh` tool and no `sh` test (postponed). A test file that fails to load, a failing
 `BeforeAll` or `AfterAll`, a path that names nothing and a run in which no test ran all fail the gate.
@@ -427,10 +427,11 @@ pwsh -File tests\Invoke-Suite.ps1 -Path tests\Relay.Faults.Tests.ps1 -Engines ps
 
 Start the tests from a folder on a local disk.
 
-GitHub Actions (`.github/workflows/ci.yml`) runs the static and pane checks on Linux and the Pester files on
-Windows, in two jobs side by side (PowerShell 7 and Windows PowerShell 5.1), on every push to `main`, every pull
-request and on demand. A commit that changes only documents no test reads (the Markdown at the top of the
-repository, `SKILL.md`, `references/`, `evals/`) leaves the Windows jobs out. The eval cases never run there.
+GitHub Actions (`.github/workflows/ci.yml`) runs the static and pane checks on Linux, on every push to `main`,
+every pull request and on demand. The Pester files (PowerShell 7 and Windows PowerShell 5.1) do not run there:
+run them on a Windows dev machine before a commit (`tests\Invoke-AllTests.ps1`). A Claude session that
+cannot run them (no Windows) asks the owner to run them and to report the RESULT lines. The eval cases never run
+in CI.
 
 ### The pane and the skill
 

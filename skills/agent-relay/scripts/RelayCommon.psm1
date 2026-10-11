@@ -540,7 +540,9 @@ function Get-RelayRoomObject {
     param([Parameter(Mandatory)][string]$Id, [Parameter(Mandatory)][string]$Path)
     $local = Join-Path (Join-Path (Get-RelayLocalRoot) 'rooms') $Id
     $canon = Join-Path $local 'canon'
-    $info = Read-RelayKeyValue (Join-Path $canon 'ROOM')
+    # Strictly: a canonical ROOM that is there and cannot be read right now is an error, never a room without a
+    # coordinator (Update-RelayRoomPackage writes what it read back into both copies)
+    $info = Read-RelayKeyValueText (Read-RelayTextStrict (Join-Path $canon 'ROOM'))
     return [pscustomobject]@{
         Id          = $Id
         Path        = $Path
@@ -562,7 +564,7 @@ function Resolve-RelayRoom {
     $path = ''
     if ($Room -match '[\\/:]') {
         $folder = Get-RelayNormalPath ($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Room))
-        foreach ($candidate in @(Get-RelayRoomIndex)) {
+        foreach ($candidate in @(Get-RelayRoomIndex -Strict)) {
             if ($null -eq $candidate.PSObject.Properties['path'] -or -not [string]$candidate.path) { continue }
             $candidatePath = ''
             try { $candidatePath = Get-RelayNormalPath ([string]$candidate.path) } catch { continue }
@@ -571,7 +573,7 @@ function Resolve-RelayRoom {
         if ($null -eq $entry) { throw "No room at ${folder}: it is not in the room index of this PC" }
     }
     else {
-        foreach ($candidate in @(Get-RelayRoomIndex)) {
+        foreach ($candidate in @(Get-RelayRoomIndex -Strict)) {
             if ($null -ne $candidate.PSObject.Properties['id'] -and [string]$candidate.id -ceq $Room) { $entry = $candidate; break }
         }
         if ($null -eq $entry) { throw "No room '$Room': it is not in the room index of this PC" }
@@ -907,10 +909,31 @@ function Test-RelayTamper {
                 # A link is moved nowhere: it is a finding of its own
                 $link = Get-RelayLinkInPath -Root $Room.Path -Path $path
                 if ($link) { & $addLink $link; continue }
+                # A folder where a file of this PC belongs is listed without entering a link inside it: one that
+                # holds a link is not moved (Move-Item across volumes would carry over what lies behind a junction),
+                # each link is a finding of its own
+                $tree = $null
+                if ([System.IO.Directory]::Exists($path)) {
+                    $tree = Get-RelayFileTree $path
+                    if (@($tree.Links).Count -gt 0) { foreach ($inner in @($tree.Links)) { & $addLink $inner }; continue }
+                }
                 if ($Repair) {
                     $keep = Join-Path $quarantine ('{0}-{1}' -f (Format-RelayUtc -Format 'yyyyMMddTHHmmssZ'), ($relative -replace '[\\/]', '_'))
                     if (-not (Test-Path -LiteralPath $quarantine)) { $null = New-Item -ItemType Directory -Path $quarantine -Force }
-                    Move-Item -LiteralPath $path -Destination $keep -Force -ErrorAction Stop
+                    if ($null -ne $tree) {
+                        # The folder's files are kept one by one and the folder goes as Remove-RelayTree removes it: a
+                        # link that appeared since the listing is removed as a link, never followed
+                        $top = (New-Object System.IO.DirectoryInfo $path).FullName.TrimEnd('\', '/')
+                        foreach ($file in @($tree.Files)) {
+                            $inner = Join-Path $keep ($file.FullName.Substring($top.Length).TrimStart('\', '/'))
+                            $innerFolder = Split-Path -Parent $inner
+                            if (-not (Test-Path -LiteralPath $innerFolder)) { $null = New-Item -ItemType Directory -Path $innerFolder -Force }
+                            [System.IO.File]::WriteAllBytes($inner, [System.IO.File]::ReadAllBytes($file.FullName))
+                        }
+                        if (@($tree.Files).Count -eq 0 -and -not (Test-Path -LiteralPath $keep)) { $null = New-Item -ItemType Directory -Path $keep -Force }
+                        Remove-RelayTree -Path $path -Confirm:$false
+                    }
+                    else { Move-Item -LiteralPath $path -Destination $keep -Force -ErrorAction Stop }
                 }
                 $findings.Add([pscustomobject]@{ Relative = $relative; Kind = 'extra'; Repaired = [bool]$Repair; Reason = '' })
             }
@@ -1006,10 +1029,12 @@ function Get-RelayMessage {
     $messages = New-Object System.Collections.Generic.List[object]
     foreach ($agent in @(Get-RelayRoster $Room -IncludeRetired)) {
         $inbox = Join-Path (Join-Path (Join-Path $Room.Path 'agents') $agent) 'inbox'
-        if (-not (Test-Path -LiteralPath $inbox)) { continue }
+        # Nothing is read through a link in the room: an inbox behind one, or a message file that is one, is not the room's
+        if (-not (Test-Path -LiteralPath $inbox) -or (Test-RelayLinkedPath -Root $Room.Path -Path $inbox)) { continue }
         # -Force: a hidden message file is one the room tool reads too
         foreach ($file in @(Get-ChildItem -LiteralPath $inbox -Filter '*.md' -File -Force)) {
             if ($file.Name -cnotmatch '^[a-z][a-z0-9]{1,15}-[0-9]{4,6}\.md$') { continue }
+            if ((($file.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) -and (Test-RelayLink $file.FullName)) { continue }
             $message = Read-RelayMessage $file.FullName
             if ($null -ne $message) { $messages.Add($message) }
         }
@@ -1131,6 +1156,8 @@ function Send-RelayOwnerMessage {
     $type = 'note'
     if ($Re) { $type = 'answer' }
     $coordinatorDir = Join-Path (Join-Path $Room.Path 'agents') $Room.Coordinator
+    # Never through a link that an agent put in place of the coordinator's folder or inbox
+    Assert-RelayRoomTarget $Room (Join-Path $coordinatorDir 'inbox')
     return (Add-RelayMessageFile -Inbox (Join-Path $coordinatorDir 'inbox') -From 'owner' -To $Room.Coordinator -Type $type -Re $Re -Subject $subject -Body $body -Expects 'none' -LogPath (Join-Path $Room.Owner 'log') -Via $Via -DeliveredPath (Join-Path $coordinatorDir 'delivered'))
 }
 
@@ -1139,7 +1166,9 @@ function Test-RelayOwnerMessage {
     param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)]$Message)
     $hash = Get-RelayFileHash $Message.Path
     if (-not $hash) { return $false }
-    foreach ($line in ((Read-RelayText (Join-Path $Room.Owner 'log')) -split "`n")) {
+    # An owner's log that is there and cannot be read right now is an error, never "not in the log": that would
+    # call the owner's own message a forgery
+    foreach ($line in ((Read-RelayTextStrict (Join-Path $Room.Owner 'log')) -split "`n")) {
         $parts = @($line -split "`t")
         if ($parts.Count -ge 3 -and $parts[1] -ceq $Message.Id -and $parts[2] -ceq $hash) { return $true }
     }

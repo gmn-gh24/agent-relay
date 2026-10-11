@@ -41,6 +41,8 @@ export type RelayMessage = {
   subject: string
   time: string
   preview: string
+  // The header names another sender, receiver or number than the place of its file
+  mismatch: boolean
 }
 
 export type RelayCard = {
