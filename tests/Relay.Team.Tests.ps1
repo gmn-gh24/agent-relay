@@ -693,27 +693,27 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             @{ Name = 'no end: line'; Mode = 'none' }
             @{ Name = 'an end: line of another revision'; Mode = 'other' }
         ) {
-            # What one call costs without the waiting: the same call in a room without a PLAN file, which prints the same
-            # shape and reads nothing three times (a complete plan costs more work than a half written one). A delay only
-            # ever adds, so the smallest of three calls is the nearest to the true time, for the baseline and for the
-            # measured call.
-            [System.IO.File]::Delete((Join-Path $room 'PLAN'))
-            $baseSeconds = @(1..3 | ForEach-Object {
-                    $watch = [System.Diagnostics.Stopwatch]::StartNew()
-                    $null = Invoke-Team 'jack' @('team')
-                    $watch.Stop()
-                    $watch.Elapsed.TotalSeconds
-                } | Sort-Object)[0]
+            # What the waiting costs: pairs of calls, one in a room without a PLAN file, which prints the same shape and
+            # reads nothing three times (a complete plan costs more work than a half written one), and one with the half
+            # written plan, back to back so that both calls of a pair meet the same load. A shared machine running six
+            # suites at once slows a burst of calls by a second or more (with the smallest of three calls of each kind,
+            # a CI runner measured differences from 0.95 to 4.16 seconds); the median of five pairs is not moved by
+            # two pairs caught in a burst.
             [System.IO.File]::Delete((Join-Path $room 'agents\jack\state'))
-            if ($Mode -eq 'none') { Write-TeamPlan $room $defaultPlan -NoEnd } else { Write-TeamPlan $room $defaultPlan -End '2' }
-            $measured = New-Object System.Collections.Generic.List[double]
-            foreach ($try in 1..3) {
+            $differences = New-Object System.Collections.Generic.List[double]
+            $result = $null
+            foreach ($pair in 1..5) {
+                [System.IO.File]::Delete((Join-Path $room 'PLAN'))
+                $watch = [System.Diagnostics.Stopwatch]::StartNew()
+                $null = Invoke-Team 'jack' @('team')
+                $watch.Stop()
+                $baseSeconds = $watch.Elapsed.TotalSeconds
+                if ($Mode -eq 'none') { Write-TeamPlan $room $defaultPlan -NoEnd } else { Write-TeamPlan $room $defaultPlan -End '2' }
                 $watch = [System.Diagnostics.Stopwatch]::StartNew()
                 $result = Invoke-Team 'jack' @('team')
                 $watch.Stop()
-                $measured.Add($watch.Elapsed.TotalSeconds)
+                $differences.Add($watch.Elapsed.TotalSeconds - $baseSeconds)
             }
-            $measuredSeconds = ($measured | Sort-Object)[0]
             $result.ExitCode | Should -Be 0
             $lines = Get-TeamLine $result.Output
             $lines[0] | Should -BeExactly '=== team in room template: the plan is being written, run team again ==='
@@ -723,10 +723,10 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $result.Output | Should -Match '(?m)^YOU: Jack\. Your parts: none\.'
             $result.Output | Should -Not -Match '(?m)^      parts: '
             # Consistent with a second between each of three reads (two seconds more than a call that does not wait).
-            # It does not count the reads: that would need the tool to say when it reads. The margins are those of a
-            # shared machine running six suites at once (a CI runner measured 1.55 and 2.96 seconds): wide enough for
-            # its scheduling, narrow enough to tell a call that waits from one that does not, or waits far too long.
-            $extra = $measuredSeconds - $baseSeconds
+            # It does not count the reads: that would need the tool to say when it reads. The margins are wide enough for
+            # the scheduling of a shared machine, narrow enough to tell a call that waits from one that does not, or
+            # waits far too long.
+            $extra = @($differences | Sort-Object)[2]
             $extra | Should -BeGreaterThan 1.2
             $extra | Should -BeLessThan 4.0
             (Read-TeamKeyValue (Join-Path $room 'agents\jack\state')).ContainsKey('plan_seen') | Should -BeFalse
