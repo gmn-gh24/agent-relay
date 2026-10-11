@@ -53,8 +53,8 @@
     with it, the result says pane NOT TESTED.
 
 .PARAMETER Editions
-    Which PowerShell editions run the Pester files: ps7, ps5 or both (the default). CI runs each edition in a
-    job of its own; an edition left out is named on a NOT TESTED line.
+    Which PowerShell editions run the Pester files: ps7, ps5 or both (the default). CI does not run the Pester
+    files; run them on a Windows dev machine. An edition left out is named on a NOT TESTED line.
 
 .EXAMPLE
     pwsh -File tests\Invoke-AllTests.ps1
