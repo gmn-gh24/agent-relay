@@ -11,6 +11,8 @@ export type FeedEvent =
   | { kind: 'closed' }
 
 const MESSAGE_LIMIT = 200
+// Under a message whose header names another sender, receiver or number than its file: the file's place counts
+const MISMATCH_NOTICE = 'HEADER DOES NOT MATCH ITS FILE'
 const ALARM_LIMIT = 20
 
 // An error the feed printed stands in the note until the feed shows that it reads the room again: at once with
@@ -91,6 +93,7 @@ const toMessage = (value: unknown): RelayMessage => {
     subject: asText(row.subject),
     time: asText(row.time),
     preview: asText(row.preview),
+    mismatch: row.mismatch === true,
   }
 }
 
@@ -183,6 +186,14 @@ const applyItem = (view: RelayView, item: Record<string, unknown>): { view: Rela
       if (message.id === '' || view.messages.some(one => one.id === message.id)) return { view, events }
 
       return { view: { ...view, messages: [...view.messages, message].slice(-MESSAGE_LIMIT) }, events }
+    }
+    case 'removed': {
+      // The file of the message is gone from the room (the tamper check moved a forgery out, or it was deleted):
+      // what takes its place later is another message under the same id
+      const id = asText(item.id)
+      if (id === '' || !view.messages.some(one => one.id === id)) return { view, events }
+
+      return { view: { ...view, messages: view.messages.filter(one => one.id !== id) }, events }
     }
     case 'agents':
       return { view: { ...view, agents: asList(item.agents).map(toAgent) }, events }
@@ -590,6 +601,7 @@ export const paneRows = (view: RelayView, width: number, offset?: number): PaneR
     const left = Math.max(0, width - textWidth(clock) - 1 - textWidth(message.from))
     rows.push(rowOf({ text: clock, dim: true }, { text: ` ${message.from}`, bold: true }, { text: cutToWidth(` > ${message.to}  ${message.type}`, left), dim: true }))
     rows.push(...block(indented(message.subject, width)))
+    if (message.mismatch) rows.push(...block(indented(MISMATCH_NOTICE, width), { color: 'yellow' }))
     rows.push(...block(indented(message.preview, width), { dim: true }))
   }
 

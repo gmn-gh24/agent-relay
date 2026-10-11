@@ -124,14 +124,16 @@ if ($ListClosed) {
         # What the index says became of the folder, checked now: a folder it keeps that is gone is missing. An
         # entry from before the index recorded it says nothing, and is judged by the folder alone.
         $folder = [string](Get-RelayProperty $entry 'folder' '')
-        $isThere = Test-Path -LiteralPath $entry.path
+        $entryPath = [string](Get-RelayProperty $entry 'path' '')
+        $isThere = ($entryPath -and (Test-Path -LiteralPath $entryPath))
         if ($folder -cne 'removed') {
             $folder = 'kept'
             if (-not $isThere) { $folder = 'missing' }
         }
         if ($isThere) { $found++ }
-        $hasArchive = Test-RoomArchive (Join-Path $archiveRoot "$($entry.id).zip")
-        '{0}  closed {1}  archive: {2}  {3}  folder: {4}' -f $entry.id, $entry.closed_utc, $(if ($hasArchive) { 'yes' } else { 'NO' }), $entry.path, $folder
+        $entryId = [string](Get-RelayProperty $entry 'id' '')
+        $hasArchive = Test-RoomArchive (Join-Path $archiveRoot "$entryId.zip")
+        '{0}  closed {1}  archive: {2}  {3}  folder: {4}' -f $entryId, (Get-RelayProperty $entry 'closed_utc' ''), $(if ($hasArchive) { 'yes' } else { 'NO' }), $entryPath, $folder
     }
     if ($found -eq 0) { 'No closed room has a folder left.' }
     else { 'NEXT: remove one only when the owner says so: Close-RelayRoom.ps1 -Remove <id>' }
@@ -139,13 +141,16 @@ if ($ListClosed) {
 }
 
 if ($PSCmdlet.ParameterSetName -eq 'Remove') {
-    $entry = @(Get-RelayRoomIndex | Where-Object { $_.id -eq $Remove })
+    $entry = @(Get-RelayRoomIndex | Where-Object { [string](Get-RelayProperty $_ 'id' '') -ceq $Remove })
     if ($entry.Count -eq 0) { throw "No room '$Remove' in the room index" }
     if (-not (Get-RelayProperty $entry[0] 'closed_utc' '')) { throw "The room '$Remove' is not closed" }
     $archive = Join-Path $archiveRoot "$Remove.zip"
     if (-not (Test-RoomArchive $archive)) { throw "The room '$Remove' has no archive at ${archive}: its folder is the only copy and is not removed" }
-    $path = [string]$entry[0].path
-    if (-not (Test-Path -LiteralPath (Join-Path $path 'CLOSED'))) { throw "The folder $path has no CLOSED marker: not removed" }
+    $path = [string](Get-RelayProperty $entry[0] 'path' '')
+    if (-not $path) { throw "The room '$Remove' is in the index of this PC without a folder" }
+    # Closed is what this PC says: the canonical marker, never the CLOSED in the room, which any agent can delete
+    $removeCanon = Join-Path (Join-Path (Join-Path (Get-RelayLocalRoot) 'rooms') $Remove) 'canon'
+    if (-not (Test-Path -LiteralPath (Join-Path $removeCanon 'CLOSED') -PathType Leaf)) { throw "The room '$Remove' has no CLOSED marker in its canonical copy on this PC: not removed" }
     if ($PSCmdlet.ShouldProcess($path, 'Delete the folder of the closed room (its archive stays)')) {
         # Each link in the folder goes as a link: Windows PowerShell 5.1 would delete what lies behind a junction
         Remove-RelayTree -Path $path -Confirm:$false
@@ -249,14 +254,30 @@ if (Test-Path -LiteralPath $canonClosed) {
         }
     }
     $closedArchive = Join-Path $archiveRoot "$($roomObject.Id).zip"
-    if (Test-RoomArchive $closedArchive) {
+    $statsPath = Join-Path $roomObject.Local 'stats.json'
+    $hasStats = Test-Path -LiteralPath $statsPath -PathType Leaf
+    if ($hasStats -and (Test-RoomArchive $closedArchive)) {
         "The room $($roomObject.Id) is already closed."
         "NEXT: nothing is left to do here. Remove its folder only when the owner says so: Close-RelayRoom.ps1 -Remove $($roomObject.Id)"
         return
     }
-    # Closed, but the archive of an earlier call failed: make it now
+    # Closed, but the statistics or the archive of an earlier call failed: make what is missing now
     if (-not (Test-Path -LiteralPath $roomObject.Path)) { throw "The room $($roomObject.Id) is closed and has no archive, and its folder is gone: $($roomObject.Path)" }
-    if ($askFirst -and -not $PSCmdlet.ShouldProcess($roomObject.Id, 'Make the missing archive of the closed room')) { return }
+    if ($askFirst -and -not $PSCmdlet.ShouldProcess($roomObject.Id, 'Make the missing statistics and archive of the closed room')) { return }
+    if (-not $hasStats) {
+        # The archive matters more: statistics that still cannot be written are said, and the next call tries again
+        try {
+            $lateStats = Get-RelayStatistic $roomObject
+            $lateStats | Add-Member -NotePropertyName 'memoryEntries' -NotePropertyValue @(Get-RelayMemoryEntry $roomObject).Count -Force
+            Write-RelayText $statsPath ((ConvertTo-Json -InputObject $lateStats -Depth 6) + "`n")
+            "The room $($roomObject.Id) was already closed; its statistics were missing and are written now: $statsPath"
+        }
+        catch { ConvertTo-RelayPrintedLine "STATISTICS NOT WRITTEN: $($_.Exception.Message). Run Close-RelayRoom.ps1 -Room $($roomObject.Id) again when the reason is gone." }
+    }
+    if (Test-RoomArchive $closedArchive) {
+        "NEXT: nothing is left to do here. Remove its folder only when the owner says so: Close-RelayRoom.ps1 -Remove $($roomObject.Id)"
+        return
+    }
     $saved = Save-RoomArchive $roomObject $closedArchive
     if ($saved.IsMade) {
         "The room $($roomObject.Id) was already closed; its archive was missing and is made now."
