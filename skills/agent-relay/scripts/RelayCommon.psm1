@@ -1808,22 +1808,61 @@ function Get-RelayWorkKind {
     return $entry.Value
 }
 
+function Get-RelayOpenRoomNameSet {
+    # The names every open room of this PC holds, as a set: what a fresh name stays away from. Read from this
+    # PC's index and canonical copies only; a room whose copy cannot be read holds nothing here.
+    $names = @{}
+    foreach ($entry in @(Get-RelayRoomIndex)) {
+        if ([string](Get-RelayProperty $entry 'closed_utc' '')) { continue }
+        $id = [string](Get-RelayProperty $entry 'id' '')
+        $path = [string](Get-RelayProperty $entry 'path' '')
+        if (-not $id -or -not $path) { continue }
+        try {
+            $room = Get-RelayRoomObject -Id $id -Path $path
+            if ($room.IsClosed) { continue }
+            foreach ($name in @(Get-RelayRoster $room -IncludeRetired)) { $names[$name.ToLowerInvariant()] = $true }
+            if ($room.Coordinator) { $names[([string]$room.Coordinator).ToLowerInvariant()] = $true }
+        }
+        catch { $null = $_ }
+    }
+    return $names
+}
+
 function Select-RelayName {
-    # A name for one seat. The same machine and role keeps its name across jobs; in one room every name starts
-    # with a different letter. The registry of names (names.json) is written back whole, so one that exists and
-    # cannot be read or parsed is an error, never an empty registry.
-    param([Parameter(Mandatory)][string]$Machine, [Parameter(Mandatory)][string]$Role, [string[]]$Taken = @(), [string]$Wanted = '')
+    # A name for one seat. A seat on a named other machine keeps its name across jobs: the registry of names
+    # (names.json) remembers machine|role. An open seat, a seat on this PC and the coordinator (-Transient) draw
+    # a fresh name for each room: the pool in a shuffled order, away from the names of this PC's open rooms and
+    # from the last 20 names handed out, which the registry keeps under 'recent'. In one room every name starts
+    # with a different letter. The registry is written back whole, so one that exists and cannot be read or
+    # parsed is an error, never an empty registry.
+    param([Parameter(Mandatory)][string]$Machine, [Parameter(Mandatory)][string]$Role, [string[]]$Taken = @(), [string]$Wanted = '', [switch]$Transient)
     $pool = Get-RelayJsonTable 'relay-names.json'
     $registryPath = Join-Path (Get-RelayLocalRoot) 'names.json'
     $registry = @{}
+    $recent = New-Object System.Collections.Generic.List[string]
     $registryText = Read-RelayTextStrict $registryPath
     if ($registryText.Trim()) {
         $parsed = $null
         try { $parsed = ConvertFrom-RelayJson $registryText }
         catch { throw "The name registry of this PC cannot be parsed, it is not written over: $registryPath ($($_.Exception.Message))" }
-        foreach ($property in $parsed.PSObject.Properties) { $registry[$property.Name] = [string]$property.Value }
+        foreach ($property in $parsed.PSObject.Properties) {
+            # A seat's key always holds a bar: 'recent' is the list of names handed out lately, oldest first
+            if ($property.Name -ceq 'recent') { foreach ($name in @(([string]$property.Value) -split ' ')) { if ($name) { $recent.Add($name.ToLowerInvariant()) } } }
+            else { $registry[$property.Name] = [string]$property.Value }
+        }
     }
-    $key = ('{0}|{1}' -f $Machine.Trim().ToLowerInvariant(), $Role.Trim().ToLowerInvariant())
+    $thisPc = [Environment]::MachineName.Trim().ToLowerInvariant()
+    # Keys of open seats and of this PC's seats, which versions before 0.3.8 remembered, go: such a seat is not
+    # remembered, and a key left would keep its name out of the first pass for good
+    foreach ($entry in @($registry.Keys)) {
+        $bar = $entry.IndexOf([char]'|')
+        if ($bar -lt 0) { continue }
+        $entryMachine = $entry.Substring(0, $bar)
+        if ($entryMachine -ceq '(open seat)' -or $entryMachine -ceq $thisPc) { $registry.Remove($entry) }
+    }
+    $machineKey = $Machine.Trim().ToLowerInvariant()
+    $remembered = (-not $Transient -and $machineKey -cne '(open seat)' -and $machineKey -cne $thisPc)
+    $key = ('{0}|{1}' -f $machineKey, $Role.Trim().ToLowerInvariant())
     $usedLetters = @{}
     foreach ($name in @($Taken)) { if ($name) { $usedLetters[$name.Substring(0, 1).ToLowerInvariant()] = $true } }
     $avoid = @{}
@@ -1838,39 +1877,50 @@ function Select-RelayName {
         if ($usedLetters.ContainsKey($candidate.Substring(0, 1))) { throw "'$Wanted' starts with a letter another agent of this room already has" }
         $choice = $candidate
     }
-    if (-not $choice -and $registry.ContainsKey($key)) {
+    if (-not $choice -and $remembered -and $registry.ContainsKey($key)) {
         $candidate = $registry[$key]
         if (-not $usedLetters.ContainsKey($candidate.Substring(0, 1))) { $choice = $candidate }
     }
     if (-not $choice) {
-        # Pass 1: a free first letter and a name no other seat owns. Pass 2: a free first letter. Pass 3: a room
-        # with more agents than letters shares letters. After that: a pool name with a number. No upper limit.
+        # The pool in a fresh order each time. Pass 1: a free first letter and a name that no remembered seat
+        # owns, no open room of this PC holds and was not handed out lately. Pass 2: without the last condition.
+        # Pass 3: a free first letter. Pass 4: a room with more agents than letters shares letters. After that:
+        # a pool name with a number, never one an open room holds. No upper limit.
         $owned = @{}
         foreach ($value in $registry.Values) { $owned[$value] = $true }
         $takenNames = @{}
         foreach ($name in @($Taken)) { if ($name) { $takenNames[$name.ToLowerInvariant()] = $true } }
-        foreach ($pass in 1, 2, 3) {
-            foreach ($name in @($pool.names)) {
+        $busy = Get-RelayOpenRoomNameSet
+        $lately = @{}
+        foreach ($name in $recent) { $lately[$name] = $true }
+        $shuffled = @(Get-Random -InputObject @($pool.names) -Count @($pool.names).Count)
+        foreach ($pass in 1, 2, 3, 4) {
+            foreach ($name in $shuffled) {
                 $candidate = ([string]$name).ToLowerInvariant()
                 if ($avoid.ContainsKey($candidate) -or $takenNames.ContainsKey($candidate)) { continue }
-                if ($pass -le 2 -and $usedLetters.ContainsKey($candidate.Substring(0, 1))) { continue }
-                if ($pass -eq 1 -and $owned.ContainsKey($candidate)) { continue }
+                if ($pass -le 3 -and $usedLetters.ContainsKey($candidate.Substring(0, 1))) { continue }
+                if ($pass -le 2 -and ($owned.ContainsKey($candidate) -or $busy.ContainsKey($candidate))) { continue }
+                if ($pass -eq 1 -and $lately.ContainsKey($candidate)) { continue }
                 $choice = $candidate
                 break
             }
             if ($choice) { break }
         }
         for ($suffix = 2; -not $choice -and $suffix -lt 1000; $suffix++) {
-            foreach ($name in @($pool.names)) {
+            foreach ($name in $shuffled) {
                 $candidate = ([string]$name).ToLowerInvariant() + $suffix
-                if ($candidate -match $script:NamePattern -and -not $takenNames.ContainsKey($candidate)) { $choice = $candidate; break }
+                if ($candidate -match $script:NamePattern -and -not $takenNames.ContainsKey($candidate) -and -not $busy.ContainsKey($candidate)) { $choice = $candidate; break }
             }
         }
     }
     if (-not $choice) { throw 'The name pool is exhausted' }
-    $registry[$key] = $choice
+    if ($remembered) { $registry[$key] = $choice }
+    $null = $recent.Remove($choice)
+    $recent.Add($choice)
+    while ($recent.Count -gt 20) { $recent.RemoveAt(0) }
     $ordered = [ordered]@{}
     foreach ($entry in ($registry.Keys | Sort-Object)) { $ordered[$entry] = $registry[$entry] }
+    $ordered['recent'] = ($recent.ToArray() -join ' ')
     Write-RelayTextAtomic $registryPath ((ConvertTo-Json -InputObject $ordered -Depth 3) + "`n")
     return $choice
 }
@@ -2314,7 +2364,7 @@ function Add-RelayOpenSeat {
         $spec['wake'] = 'auto'
         $spec['open'] = $true
         $spec['order'] = $order
-        $name = Select-RelayName -Machine '(open seat)' -Role "seat $order" -Taken $taken.ToArray()
+        $name = Select-RelayName -Machine '(open seat)' -Role "seat $order" -Taken $taken.ToArray() -Transient
         $taken.Add($name)
         $names.Add($name)
         $null = Add-RelayAgentSeat -Room $Room -Name $name -Spec $spec -Generation 1

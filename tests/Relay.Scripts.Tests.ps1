@@ -392,6 +392,84 @@ Describe 'Agent names' -Tag 'Scripts' {
         { New-RelayTestRoom -Root $root -RoomId 'malformed' -Agents @([ordered]@{ name = 'not a name'; role = 'x' }) } | Should -Throw '*cannot be an agent name*'
         { New-RelayTestRoom -Root $root -RoomId 'letter' -Agents @([ordered]@{ name = 'oscar'; role = 'x' }) } | Should -Throw '*letter another agent*'
     }
+
+    It 'draws a fresh name for the coordinator, a seat on this PC and an open seat in every room, away from the open rooms of this PC and the names handed out lately' {
+        # No coordinator name given: it is drawn like the others. The tester's machine is this PC.
+        $extra = @{ open_seats = 1; coordinator = @{ kind = 'claude-code' } }
+        $first = New-RelayTestRoom -Root $root -RoomId 'fresh-one' -Agents @([ordered]@{ role = 'tester' }) -Extra $extra
+        $firstNames = @($first.Seats | ForEach-Object { $_.name })
+        $firstNames.Count | Should -Be 3
+        $second = New-RelayTestRoom -Root $root -RoomId 'fresh-two' -Agents @([ordered]@{ role = 'tester' }) -Extra $extra
+        $secondNames = @($second.Seats | ForEach-Object { $_.name })
+        $secondNames.Count | Should -Be 3
+        foreach ($name in $secondNames) { $firstNames | Should -Not -Contain $name }
+        # The registry remembers none of these seats, only the names handed out, oldest first
+        $registry = ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path $env:AGENT_RELAY_LOCAL 'names.json') -Raw)
+        @($registry.PSObject.Properties | ForEach-Object { $_.Name }) | Should -Be @('recent')
+        $registry.recent | Should -Be (($firstNames + $secondNames) -join ' ')
+        # The first room closed: its names stay out of the next room all the same, as handed out lately
+        $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'fresh-one' -Force
+        $third = New-RelayTestRoom -Root $root -RoomId 'fresh-three' -Agents @([ordered]@{ role = 'tester' }) -Extra $extra
+        foreach ($seat in $third.Seats) { $firstNames | Should -Not -Contain $seat.name; $secondNames | Should -Not -Contain $seat.name }
+    }
+
+    It 'hands out the pool in a different order on each PC, and no name twice within the last twenty' {
+        $pool = ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path $scripts 'relay-names.json') -Raw)
+        $avoid = @($pool.avoid | ForEach-Object { ([string]$_).ToLowerInvariant() })
+        $env:AGENT_RELAY_LOCAL = Join-Path $root 'local'
+        $picks = @(1..25 | ForEach-Object { Select-RelayName -Machine '(open seat)' -Role 'seat 1' -Transient })
+        @($picks[0..19] | Sort-Object -Unique).Count | Should -Be 20
+        foreach ($name in $picks) { $avoid | Should -Not -Contain $name }
+        # Ten PCs that start from nothing do not all begin with the same name (the old order began with olivia)
+        $firsts = @{}
+        foreach ($number in 1..10) {
+            $env:AGENT_RELAY_LOCAL = Join-Path $root "local-$number"
+            $firsts[(Select-RelayName -Machine '(open seat)' -Role 'seat 1' -Transient)] = $true
+        }
+        $firsts.Count | Should -BeGreaterThan 1
+    }
+
+    It 'remembers a seat on a named other machine only, and drops the keys an older version wrote for open seats and this PC' {
+        $env:AGENT_RELAY_LOCAL = Join-Path $root 'local'
+        $null = New-Item -ItemType Directory -Path $env:AGENT_RELAY_LOCAL -Force
+        $registry = Join-Path $env:AGENT_RELAY_LOCAL 'names.json'
+        $pc = [Environment]::MachineName.ToLowerInvariant()
+        [System.IO.File]::WriteAllText($registry, "{`n  `"(open seat)|seat 1`": `"emma`",`n  `"$pc|coordinator`": `"olivia`",`n  `"lab-vm-01|tester`": `"tina`"`n}`n")
+        Select-RelayName -Machine 'LAB-VM-01' -Role 'tester' | Should -Be 'tina'
+        $coordinator = Select-RelayName -Machine ([Environment]::MachineName) -Role 'coordinator' -Transient
+        $seat = Select-RelayName -Machine '(open seat)' -Role 'seat 1' -Transient
+        $same = Select-RelayName -Machine ([Environment]::MachineName) -Role 'tester'
+        $parsed = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $registry -Raw)
+        @($parsed.PSObject.Properties | ForEach-Object { $_.Name }) | Should -Be @('lab-vm-01|tester', 'recent')
+        $parsed.'lab-vm-01|tester' | Should -Be 'tina'
+        $parsed.recent | Should -Be "tina $coordinator $seat $same"
+        # The same machine and role again: the name is kept; the same seat of this PC again: the name is not
+        Select-RelayName -Machine 'lab-vm-01' -Role 'TESTER' | Should -Be 'tina'
+        $again = @(1..5 | ForEach-Object { Select-RelayName -Machine ([Environment]::MachineName) -Role 'tester' })
+        $again | Should -Not -Contain $same
+    }
+
+    It 'gives a room beyond the pool a numbered name that no open room of this PC holds, and counts a closed room for nothing' {
+        $pool = ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path $scripts 'relay-names.json') -Raw)
+        $all = @($pool.names | ForEach-Object { ([string]$_).ToLowerInvariant() })
+        $env:AGENT_RELAY_LOCAL = Join-Path $root 'local'
+        # Two rooms as this PC's copy records them: an open one that holds every pool name with a 2, a closed one
+        # that holds every pool name with a 3. The index says which is which.
+        foreach ($pair in @(@('busy', '2'), @('gone', '3'))) {
+            foreach ($name in $all) {
+                $folder = [System.IO.Path]::Combine($env:AGENT_RELAY_LOCAL, 'rooms', $pair[0], 'canon', 'agents', ($name + $pair[1]))
+                $null = New-Item -ItemType Directory -Path $folder -Force
+                [System.IO.File]::WriteAllText((Join-Path $folder 'gen'), "1`n")
+            }
+        }
+        $busyPath = [System.IO.Path]::Combine($root, 'rooms', 'busy')
+        $gonePath = [System.IO.Path]::Combine($root, 'rooms', 'gone')
+        $index = @([ordered]@{ id = 'busy'; path = $busyPath }, [ordered]@{ id = 'gone'; path = $gonePath; closed_utc = '2026-10-11T00:00:00Z' })
+        [System.IO.File]::WriteAllText((Join-Path $env:AGENT_RELAY_LOCAL 'rooms.json'), (ConvertTo-Json -InputObject $index) + "`n")
+        $name = Select-RelayName -Machine '(open seat)' -Role 'seat 1' -Taken $all -Transient
+        $name | Should -Match '^[a-z]+3$'
+        $all | Should -Contain $name.Substring(0, $name.Length - 1)
+    }
 }
 
 Describe 'Add-RelayAgent' -Tag 'Scripts' {
