@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.2 (2026-10-11)
+
+Release tags (no change to the room package):
+
+- Every version now has a tag and a GitHub Release. `.github/workflows/release.yml` runs on every push to
+  `main`: when the version in `plugin.json` has no tag yet, the commit gets the annotated tag `v<version>` and a
+  Release whose notes are that version's section of this file; a version without a section fails the run. A
+  push that bumps nothing does nothing. On demand, with a commit given, it tags that commit: 0.4.1 was tagged
+  this way after the fact, and nothing older is tagged. Linux only, like the rest of CI.
+- Docs: README (the gate and the conventions) and CLAUDE.md (the release convention).
+
 ## 0.4.1 (2026-10-11)
 
 Agent names repeated from room to room on one PC (no change to the room package):

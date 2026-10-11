@@ -1,0 +1,80 @@
+# The tag and the GitHub Release of each version of agent-relay, made here and never by hand.
+# On every push to main: when the version in .claude-plugin/plugin.json has no tag yet, the commit gets the
+# annotated tag v<version> and a Release whose notes are that version's section of CHANGELOG.md. A push that
+# bumps nothing finds its tag in place and does nothing. A version without a CHANGELOG section fails the run:
+# every release has an entry. On demand, with a commit given, the same is done for that commit (a version
+# released before this workflow existed); such a Release is not marked the latest.
+# Linux only, like ci.yml: the owner runs the Pester files on a Windows dev machine.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'A commit on main to tag with the version its plugin.json names (the head of main when empty)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag and release (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Tag the version and publish its release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GIVEN_COMMIT: ${{ github.event.inputs.commit }}
+          HEAD_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          commit="$GIVEN_COMMIT"
+          latest=true
+          if [ -z "$commit" ]; then commit="$HEAD_COMMIT"; else latest=false; fi
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "The commit $commit is not on main: nothing is tagged"
+            exit 1
+          fi
+          git checkout --quiet "$commit"
+          version="$(jq -r '.version' .claude-plugin/plugin.json)"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "plugin.json names no version of the form x.y.z: '$version'"
+            exit 1
+          fi
+          tag="v$version"
+          git fetch --tags --quiet origin
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "already tagged: $tag is $(git rev-parse "refs/tags/$tag^{commit}")"
+            exit 0
+          fi
+          # The notes: the CHANGELOG section of this version, from its heading to the next one
+          awk -v v="$version" '
+            index($0, "## " v " (") == 1 { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > notes.md
+          if [ ! -s notes.md ]; then
+            echo "CHANGELOG.md has no section for $version: every release has an entry"
+            exit 1
+          fi
+          echo "notes for $tag:"
+          cat notes.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$tag" -m "agent-relay $version" "$commit"
+          git push origin "$tag"
+          gh release create "$tag" --title "agent-relay $version" --notes-file notes.md --verify-tag --latest="$latest"
+          echo "released $tag at $commit"

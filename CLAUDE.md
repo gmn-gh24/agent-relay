@@ -129,6 +129,9 @@ uses to force races; renaming one makes the gate fail on purpose.
 - A release bumps `version` in `.claude-plugin/plugin.json` **and** the table in `README.md`, bumps
   `room-package/VERSION` only when the package changed, and adds a `CHANGELOG.md` entry. Lessons from real rooms go
   in `references/lessons.md` (`references/self-improvement.md` is the procedure). Push only when the owner says so.
+  A push to `main` whose `plugin.json` version has no tag yet gets the tag `v<version>` and a GitHub Release with
+  that version's CHANGELOG section (`.github/workflows/release.yml`); no tag is made by hand, and a version
+  without its CHANGELOG section fails that run.
 
 ## Time zone
 

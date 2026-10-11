@@ -5,7 +5,7 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.
 
 | | |
 |---|---|
-| Version | 0.4.1 ([changelog](CHANGELOG.md)) |
+| Version | 0.4.2 ([changelog](CHANGELOG.md)) |
 | Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
 | Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
 | Other agents | Any coding agent that can run a command and write a file |
@@ -431,7 +431,8 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the static and pane checks on L
 every pull request and on demand. The Pester files (PowerShell 7 and Windows PowerShell 5.1) do not run there:
 run them on a Windows dev machine before a commit (`tests\Invoke-AllTests.ps1`). A Claude session that
 cannot run them (no Windows) asks the owner to run them and to report the RESULT lines. The eval cases never run
-in CI.
+in CI. A push to `main` whose version in `plugin.json` has no tag yet gets the tag `v<version>` and a GitHub
+Release with that version's changelog section (`.github/workflows/release.yml`); no tag is made by hand.
 
 ### The pane and the skill
 
@@ -454,7 +455,8 @@ its report on this PC.
   owner and is built and tested only if and when it is needed.
 - Every fix comes with a test that fails without it.
 - No real machine, share or account name in a committed file.
-- Every release has an entry in [CHANGELOG.md](CHANGELOG.md).
+- Every release has an entry in [CHANGELOG.md](CHANGELOG.md) and a tag `v<version>`, which CI makes from that
+  entry.
 
 ## Status and limitations
 
