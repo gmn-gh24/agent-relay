@@ -174,6 +174,7 @@ function Save-RoomArchive {
 function Save-ClosedStamp {
     # Marks the room closed in the room index of this PC, under the index's lock; an index that cannot be read is
     # an error, never an empty list. -KeepStamp: a date the entry already has stays.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read by the change the index helper runs inside its lock')]
     param([string]$Id, [string]$Stamp, [switch]$KeepStamp)
     Update-RelayRoomIndex -Change {
         param($entries)
