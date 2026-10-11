@@ -14,7 +14,8 @@ without it. -->
 
 ## Gate
 
-<!-- Paste the RESULT lines. Say what did not run and why (no Windows, no Claude Code, ...). -->
+<!-- Paste the RESULT lines. Say what did not run and why (no Windows, no Claude Code, ...). A session without Windows asks the owner to
+run the Pester files and pastes the owner's RESULT lines here. -->
 
 - [ ] `tests\Invoke-AllTests.ps1 -StaticOnly` (PSScriptAnalyzer, ASCII and LF, wrapper templates, test files listed)
 - [ ] Pester under PowerShell 7 (`-Editions ps7`)

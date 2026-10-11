@@ -45,6 +45,15 @@ What a review of the plugin found, and the fixes (room package 3.2.3; running ro
   statistics of a cut-short close, `-Remove` without the room's CLOSED); Reopen (an untaken open seat); the pane
   (the `removed` line and the mismatch mark).
 
+CI only (no change to the plugin):
+
+- The Windows Pester jobs (PowerShell 7 and Windows PowerShell 5.1) and the job that skipped them for
+  documents-only commits are gone from `.github/workflows/ci.yml`; the Linux static and pane jobs stay. The
+  Pester files run on a dev machine before a commit (`tests\Invoke-AllTests.ps1`).
+- PSScriptAnalyzer (1.24.0) and Claude Code (2.1.296) are pinned and cached in CI, and the pane's steps are left
+  out when a commit touches nothing the pane reads.
+
+
 ## 0.3.7 (2026-10-11)
 
 What a review of the design found, and the fixes (room package 3.2.2; running rooms:
