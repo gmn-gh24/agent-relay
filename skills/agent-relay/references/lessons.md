@@ -408,3 +408,26 @@ last hour showed:
   still says to run `wait`: a second wait is harmless now.
 - **Not changed yet:** the board cannot tell a dead coordinator wait while the feed keeps the coordinator's
   heartbeat alive. Kept for the review of how the coordinator recovers its wait.
+
+## 2026-10-11: a SYSTEM test cycle on a disposable VM (a live room, one agent of Claude Code)
+
+- **A task cannot lift an assignment's never-list, and the agent knows it.** The job's later tasks needed an
+  msiexec removal and registry writes on the disposable machine; the assignment given after the introduction
+  had forbidden both. "Approved for this task" in the task message was read correctly as no approval at all, and
+  the agent asked its owner three times. Changed: the coordinating reference says to re-assign (`-Assign` with
+  the wider `may` or `propose_ok`) before such a task goes out, and to foresee at assignment time what a test
+  job on a disposable machine will need (uninstalls, registry, files outside the work folder).
+- **Name the thing, not a rule the agent must apply to things it has not seen.** A task said "the registry keys
+  whose name contains the product version"; no key name did (they carried another version scheme), and the
+  agent had to guess and ask. When the selection criterion is unverified, make the listing its own task and
+  name the items in the next one.
+- **The closing note must name the verb.** "Send your bye" was answered with a `note` titled bye; the close
+  refused, and the room was closed with `-Force` after the owner had ended the agent. Changed: the close step of
+  the skill says to ask for the `bye` verb by name, and the closing note is expected to say so.
+- **Second waits exited 4 twice and nothing was lost.** With the 0.2.1 lease behaviour a second wait beside a
+  live one is the expected outcome; the agent found it alarming in its bye. Not changed: the exit text already
+  names the holder; a calmer wording can wait for the next case.
+- **A harness that re-stages its folder deletes what the agent put there.** Two logs an agent had written into
+  the harness's folder were gone after the run, and a bundle log of a fixed name from an earlier run looked like
+  this run's. Not a plugin matter; written here because the pattern (evidence written into a folder the test
+  re-creates) will recur: tell the agent in the task where to write what must survive.
