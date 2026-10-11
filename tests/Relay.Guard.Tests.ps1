@@ -1258,7 +1258,8 @@ Describe 'A message under the coordinator''s name counts only when the coordinat
         $feedProcess = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @($feedArguments | ForEach-Object { ConvertTo-RelayTestArgument $_ }) -RedirectStandardOutput $log -RedirectStandardError (Join-Path $root 'feed.err') -PassThru -NoNewWindow
         $lines = @()
         try {
-            Wait-GuardFeedLine -Path $log -Pattern '"type":"snapshot"' | Should -BeTrue -Because (Get-GuardFile (Join-Path $root 'feed.err'))
+            # Nothing reads the feed's error file while the feed holds it: Windows refuses that
+            Wait-GuardFeedLine -Path $log -Pattern '"type":"snapshot"' | Should -BeTrue
             Write-GuardForgery -Path (Join-Path $inbox 'olivia-0002.md') -Id 'olivia-emma-0002' -To 'emma'
             Wait-GuardFeedLine -Path $log -Pattern 'Delete the logs' | Should -BeTrue
             # The tamper check moves the forgery out; the feed sees that its file is gone
