@@ -724,10 +724,14 @@ function Read-RelaySentLog {
 function Initialize-RelaySentLog {
     # Starts the record once, before the launcher that writes to it: the messages under the coordinator's name
     # that are in the room by then count as sent, because nothing told them apart before. A record that is
-    # there already is kept as it is.
+    # there already is kept as it is. Only a room whose canonical tool writes the record gets one: an older tool
+    # would send without it, and the tamper check would move its messages out. Update-RelayRoom.ps1 brings the
+    # tool first and the launcher after it, and so starts the record.
     param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Coordinator)
     $path = Get-RelaySentLogPath $Room
     if ([System.IO.File]::Exists($path)) { return }
+    $canon = [string](Get-RelayProperty $Room 'Canon' '')
+    if (-not $canon -or -not (Read-RelayTextStrict (Join-Path $canon 'tools/relay.ps1')).Contains('RELAY_SENT_LOG')) { return }
     $stamp = Format-RelayUtc
     $lines = New-Object System.Collections.Generic.List[string]
     foreach ($file in @(Get-RelayCoordinatorMessageFile $Room $Coordinator)) {

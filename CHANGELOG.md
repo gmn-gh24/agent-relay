@@ -10,7 +10,8 @@ What a review of the design found, and the fixes (room package 3.2.2; running ro
   tool write the id and hash of every message it sends into `sent.log` on this PC, before the message appears,
   and the tamper check moves out (alarm `TAMPER forged moved out: ...`) every file under the coordinator's name
   that is not on it or whose bytes changed. The record of an older room starts with the next
-  `Update-RelayRoom.ps1` and counts the coordinator's messages already there as sent. A record that cannot be
+  `Update-RelayRoom.ps1` and counts the coordinator's messages already there as sent; a room whose tool is
+  older gets none (a new launcher there, when the coordinator is replaced, starts no record). A record that cannot be
   written means no message; one that cannot be read judges nothing and says so. An agent whose wait is running
   can still read a forgery in the seconds before the next pass; the alarm names it, and the coordinating
   reference says what to tell the agent.
