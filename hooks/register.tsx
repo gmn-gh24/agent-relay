@@ -18,6 +18,25 @@ const view = atom({ plugin: 'agent-relay', key: 'view' } as const, null)
 const scroll = atom({ plugin: 'agent-relay', key: 'scroll' } as const, null)
 // The owner's decisions on their way to the room: a card with one takes no other press until it is answered
 const deciding = atom({ plugin: 'agent-relay', key: 'deciding' } as const, [])
+// The owner's word, given in this session, that the host's session-to-session tools may be used while a room is
+// bound: false until /relay outside on, and false again in every new session
+const outside = atom({ plugin: 'agent-relay', key: 'outside' } as const, false)
+
+// The room is the coordinator's only channel to an agent. These tools of the host reach sessions outside it
+// (another session on this PC, a teammate, a session in the cloud, a subagent of its own) and are refused while
+// a room is bound, unless the owner has said otherwise in this session.
+const ALLOW_OUTSIDE = 'Allow'
+
+const refusedOutside = (tool: string, bound: string): string =>
+  `${tool} is refused: this session coordinates room ${bound}, and the room is its only channel to an agent. Reach an agent through your launcher's verbs; a session outside the room gets the join prompt. Only the owner can allow this, by typing /relay outside on.`
+
+// Judges a call of one of them: through to the tool while no room is bound or the owner has allowed it, refused otherwise
+async function judgeOutside<R>($: EngineInterface, tool: string, through: () => Promise<R>): Promise<R | { deny: string }> {
+  const bound = await read($, room)
+  if (bound === null || (await read($, outside))) return through()
+
+  return { deny: refusedOutside(tool, bound) }
+}
 
 // The feed that runs, if any: the number of its loop, and the stream of its child while one runs. Binding a
 // room (another one, or the same one again) and unbinding stop it through stopFeed and nowhere else, which
@@ -270,6 +289,30 @@ const unbind = async ($: EngineInterface): Promise<void> => {
   if (isCurrent(run)) $.ui.status(undefined)
 }
 
+// /relay outside on|off: the owner's word on the host's session tools while a room is bound. "on" is asked back
+// in the engine's own dialog, which only a person at the terminal answers (a headless run has no one, and that
+// counts as refused), so the word is the owner's whoever typed the command. It holds for this session only.
+const outsideOf = async ($: EngineInterface, word: string): Promise<string> => {
+  if (word === 'off') {
+    await update($, outside, () => false)
+
+    return 'Session-to-session tools (SendMessage, ListAgents) are refused again while a room is bound.'
+  }
+  if (word !== 'on') return 'Type /relay outside on to allow SendMessage and ListAgents in this session while a room is bound, or /relay outside off to refuse them again.'
+  const bound = await read($, room)
+  if (bound === null) return 'No room is bound, so nothing is refused: the session tools are allowed as they are.'
+  const answer = await $.ui
+    .ask(`Allow this session's session-to-session tools (SendMessage, ListAgents) while room ${bound} is bound? The room is otherwise the coordinator's only channel to an agent.`, {
+      options: [ALLOW_OUTSIDE, 'Refuse'],
+      header: 'Outside',
+    })
+    .catch(() => '')
+  if (answer !== ALLOW_OUTSIDE) return `Not allowed: SendMessage and ListAgents stay refused while room ${bound} is bound.`
+  await update($, outside, () => true)
+
+  return `Allowed in this session until /relay outside off, /clear or the session ends: the owner's word. Have the coordinator record it with Add-RelayDecision.ps1 -Owner.`
+}
+
 // The owner's words reach the room through one script, on its standard input: never on a command line
 const sendAsOwner = async ($: EngineInterface, id: string, args: readonly string[], text: string): Promise<string> => {
   try {
@@ -356,8 +399,10 @@ export const register: Register = on => {
       isDeferred: false,
     })
     // After a reload the room is still bound: the feed is not, it died with the module, and so did every
-    // decision that was on its way (its card takes presses again; the script refuses a card answered twice)
+    // decision that was on its way (its card takes presses again; the script refuses a card answered twice).
+    // The owner's word on the session tools does not outlive the module either: it is asked again.
     await update($, deciding, () => [])
+    await update($, outside, () => false)
     const bound = await read($, room)
     if (bound !== null) startFeed($, stopFeed(), bound)
 
@@ -371,6 +416,7 @@ export const register: Register = on => {
 
       return { text: 'The relay pane is unbound; its feed has stopped.' }
     }
+    if (wanted === 'outside' || wanted.startsWith('outside ')) return { text: await outsideOf($, wanted.slice('outside'.length).trim()) }
     if (wanted !== '') {
       const done = await bind($, wanted)
 
@@ -401,6 +447,15 @@ export const register: Register = on => {
 
     return { result: `Bound to room ${done.id}. The chat window shows it; its feed is the room's tamper check and your heartbeat.` }
   }).catch(() => ({ deny: 'relay_bind failed. Run Watch-RelayFeed.ps1 for the room yourself; /relay <room> binds the pane by hand.' }))
+
+  // The guard on the session tools: it judges before it calls next, and a guard that fails, or is reached
+  // again from beneath its own call, refuses in its place, since the room is the only channel either way
+  on('tool.call', { tool: 'SendMessage' }, ($, e, next) => judgeOutside($, e.tool, () => next(e))).catch(
+    (_$, e, next) => (next.called ? next(e) : { deny: refusedOutside(e.tool, 'a room of this PC') }),
+  )
+  on('tool.call', { tool: 'ListAgents' }, ($, e, next) => judgeOutside($, e.tool, () => next(e))).catch(
+    (_$, e, next) => (next.called ? next(e) : { deny: refusedOutside(e.tool, 'a room of this PC') }),
+  )
 
   // The pane draws a window of its own over the rows of the room, so that its input stands still under it:
   // a move the owner asks for (the wheel, a page key, Home and End) moves that window, and the engine's own

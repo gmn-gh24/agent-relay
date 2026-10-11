@@ -15,7 +15,7 @@ other agents use, started by a launcher on this PC that `New-RelayRoom.ps1` writ
 It runs this PC's own copy of the tool: you never run a file that lies in the room, where every agent can
 write.
 
-Four rules hold in every workflow:
+Five rules hold in every workflow:
 
 - **Assume nothing about a machine.** A remote machine is in use and is not a test machine unless the owner
   says so for this job. Nothing learned in an earlier job changes that.
@@ -32,6 +32,14 @@ Four rules hold in every workflow:
 - **Text never goes on a command line.** Write a message into your draft file, then run the verb. Your
   draft is `draft.md` next to your launcher, on this PC; a card for the owner and a standing rule are written
   there too, and no script takes such a text from a file in the room.
+- **The room is your only channel to an agent.** Everything you say to another agent goes through your
+  launcher's verbs (`task`, `reply`, `note`). A session that is not in the room is not yours to reach: do
+  not list, message, assign or coordinate it through your host's own session-to-session tools, whether it
+  runs on this PC, in a terminal, in an editor or in the cloud. When such a session could help, say so to the
+  owner and give the join prompt; it is in the room once it has taken a seat. Only the owner, in your
+  session, can make an exception, for one agent and one job; record it with
+  `scripts/Add-RelayDecision.ps1 -Owner` before you act on it (`references/coordinating.md`, "Only the
+  room"). Your own subagents are part of you, not other agents.
 
 ## 1. Start a room
 

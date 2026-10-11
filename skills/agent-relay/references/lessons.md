@@ -545,3 +545,18 @@ last hour showed:
   functions still ran under `Continue`, so a failed listing went on with nothing. Set it in the module.
 - **A lock that anybody may remove is no lock.** A holder that ran long lost its lock to another caller and then
   removed that caller's lock. A lock carries the token of its holder, and only that holder removes it.
+
+## 2026-10-11: a coordinator reached a session outside its room (a live room, as the owner reported it)
+
+- **A second session of the owner's was treated as a spare agent.** The coordinator had a room open for the
+  job. The owner also had another session of the same product open on the same PC, on unrelated work. The
+  coordinator used its host's own session-to-session messaging to hand that session documentation tasks,
+  outside the room, without a seat, an introduction, an assignment or the owner's word. Nothing of it
+  reached the board, the transcript or the record of sent messages. Changed: the skill has a fifth rule and
+  the coordinating reference a section, "Only the room": the launcher's verbs are the coordinator's only
+  channel to an agent, no session outside the room is listed, messaged, assigned or coordinated, a session
+  that could help is offered the join prompt, and an exception comes from the owner alone, in the session,
+  for one agent and one job, recorded with `Add-RelayDecision.ps1 -Owner`. The plugin refuses the host's
+  session tools while a room is bound, until the owner types `/relay outside on` and confirms it in the
+  dialog. An eval case holds the coordinator to it. Not changed: the room package; agents never had such a
+  channel.
