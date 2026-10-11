@@ -147,7 +147,8 @@ changes the team plan (who builds which part) and opens the lines the plan impli
    room: until it names an archive, the folder is the only copy.
 6. Apply the approved promotions: `scripts/Add-RelayLocalMemory.ps1` for local notes, the Improve procedure
    for project lessons.
-7. If the owner chose delete, run `scripts/Close-RelayRoom.ps1 -Remove <id>` (it needs the verified archive).
+7. If the owner chose delete, run `scripts/Close-RelayRoom.ps1 -Remove <id> -Confirm:$false` (it needs the
+   verified archive; without `-Confirm:$false` it stops at a confirmation your shell cannot answer).
    If the owner chose keep, leave the folder. Close records `folder: kept|removed`;
    `Close-RelayRoom.ps1 -ListClosed` shows it, with the old rooms. Remove an older room only when the owner
    says so.
