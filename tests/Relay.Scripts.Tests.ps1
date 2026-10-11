@@ -470,6 +470,31 @@ Describe 'Agent names' -Tag 'Scripts' {
         $name | Should -Match '^[a-z]+3$'
         $all | Should -Contain $name.Substring(0, $name.Length - 1)
     }
+
+    It 'keeps the letter of a wanted name free while the other names of the batch are drawn' {
+        # Every pool name but the two with a z is taken: a draw that may take z gives zoe or zach, one that keeps the
+        # letter for the wanted zoe falls through to a numbered name
+        $pool = ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path $scripts 'relay-names.json') -Raw)
+        $others = @($pool.names | ForEach-Object { ([string]$_).ToLowerInvariant() } | Where-Object { -not $_.StartsWith('z', [System.StringComparison]::Ordinal) })
+        $env:AGENT_RELAY_LOCAL = Join-Path $root 'local'
+        $drawn = Select-RelayName -Machine '(open seat)' -Role 'seat 1' -Taken $others -Reserved @('', 'Zoe') -Transient
+        $drawn | Should -Not -Match '^z'
+        $drawn | Should -Match '^[a-y][a-z]*2$'
+        # A remembered name whose letter is kept is not used either
+        $null = New-Item -ItemType Directory -Path $env:AGENT_RELAY_LOCAL -Force
+        [System.IO.File]::WriteAllText((Join-Path $env:AGENT_RELAY_LOCAL 'names.json'), "{`n  `"lab-vm-01|tester`": `"zach`"`n}`n")
+        Select-RelayName -Machine 'LAB-VM-01' -Role 'tester' -Reserved @('zoe') | Should -Not -Match '^z'
+        # The wanted name itself takes its letter
+        Select-RelayName -Machine 'LAB-VM-01' -Role 'writer' -Wanted 'zoe' -Reserved @('zoe') | Should -Be 'zoe'
+        # End to end: a drawn seat and the wanted zoe in one batch; the draw never takes z, so zoe is always added
+        $null = New-RelayTestRoom -Root $root -RoomId 'kept'
+        $more = Join-Path $root 'more.json'
+        $batch = @([ordered]@{ role = 'drawn'; machine = 'LAPTOP-7' }, [ordered]@{ name = 'zoe'; role = 'writer' })
+        [System.IO.File]::WriteAllText($more, (ConvertTo-Json -Depth 6 @{ agents = $batch }))
+        $output = (@(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'kept' -AnswersFile $more -NoClipboard) -join "`n")
+        $output | Should -Match 'ADDED zoe \(writer'
+        @(Get-RelayRoster (Resolve-RelayRoom 'kept')) | Should -Contain 'zoe'
+    }
 }
 
 Describe 'Add-RelayAgent' -Tag 'Scripts' {
