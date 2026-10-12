@@ -1416,7 +1416,9 @@ function Get-RelayAgentState {
         $seat = Read-RelayKeyValue (Join-Path $canonDir 'seat')
         $card = Read-RelayKeyValue (Join-Path $dir 'card')
         $status = Read-RelayKeyValue (Join-Path $dir 'status')
-        $control = Get-RelayValue (Read-RelayKeyValue (Join-Path $canonDir 'control')) 'state' 'run'
+        $controlMap = Read-RelayKeyValue (Join-Path $canonDir 'control')
+        $control = Get-RelayValue $controlMap 'state' 'run'
+        $controlNote = Get-RelayValue $controlMap 'note' ''
         $state = Get-RelayValue $status 'state' 'not started'
         $alive = Get-RelayFileTimeUtc (Join-Path $dir 'alive')
         $silent = -1
@@ -1436,7 +1438,7 @@ function Get-RelayAgentState {
         elseif ($state -eq 'parked') { $attention = 'parked: owner must nudge' }
         elseif ($state -eq 'not started' -and $isOpen) { $attention = 'took a seat but has not introduced itself: owner must look at that session' }
         elseif ($state -eq 'not started') { $attention = 'not started: owner must paste the start prompt' }
-        elseif ($control -ne 'run') { $attention = "control: $control" }
+        elseif ($control -ne 'run') { $attention = "control: $control"; if ($control -eq 'hold' -and $controlNote) { $attention += " ($controlNote)" } }
         elseif ($name -ne $Room.Coordinator) {
             # What was sent to it and its own tool has not shown it yet
             $shown = @{}
@@ -2182,8 +2184,10 @@ function Add-RelayAgentSeat {
     $scopeText = ''
     if ($scope.Count -gt 0) { $scopeText = ($scope -join "`n") + "`n" }
     Write-RelayGuardedText $Room "$base/scope" $scopeText
-    $rootsText = 'No work folder is assigned: your tasks say where to look.'
-    if ($rootLines.Count -gt 0) { $rootsText = ($rootLines -join "`n") + "`n`nEverything outside these folders is off limits unless a list below says otherwise." }
+    # Scratch files beside an assigned folder show in every later self-audit as outside the assignment
+    $scratchNote = 'Your own scratch files (a runner, a helper script, a log) go into a results folder on your own disk, never into or next to the folders you work in: the self-audit lists every new file there as outside your assignment.'
+    $rootsText = 'No work folder is assigned: your tasks say where to look. ' + $scratchNote
+    if ($rootLines.Count -gt 0) { $rootsText = ($rootLines -join "`n") + "`n`nEverything outside these folders is off limits unless a list below says otherwise. " + $scratchNote }
 
     $waitLine = 'Run it as a background command: its exit wakes you.'
     if ($Spec['wake'] -eq 'loop') { $waitLine = "It returns within $($Spec['wait_minutes']) minute(s); when it says nothing arrived, run it again." }
@@ -2362,6 +2366,10 @@ function Get-RelayJoinPrompt {
         "Room folder: $base"
         ''
         '1. Run ONE of these now, the one for your shell. The three words at the end say what you are: your agent product as exactly as you know it (claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent, copilot-cli, or its name as one word), your model, and your reasoning effort setting if your session or its configuration shows one (low, medium, high, ...). Write unknown where you do not know; do not guess. Type the words themselves, without the angle brackets, for example: claude-code-cli sonnet-5.5 medium'
+        ''
+        '   Before you run it: when you do not know your model or your effort setting, ask the user of your own session for them, as a question the user answers by typing, and wait for the answer; the user can see the setting and you cannot. Take the words the user typed as they are.'
+        ''
+        '   Work from a local folder of your own on this machine, never from the room folder and never from a folder on a share: copy what a task needs out of the room, work on your own disk, and send results back as attachments. Running tests or scripts inside the room or on a share fails or disturbs the others.'
         ''
         "   Windows, PowerShell (Windows PowerShell or pwsh) or Git Bash:  powershell -NoProfile -ExecutionPolicy Bypass -File $(ConvertTo-RelayPowerShellLiteral "$forward/join.ps1") <product> <model> <effort>"
         "   Windows, cmd:                                                  `"$base\join.cmd`" <product> <model> <effort>"

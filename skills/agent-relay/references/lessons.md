@@ -580,3 +580,90 @@ last hour showed:
   depend on the answer; only a blocked `wait` means stop and tell the session's user. Lesson for the next
   prompt rule: a rule promoted from a lesson into a prompt needs its own "when this applies", or the agent
   keeps it for the whole room.
+
+## 2026-10-12: seven agents, one machine, five rounds (a live room, from its statistics and byes)
+
+Seven agents of two products on one machine reviewed and reworked a script through five rounds; the room ran a
+day. What cost rounds, and what was changed:
+
+- **A timed-out wait looked like a failure.** The wait exited 3 when nothing arrived, and the agents' product
+  showed every exit code but 0 as a failed command. Several agents of that product took the first quiet wait
+  for an error, stopped waiting and told nobody; the owner had to nudge each session by hand, and the ones
+  that kept waiting were parked after four quiet waits and had to be nudged too. Changed: a wait that timed
+  out exits 0 and says "nothing arrived in N minutes: that is normal, not an error" (`check` keeps 3, so a
+  script can test it); that product's profile never parks (`park_after` 0 means never) and its prompt says
+  that a quiet wait is normal and that the agent never stops waiting on its own.
+- **A one-line draft lost its text.** An agent wrote a whole result as one line; the tool took the first 120
+  characters as the subject and sent the subject as the text, and the rest was gone. Changed: a one-line draft
+  is sent whole, the line as the subject (cut at 120) and the whole line as the text.
+- **Agents guessed their model and effort at join.** The join prompt said "write unknown where you do not
+  know; do not guess", and agents guessed anyway, or wrote unknown where their user could have told them.
+  Changed: the join prompt says to ask the user of the session for the two words by a typed answer, and to take
+  them as typed.
+- **Agents worked inside the room folder and on the share.** Test runs and scratch files landed in the room,
+  one agent's runner started from a share and failed, and every such file showed as outside the assignment
+  in the next self-audit. Changed: the join prompt and `PROTOCOL.md` say to work from a local folder of one's
+  own, one subfolder per round in `attach` with that round's changed files and a diff against the round
+  before, and scratch files in the results folder, never beside the assigned folders.
+- **A task asked for more than the assignment allowed, twice.** The agent stopped at the line of its
+  assignment and asked, which was right, and the round was lost. A replaced assignment was then read as
+  needing a further approval. Changed: `START-HERE.md` says that a task never widens the assignment (answer
+  with `ask`, keep working on the rest) and that a new assignment carries the owner's decision whole; the skill
+  has a rule "a task never exceeds the assignment: re-assign first".
+- **The coordinator asked the owner in prose and lost the answers.** Interview questions written into the
+  session were skipped or answered in part; the host's question tool, which shows choices, got answers at once.
+  Changed: the skill says to interview through that tool; `startup-interview.md` has a section "How to ask".
+- **The coordinator expected its draft to survive a send.** A second verb ran on a draft the first had consumed
+  and sent nothing. Changed: the skill's rule on drafts says that line 1 is the subject and the send consumes
+  the draft.
+- Still open after this room (each with its own entry when done): the assignment JSON that the coordinator
+  hand-writes (a heredoc lost backslashes and a variable, then a JSON escape error: two failed rounds), the
+  `remember` limits that an agent found only when the verb failed, a hold that was a plain note and reached
+  an agent after its run had started, a kit that lacked what the suites read, the product's command time
+  limit against `wait_minutes`, a task that contradicts the receiver's assignment, and scratch files next to
+  the working folder in the self-audit.
+
+## 2026-10-12: the open items of that room, wording (0.5.1)
+
+- **The limits of `remember` were learned from its refusals.** An agent found the 15 to 500 character limit
+  of an entry by running the verb three times; the limit stood in `PROTOCOL.md`, which agents rarely read, and
+  in the error text. Changed: `START-HERE.md` says next to the verb what counts (the whole draft joined into
+  one line), the limits, and that the verb writes nothing when they are missed.
+- **A kit that lacked what the suites read cost a round each time.** Reference masters, profiles and the
+  sibling scripts a drift guard compares were not in the kit; the agents reported failures that were missing
+  files, and a runner written by hand set strict mode into the test scope and lost its cmdlets under Windows
+  PowerShell started from PowerShell 7. Changed: `coordinating.md` has a checklist "The kit" under "Tasks":
+  everything the suites read, per-round folders with only that round's changes and a diff against the round
+  before, and a tested runner template (`-PassThru` with `Run.Exit` false, no `Set-StrictMode`, `PSModulePath`
+  rebuilt from the registry under Windows PowerShell 5.1, output to a file in the results folder).
+- **Scratch files beside the working folder showed as outside the assignment in every audit.** The runner
+  and its logs lay next to the kit, and every report after the first listed them as `OUTSIDE`, which the
+  coordinator had to read past each time. Changed: `ASSIGNMENT.md` says under "Where you work" that scratch
+  files go into a results folder on the agent's own disk, and why; `PROTOCOL.md` said it since 0.5.0.
+- **A copy that worked was reported as failed.** The agent's command tool shows every exit code but 0 as an
+  error, and `robocopy` returns 1 for "files were copied". Changed: a note in `agent-kinds.md` under Claude
+  Code: say in the task that `robocopy` codes below 8 are success, or have it copy with `Copy-Item`.
+- **Codex's command time limit is still a guess.** `wait_minutes` 4 worked, but nobody measured when the
+  product kills a foreground command. Not changed: the number stays; `agent-kinds.md` says how to measure it
+  in one Codex session and where to write the result. A cloud session without Codex cannot do it.
+
+## 2026-10-12: the open items of that room, behaviour (0.6.0)
+
+- **Hand-written JSON cost two rounds.** The coordinator wrote an agent's assignment as JSON through a
+  heredoc of another shell: the first lost its backslashes and a `$name`, the second failed on a JSON escape,
+  and the agent sat without an assignment both times. Changed: `Add-RelayAgent.ps1 -Assign` takes every field
+  of the assignment as a parameter and several agents in one call, and `New-RelayRoom.ps1` takes the room's
+  answers as parameters; a room of open seats needs no JSON at all. The file still works for named agents.
+- **A hold was a note, and a note is read when the agent next looks.** The coordinator asked everybody in a
+  note not to start the next round while the kit was restaged; one agent had already started its run when
+  it read the note, and the run went against the old kit. Changed: a hold is a control state
+  (`-Control <name>|all -State hold`): every verb of the agent prints it first, `check` exits 7 while it
+  lasts so a run script can test it before it starts, `wait` says it once and says when it is lifted, and
+  messages still arrive. A state that must stop something from starting belongs where the tool reads before
+  every command, not in the inbox.
+- **A task asked for what the assignment forbade, and the agent was right to stop.** Twice a task needed a
+  change under the agent's "Never" or outside its non-goals; the agent asked, the coordinator re-assigned,
+  and a round was gone each time. Changed: the coordinator's `task` compares the draft with the receiver's
+  "Never" and "Not part of this task" lines and refuses with `NOT SENT` when two telling words of a line are
+  in the task; the draft stays, and `anyway` sends it. It is a word match: it says so, and the coordinator
+  reads the line before deciding.

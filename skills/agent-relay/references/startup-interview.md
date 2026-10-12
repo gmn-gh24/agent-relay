@@ -25,6 +25,24 @@ Two things are never defaulted from memory and never taken from an earlier job:
 The local notes (`scripts/Add-RelayLocalMemory.ps1 -Find`) may seed suggestions you offer the owner, but they
 are never silent defaults: say where a suggestion comes from and let the owner confirm it.
 
+## How to ask
+
+Ask through your host's question tool when it has one: the tool that puts a question with choices in front
+of the owner and returns the pick. Questions written as prose into the session get skipped, answered in part,
+or answered three turns later when the room is half built. The shape that works:
+
+- **One question per decision**, each with its choices spelled out and the default marked. "Where does the
+  room live?" with the known shares and "a folder on this PC" as choices beats "tell me about your setup".
+- **Choices, not open fields,** wherever a field has a small set of values: authority (`within-task`,
+  `report-after`, `owner-approves`), machine care (`in-use`, `disposable`), the agent kinds. A free text only
+  where it must be (the job, a folder).
+- **Group what belongs together** into one call of the tool (the tool takes a few questions at once), so the
+  owner answers the interview in one or two rounds, not one question per turn.
+- **Say what you will do with the answer** when it is not obvious ("in-use means the agents ask before
+  anything beyond their folders"), and repeat the answers back in one line before you build the room.
+- Without such a tool, ask the same way in prose: numbered questions, choices in brackets, the default named,
+  all in one message.
+
 ## Named agents or open seats
 
 | | Named agent | Open seat |
@@ -32,7 +50,7 @@ are never silent defaults: say where a suggestion comes from and let the owner c
 | Decided in advance | role, machine, agent kind, task, paths | nothing |
 | Prompt | its own start prompt (`PROMPT-<name>.txt`) | the join prompt, the same for every agent (`PROMPT-JOIN.txt`) |
 | What it is and where it runs | the owner says; the introduction is compared with it | the introduction says |
-| Task and limits | in its assignment from the start | given after the introduction with `Add-RelayAgent.ps1 -Assign` |
+| Task and limits | in its assignment from the start | given after the introduction with `Add-RelayAgent.ps1 -Assign <name> -Role ... -Task ... -Roots ...` (the fields are parameters; no JSON to write) |
 | Use it when | the owner has a plan per agent | the owner wants to paste one prompt into whatever is running |
 
 Both can be mixed in one room. Seats can be added at any time.

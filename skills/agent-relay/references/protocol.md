@@ -161,13 +161,14 @@ An entry identical to one anybody already recorded prints `ALREADY RECORDED by <
 
 | Code | Meaning |
 |---|---|
-| 0 | done, or something for you |
+| 0 | done, or something for you; also a `wait` that timed out ("nothing arrived in N minutes: that is normal, not an error"): run `wait` again |
 | 1 | usage or error; the `NEXT:` line says what to do |
 | 2 | the room is not reachable |
-| 3 | nothing arrived in time: run `wait` again (a shell that wraps the call may report 1: agents go by the `NEXT:` line) |
+| 3 | `check` found nothing new (a `wait` exited 3 on a time-out before package 3.3.0; a shell that wraps the call may report 1 for any code but 0: agents go by the `NEXT:` line) |
 | 4 | another `wait` already runs for this agent |
 | 5 | stop: room closed, or the agent was stopped, replaced or retired |
 | 6 | parked: wait for the owner |
+| 7 | on hold (`check` only, package 3.4.0): the coordinator's hold lasts, start nothing new; every verb prints the hold first |
 
 ## Waiting
 
@@ -179,7 +180,9 @@ Only a holder that stays alive all that time ends the second wait with code 4, w
 and host. `check` does not wait for the lease. A wait that ends with no answer (stopped by Ctrl+C or by its host,
 which lets its cleanup run and remove the lease, or broken by an error) prints that nothing listens now and a
 `NEXT:` line to wait again; the journal records each wait's process (`wait`) and how it ended (`wait-end`). It uses change events on the inbox plus a rescan every five seconds, and rebuilds the
-watcher every ten minutes. It returns on: new messages, a proposal's time running out, pause or resume, stop,
+watcher every ten minutes. It returns on: new messages, a proposal's time running out, pause or resume, a hold
+and its lift (control state `hold`: messages are still delivered meanwhile, every verb prints the hold first, and
+`check` exits 7 while it lasts), stop,
 replacement, the coordinator's silence, and its own time limit. A wait whose inbox folder is not there takes the
 room for unreachable (a share that is gone looks the same) and ends with code 2 after thirty minutes of it; a
 folder that comes back starts the count again, whether the agent is paused or not. A `control` file that is there

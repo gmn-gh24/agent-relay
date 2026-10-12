@@ -1,5 +1,88 @@
 # Changelog
 
+## 0.6.0 (2026-10-12)
+
+Three things the seven-agent room lacked (room package 3.4.0; running rooms:
+`scripts/Update-RelayRoom.ps1 -Room <id>`):
+
+- `Add-RelayAgent.ps1 -Assign` takes the assignment as parameters (`-Role -Work -Task -DoneWhen -NonGoals
+  -Roots -May -ProposeOk -AskFirst -Never -MachineCare -MachineNotes -Expertise -Standards -DocTools`) and
+  several names in one call (`-Assign emma, jack`), every name checked before the first is written. `-Roots`
+  takes `'<folder>'`, `'<folder>=<pattern>,<pattern>'` or a hashtable. `-AnswersFile` still works, and a
+  parameter given with it wins. The coordinator hand-wrote the JSON through another shell and lost two
+  rounds to backslashes, a `$name` and an escape error.
+- `New-RelayRoom.ps1` takes the room's answers as parameters too (`-Job -RoomName -RoomId -RoomsRoot
+  -Authority -OpenSeats -WorkFiles -ReachPath -NoTabTitles`): a room of open seats needs no file; named
+  agents still come from the file.
+- A hold as room state: `Add-RelayAgent.ps1 -Control <name>|all -State hold -Note '<why>'`. Every verb of
+  the agent prints `=== HOLD: <why> ===` first, `check` exits 7 while the hold lasts (a run script can test
+  it before it starts), `wait` tells the agent once and again when the hold is lifted (`-State run`), and
+  messages still reach it. `-Control all` covers every agent but the coordinator and the retired, for every
+  state. A hold that was a plain note reached an agent after its run had started.
+- `relay.ps1`: a `task` whose words run into a line of the receiver's "Never" or "Not part of this task"
+  (two telling words of the line in the task, one when it has only one; a short word such as `npm` matches
+  whole) is not sent: `NOT SENT` names the line and the words, the draft stays, and `task <name> anyway`
+  sends it as it is. The coordinator re-assigns first, or overrides. A word match, not a judgment: the
+  message says so. The assignment is read from this PC's copy, which the coordinator's launcher runs, never
+  from the room's, which any agent can edit. `-State hold` is refused on a room whose package is older
+  than 3.4.0, whose tool would read the state as a resume: `Update-RelayRoom.ps1` first.
+- The board: `control: hold (<why>)`. `coordinating.md`: the parameters, the hold, the refusal;
+  `PROTOCOL.md`: on hold, exit code 7; the skill names the parameters.
+- Tests: `-Assign` with parameters for two agents, `-Control all -State hold` and the board, a room from
+  parameters, in `Relay.Scripts.Tests.ps1`; the hold on every verb, `check` 7, the lift, and the task
+  refusal with `anyway`, in `Relay.Tool.Tests.ps1`.
+
+## 0.5.1 (2026-10-12)
+
+Wording from the same room (room package 3.3.1: `START-HERE.md` and `ASSIGNMENT.md` change; running rooms:
+`scripts/Update-RelayRoom.ps1 -Room <id>`):
+
+- `START-HERE.md` says next to `remember` what an entry is (the whole draft joined into one line), its limits
+  (15 to 500 characters, up to 5 tags) and that the verb writes nothing when they are missed. An agent found
+  the limits by running the verb three times.
+- `ASSIGNMENT.md` says under "Where you work" that scratch files (a runner, a helper script, a log) go into a
+  results folder on the agent's own disk, never beside the assigned folders, where every later self-audit
+  lists them as `OUTSIDE`.
+- `coordinating.md` has a checklist "The kit" under "Tasks": everything the suites read (reference masters,
+  profiles, sibling scripts that drift guards compare), per-round folders with only that round's changed files
+  and a diff against the round before, and a tested runner template (`-PassThru` with `Run.Exit` false, no
+  `Set-StrictMode` in a runner, `PSModulePath` rebuilt from the registry under Windows PowerShell 5.1, output
+  to a file in the results folder).
+- `agent-kinds.md`: Claude Code's command tool shows `robocopy`'s exit code 1 ("files were copied") as an
+  error, and what a task says about it; Codex's command time limit is not measured yet, how to measure it in
+  one session, and where to write the result (`wait_minutes` stays 4 until then).
+- Tests: the limits in `START-HERE.md` and the scratch sentence in `ASSIGNMENT.md`, in
+  `Relay.Scripts.Tests.ps1`.
+
+## 0.5.0 (2026-10-12)
+
+What a room of seven agents on one machine taught over five rounds (room package 3.3.0; running rooms:
+`scripts/Update-RelayRoom.ps1 -Room <id>`, and tell the loop agents in a note that a quiet wait now exits 0):
+
+- `relay.ps1`: a `wait` that timed out exits 0, like one that delivered, and says "nothing arrived in N
+  minutes: that is normal, not an error". It exited 3, and a product that shows every exit code but 0 as a
+  failed command had several agents stop waiting after their first quiet wait. `check` keeps 3 for "nothing
+  new", so a script can still test it; the idle status is written as before.
+- `relay.ps1`: a seat whose `park_after` is 0 is never parked. The Codex profile uses it: the owner stops a
+  Codex agent, the tool does not. Its prompt says that a quiet wait is normal and that the agent never stops
+  waiting on its own.
+- `relay.ps1`: a draft of one line is sent whole. The line is the subject, cut at 120 characters, and when it
+  is longer than that the whole line is the text too; the text beyond the subject was lost.
+- The join prompt: an agent that does not know its model or effort asks the user of its session for them by a
+  typed answer instead of guessing, and every agent works from a local folder of its own, never from the room
+  folder or a share.
+- `START-HERE.md`: a task never widens the assignment (the agent answers with `ask` and keeps working on the
+  rest), and a new assignment carries the owner's decision whole. `PROTOCOL.md`: the exit codes; one subfolder
+  per round in `attach`, with that round's changed files and a diff against the round before; scratch files
+  belong in the results folder on the agent's own disk; `park_after` 0.
+- The skill: the startup interview goes through the host's question tool with choices
+  (`startup-interview.md`, "How to ask"); line 1 of a draft is the subject and the send consumes the draft; a
+  task never exceeds the assignment, re-assign first. `agent-kinds.md`: the Codex row and the paragraph on the
+  exit code of a wait. A lesson records the room.
+- Tests: every timed-out wait expects 0 and the new text; `never parks a loop agent whose seat says
+  park_after 0` and `sends a one-line draft whole` in `Relay.Tool.Tests.ps1`; the join prompt's new sentences
+  in `Relay.Scripts.Tests.ps1`.
+
 ## 0.4.4 (2026-10-12)
 
 An agent in a room stopped at one blocked command (room package 3.2.4; running rooms:
