@@ -673,14 +673,18 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
         $line = 'NOTE: start Codex with codex --yolo: without it Codex keeps asking its user and its sandbox blocks the room''s commands'
         $claude = 'NOTE: Claude Code asks its user before commands; for a room without interruptions the owner starts it with claude --dangerously-skip-permissions'
         $answers = Join-Path $root 'codex.json'
-        [System.IO.File]::WriteAllText($answers, (ConvertTo-Json -Depth 6 @{ agents = @([ordered]@{ name = 'gina'; role = 'builder'; kind = 'codex' }, [ordered]@{ name = 'lena'; role = 'writer' }, [ordered]@{ name = 'nora'; role = 'tester'; kind = 'claude-code' }, [ordered]@{ name = 'vera'; role = 'tester'; kind = 'claude-code-headless' }) }))
+        # Every name in a room starts with its own letter, and the open seat's name was drawn at random: take four
+        # names whose letters nobody in the room has
+        $usedLetters = @($created.Seats | ForEach-Object { $_.name.Substring(0, 1) })
+        $wanted = @(@('gina', 'lena', 'nora', 'vera', 'wren', 'xena', 'yuri', 'zara', 'kira', 'ivy', 'uma', 'quinn') | Where-Object { $usedLetters -notcontains $_.Substring(0, 1) } | Select-Object -First 4)
+        [System.IO.File]::WriteAllText($answers, (ConvertTo-Json -Depth 6 @{ agents = @([ordered]@{ name = $wanted[0]; role = 'builder'; kind = 'codex' }, [ordered]@{ name = $wanted[1]; role = 'writer' }, [ordered]@{ name = $wanted[2]; role = 'tester'; kind = 'claude-code' }, [ordered]@{ name = $wanted[3]; role = 'tester'; kind = 'claude-code-headless' }) }))
         $added = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $answers -NoClipboard)
         @($added | Where-Object { $_ -eq $line }).Count | Should -Be 1
         # Two kinds of Claude Code share one note: each kind prints it once
         @($added | Where-Object { $_ -eq $claude }).Count | Should -Be 2
-        $replaced = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'gina' -NoClipboard)
+        $replaced = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace $wanted[0] -NoClipboard)
         @($replaced | Where-Object { $_ -eq $line }).Count | Should -Be 1
-        $other = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'lena' -NoClipboard)
+        $other = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace $wanted[1] -NoClipboard)
         @($other | Where-Object { $_ -match '^NOTE: (start Codex|Claude Code)' }).Count | Should -Be 0
         # What the owner is told about the risk is the coordinator's to say, never the scripts' or a prompt's
         (@($added) -join "`n") | Should -Not -Match 'virtual machine|throwaway|\brisk'
