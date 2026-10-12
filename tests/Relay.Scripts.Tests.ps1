@@ -207,6 +207,8 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $jackStart | Should -Match 'relay-draft-jack\.md   \(in your working folder\)'
         $jackStart | Should -Match 'copied into this folder\s+before you send: `\S+agents\\jack\\attach`'
         $jackStart | Should -Match 'when it says nothing arrived, run it again'
+        # The limits of remember stand where the verb is explained, not only in the refusal
+        $jackStart | Should -Match 'it must be 15 to 500 characters long with up to 5 tags'
         $jackStart | Should -Not -Match '\{\{'
         $share | Should -Match 'your agent product as exactly as you know it \(for example claude-code-cli or codex-cli\), your model, and your reasoning effort setting'
         $shareSeat = Read-RelayKeyValue (Join-Path $created.Path 'agents\emma\seat')
@@ -1535,6 +1537,8 @@ Describe 'Open seats' -Tag 'Scripts' {
         Test-Path -LiteralPath (Join-Path $room "PROMPT-$name.txt") | Should -BeFalse
         $assignment = Get-Content -LiteralPath (Join-Path $room "agents\$name\ASSIGNMENT.md") -Raw
         $assignment | Should -Match '\*\*Role:\*\* reviewer'
+        # Where scratch files go, with and without assigned folders: next to a root they show as OUTSIDE in every audit
+        $assignment | Should -Match 'No work folder is assigned: your tasks say where to look\. Your own scratch files \(a runner, a helper script, a log\) go into a results folder on your own disk'
         $assignment | Should -Match 'Your field here: PowerShell'
         $assignment | Should -Match 'Review the module\.'
         $assignment | Should -Match '- Change any file\.'

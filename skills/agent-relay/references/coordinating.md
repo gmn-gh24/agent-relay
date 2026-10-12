@@ -193,6 +193,36 @@ Three things a task says when they apply:
   path the guard refuses. A helper process that must stay alive (one started as another user, for example) is
   started from a background command: from a foreground call it holds that call until it ends.
 
+### The kit
+
+When agents run a test suite, a build or a review on a copy of a project (a "kit" you stage in `work`),
+what is not in the kit costs a round: an agent reports a failure that is only a missing file, you restage,
+the agent runs again. Before the first task goes out, check the kit against this list, and again after every
+change to it:
+
+- **Everything the suites read** is in it: the reference masters a test compares its output with, the
+  profiles or settings files a run loads, the sibling scripts a drift guard compares (a guard that reads
+  `..\other.ps1` fails on a kit that holds only the file under test), the fixtures, the data tables. Run the
+  suite once yourself from a copy of the kit on another path before you stage it: what fails there fails for
+  the agent too.
+- **Per round, only what changed.** For round N stage a folder `round-N` with the files that changed since
+  round N-1 and a diff of those files against round N-1, not against the checkout: a reader who reviewed round
+  N-1 sees what moved, and nothing else. Say in the task which folder is the round's. Ask the agents for the
+  same shape back (`PROTOCOL.md`, "Files first, message last").
+- **A tested runner template.** When agents run tests from a script you hand them, test the script yourself
+  first, with these in it:
+  - `Invoke-Pester -PassThru` with `Run.Exit` false: the runner reads the result object and sets its own exit
+    code from it; with `Run.Exit` true Pester ends the host process from inside the runner.
+  - No `Set-StrictMode` in the runner: it leaks into the test scope, and a test that was fine alone then
+    fails on an unset variable.
+  - Under Windows PowerShell 5.1, rebuild `PSModulePath` from the registry values of the Machine and User
+    scope before the first `Import-Module`: a `powershell.exe` started from `pwsh` inherits the PowerShell 7
+    module folders, and `Set-Acl`, `Get-FileHash` and other cmdlets of its own then go missing.
+  - The runner writes its output to a file in the agent's results folder and names that file in the report:
+    a run whose output lived only in the agent's session is gone with the session.
+- **The runner and its scratch files live in the results folder** on the agent's own disk, never beside the
+  kit's folders: the self-audit lists every new file next to an assigned folder as `OUTSIDE`.
+
 ## Results
 
 A `result` closes the task it names. Before you accept it:

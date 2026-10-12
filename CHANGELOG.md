@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.1 (2026-10-12)
+
+Wording from the same room (room package 3.3.1: `START-HERE.md` and `ASSIGNMENT.md` change; running rooms:
+`scripts/Update-RelayRoom.ps1 -Room <id>`):
+
+- `START-HERE.md` says next to `remember` what an entry is (the whole draft joined into one line), its limits
+  (15 to 500 characters, up to 5 tags) and that the verb writes nothing when they are missed. An agent found
+  the limits by running the verb three times.
+- `ASSIGNMENT.md` says under "Where you work" that scratch files (a runner, a helper script, a log) go into a
+  results folder on the agent's own disk, never beside the assigned folders, where every later self-audit
+  lists them as `OUTSIDE`.
+- `coordinating.md` has a checklist "The kit" under "Tasks": everything the suites read (reference masters,
+  profiles, sibling scripts that drift guards compare), per-round folders with only that round's changed files
+  and a diff against the round before, and a tested runner template (`-PassThru` with `Run.Exit` false, no
+  `Set-StrictMode` in a runner, `PSModulePath` rebuilt from the registry under Windows PowerShell 5.1, output
+  to a file in the results folder).
+- `agent-kinds.md`: Claude Code's command tool shows `robocopy`'s exit code 1 ("files were copied") as an
+  error, and what a task says about it; Codex's command time limit is not measured yet, how to measure it in
+  one session, and where to write the result (`wait_minutes` stays 4 until then).
+- Tests: the limits in `START-HERE.md` and the scratch sentence in `ASSIGNMENT.md`, in
+  `Relay.Scripts.Tests.ps1`.
+
 ## 0.5.0 (2026-10-12)
 
 What a room of seven agents on one machine taught over five rounds (room package 3.3.0; running rooms:
