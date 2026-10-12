@@ -20,9 +20,12 @@ Three things the seven-agent room lacked (room package 3.4.0; running rooms:
   messages still reach it. `-Control all` covers every agent but the coordinator and the retired, for every
   state. A hold that was a plain note reached an agent after its run had started.
 - `relay.ps1`: a `task` whose words run into a line of the receiver's "Never" or "Not part of this task"
-  (two telling words of the line in the task, one when it has only one) is not sent: `NOT SENT` names the
-  line and the words, the draft stays, and `task <name> anyway` sends it as it is. The coordinator
-  re-assigns first, or overrides. A word match, not a judgment: the message says so.
+  (two telling words of the line in the task, one when it has only one; a short word such as `npm` matches
+  whole) is not sent: `NOT SENT` names the line and the words, the draft stays, and `task <name> anyway`
+  sends it as it is. The coordinator re-assigns first, or overrides. A word match, not a judgment: the
+  message says so. The assignment is read from this PC's copy, which the coordinator's launcher runs, never
+  from the room's, which any agent can edit. `-State hold` is refused on a room whose package is older
+  than 3.4.0, whose tool would read the state as a resume: `Update-RelayRoom.ps1` first.
 - The board: `control: hold (<why>)`. `coordinating.md`: the parameters, the hold, the refusal;
   `PROTOCOL.md`: on hold, exit code 7; the skill names the parameters.
 - Tests: `-Assign` with parameters for two agents, `-Control all -State hold` and the board, a room from

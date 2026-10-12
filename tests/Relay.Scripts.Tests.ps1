@@ -669,6 +669,17 @@ Describe 'Add-RelayAgent' -Tag 'Scripts' {
         (Read-RelayKeyValue (Join-Path $room 'agents\emma\seat'))['kind'] | Should -Be 'generic'
     }
 
+    It 'refuses a hold on a room whose package knows none, names the update, and still pauses it' {
+        $object = Resolve-RelayRoom $id
+        $info = [ordered]@{}
+        foreach ($key in $object.Info.Keys) { $info[$key] = $object.Info[$key] }
+        $info['package'] = '3.3.1'
+        Write-RelayGuardedText $object 'ROOM' (ConvertTo-RelayKeyValueText $info)
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Control 'emma' -State hold -Note 'x' } | Should -Throw '*older than 3.4.0*Update-RelayRoom.ps1*'
+        (Read-RelayKeyValue (Join-Path $room 'agents\emma\control'))['state'] | Should -Be 'run'
+        (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Control 'emma' -State pause)[0] | Should -Match '^CONTROL emma: pause\.'
+    }
+
     It 'ends a retirement, a pause, a stop, a resume, a line and the join prompt with a NEXT line' {
         $retired = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Retire 'henry')
         $retired[$retired.Count - 1] | Should -Match '^NEXT: give what henry was working on to another agent'
