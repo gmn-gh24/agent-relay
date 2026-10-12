@@ -190,10 +190,17 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $codex = [string]$created.Prompts['jack']
         $codex | Should -Match 'keep waiting on that same running command'
         # Codex took a quiet wait for a failure and stopped waiting: its prompt says that it is normal, and that the agent
-        # never stops on its own; its seat is never parked
+        # never stops on its own; no seat and no kind carries a number of quiet waits after which it would
         $codex | Should -Match 'a wait that ends with nothing is normal, not an error'
         $codex | Should -Match 'You never stop waiting on your own'
-        (Read-RelayKeyValue (Join-Path $created.Path 'agents\jack\seat'))['park_after'] | Should -Be '0'
+        foreach ($name in 'emma', 'jack') { (Read-RelayKeyValue (Join-Path $created.Path "agents\$name\seat")).Contains('park_after') | Should -BeFalse }
+        (Get-Content -LiteralPath (Join-Path $created.Path 'ROOM') -Raw) | Should -Not -Match 'park'
+        # An agent that cannot see its model or its effort asks its own user, with choices where its host has a tool for it
+        foreach ($prompt in $share, $codex) {
+            $prompt | Should -Match 'ask the user of your own session before you run it, and wait for the answer'
+            $prompt | Should -Match 'Ask through your question tool when you have one \(the one that shows choices to pick from\): offer the models and the effort levels your own product has, and "other" for typing'
+            $prompt | Should -Match 'Ask as a question the user answers by typing only when you have no such tool'
+        }
         # In its sandbox Codex CLI cannot run the room's commands: its prompt says what to do when they are refused
         $codex | Should -Match 'tell your user to start you again with codex --yolo'
         # The risk of a start without the product's guard is told to the owner, never to an agent
@@ -204,12 +211,24 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         # A draft kept in the working folder carries the agent's name: two agents may share that folder
         $seat['draft'] | Should -Be 'relay-draft-jack.md'
         $jackStart = Get-Content -LiteralPath (Join-Path $created.Path 'agents\jack\START-HERE.md') -Raw
-        $jackStart | Should -Match 'relay-draft-jack\.md   \(in your working folder\)'
+        # Where that folder is, only the agent's start knows: the file holds the place of the path, and the tool
+        # prints the full one (Relay.Tool.Tests.ps1 has the agent's side)
+        $jackStart | Should -Match '(?m)^\{\{DRAFT\}\}$'
+        $jackStart | Should -Match 'In the file itself the path of your draft stands in double braces'
         $jackStart | Should -Match 'copied into this folder\s+before you send: `\S+agents\\jack\\attach`'
         $jackStart | Should -Match 'when it says nothing arrived, run it again'
         # The limits of remember stand where the verb is explained, not only in the refusal
         $jackStart | Should -Match 'it must be 15 to 500 characters long with up to 5 tags'
-        $jackStart | Should -Not -Match '\{\{'
+        ($jackStart -replace '\{\{DRAFT\}\}', '') | Should -Not -Match '\{\{'
+        # Every agent's instructions say once that it keeps waiting, and how it stays reachable while it works
+        foreach ($name in 'emma', 'jack') {
+            $text = (Get-Content -LiteralPath (Join-Path $created.Path "agents\$name\START-HERE.md") -Raw) -replace '\s+', ' '
+            ([regex]::Matches($text, 'You keep waiting until you are retired or the room is closed')).Count | Should -Be 1
+            $text | Should -Match 'Only your own user, or a message from the room that tells you to stop, ends it'
+            $text | Should -Match 'never as a detached process you would have to poll'
+            $text | Should -Match 'Send a `progress` line when a long command starts and one when it ends'
+            $text | Should -Not -Match 'park'
+        }
         $share | Should -Match 'your agent product as exactly as you know it \(for example claude-code-cli or codex-cli\), your model, and your reasoning effort setting'
         $shareSeat = Read-RelayKeyValue (Join-Path $created.Path 'agents\emma\seat')
         $shareSeat['transport'] | Should -Be 'share'
@@ -276,6 +295,36 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         @(Get-RelayTestOpenSeat $both.Path).Count | Should -Be 3
         # Neither a file nor a job: nothing to build from
         { & (Join-Path $scripts 'New-RelayRoom.ps1') -OpenSeats 1 -NoClipboard } | Should -Throw '*Give -AnswersFile, or the answers as parameters*'
+    }
+
+    It 'writes how long a task should take into ROOM: 15 minutes, the number of the answers, or the parameter''s' {
+        # Without a word about it: 15 minutes, in the room and in this PC's copy
+        $plain = New-RelayTestRoom -Root $root -RoomId 'minutes-plain'
+        (Read-RelayKeyValue (Join-Path $plain.Path 'ROOM'))['task_minutes'] | Should -Be '15'
+        (Resolve-RelayRoom 'minutes-plain').Info['task_minutes'] | Should -Be '15'
+        # From the answers file
+        $set = New-RelayTestRoom -Root $root -RoomId 'minutes-set' -Extra @{ task_minutes = 40 }
+        (Read-RelayKeyValue (Join-Path $set.Path 'ROOM'))['task_minutes'] | Should -Be '40'
+        (Resolve-RelayRoom 'minutes-set').Info['task_minutes'] | Should -Be '40'
+        # The parameter wins over the file, and builds a room without one
+        $file = Join-Path $root 'minutes.json'
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject ([ordered]@{ job = 'Minutes'; room_id = 'minutes-both'; rooms_root = (Join-Path $root 'rooms'); open_seats = 1; task_minutes = 40 })))
+        $both = & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $file -TaskMinutes 25 -NoClipboard -PassThru
+        (Read-RelayKeyValue (Join-Path $both.Path 'ROOM'))['task_minutes'] | Should -Be '25'
+        $alone = & (Join-Path $scripts 'New-RelayRoom.ps1') -Job 'Minutes alone' -RoomId 'minutes-alone' -RoomsRoot (Join-Path $root 'rooms') -OpenSeats 1 -TaskMinutes 90 -NoClipboard -PassThru
+        (Read-RelayKeyValue (Join-Path $alone.Path 'ROOM'))['task_minutes'] | Should -Be '90'
+        # A number that is no number of minutes builds nothing
+        { New-RelayTestRoom -Root $root -RoomId 'minutes-bad' -Extra @{ task_minutes = 0 } } | Should -Throw '*"task_minutes" is a number from 1 to 1440*'
+        { & (Join-Path $scripts 'New-RelayRoom.ps1') -Job 'x' -RoomId 'minutes-worse' -RoomsRoot (Join-Path $root 'rooms') -OpenSeats 1 -TaskMinutes 5000 -NoClipboard } | Should -Throw
+        Test-Path -LiteralPath (Join-Path $root 'rooms\minutes-bad') | Should -BeFalse
+        # The coordinator's tool takes the room's number for a task that names none
+        Start-TestAgent $set.Path @('olivia', 'emma')
+        $task = Send-RelayTestMessage -Room $set.Path -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Count`n`nCount the files."
+        $task.Output | Should -Match '(?m)^expected: 40 minutes\. '
+        (Read-RelayTestMessage (Join-Path $set.Path 'agents\emma\inbox\olivia-0001.md'))['expected_minutes'] | Should -Be '40'
+        # No room carries a number of quiet waits after which an agent would stop waiting
+        (Get-Content -LiteralPath (Join-Path $plain.Path 'ROOM') -Raw) | Should -Not -Match 'park'
+        (Get-Content -LiteralPath (Join-Path $both.Path 'tools\kinds') -Raw) | Should -Not -Match 'park'
     }
 
     It 'refuses answers it cannot build a room from' {
@@ -948,17 +997,133 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         (ConvertFrom-Json -InputObject $json).coordinator | Should -Be 'olivia'
     }
 
-    It 'marks an agent whose wait has died and one that is parked' {
+    It 'marks an agent whose wait has died, and has nothing to say about an agent whose waits end with nothing' {
         [System.IO.File]::WriteAllText((Join-Path $room 'agents\jack\status'), "state: listening`ndetail: `nsince_utc: 2026-10-10T08:00:00Z`ngen: 1`n")
         (Get-Item -LiteralPath (Join-Path $room 'agents\jack\alive')).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-12)
-        [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\status'), "state: parked`ndetail: idle through 6 waits`nsince_utc: 2026-10-10T08:00:00Z`ngen: 1`n")
+        # An agent waits until it is retired or the room is closed: idle between two waits is no state to act on,
+        # and neither is a state word that a room made by an earlier package may still hold
         $seat = Join-Path $room 'agents\emma\seat'
         Write-RelayGuardedText $object 'agents/emma/seat' ([System.IO.File]::ReadAllText($seat) -replace 'expect_computer: .*', 'expect_computer: ')
-        $board = Get-RelayBoard $object
-        $jack = @($board.agents | Where-Object { $_.name -eq 'jack' })[0]
-        $jack.isStale | Should -BeTrue
-        $jack.attention | Should -Match 'wait died 1[12] min ago: owner must restart that session'
-        @($board.agents | Where-Object { $_.name -eq 'emma' })[0].attention | Should -Be 'parked: owner must nudge'
+        foreach ($state in 'idle', 'parked') {
+            [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\status'), "state: $state`ndetail: wait timed out`nsince_utc: 2026-10-10T08:00:00Z`ngen: 1`n")
+            $board = Get-RelayBoard $object
+            $jack = @($board.agents | Where-Object { $_.name -eq 'jack' })[0]
+            $jack.isStale | Should -BeTrue
+            $jack.attention | Should -Match 'wait died 1[12] min ago: owner must restart that session'
+            @($board.agents | Where-Object { $_.name -eq 'emma' })[0].attention | Should -Be ''
+        }
+        ((& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow') -join "`n") | Should -Not -Match 'nudge'
+    }
+
+    It 'marks an agent that wakes on a background command, has a task it was shown and no wait running' {
+        # Jack is shown its task and starts no wait: no message reaches it until its session looks by itself
+        $null = Invoke-RelayTool -Room $room -Agent 'jack' -Engine $engine -Words @('check')
+        $card = Join-Path $room 'agents\jack\card'
+        $alive = Join-Path $room 'agents\jack\alive'
+        $lease = Join-Path $room 'agents\jack\wait.lease'
+        $asLoop = [System.IO.File]::ReadAllText($card)
+        $asLoop | Should -Match '(?m)^wake: loop$'
+        $asBackground = $asLoop -replace '(?m)^wake: loop$', 'wake: background'
+        Test-Path -LiteralPath $lease | Should -BeFalse
+        # An agent that waits in the foreground has no wait while it works, by its nature: nothing is said
+        (Get-Item -LiteralPath $alive).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-7)
+        @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Be ''
+        # One that wakes on a background command: the moment between a delivery and its next wait is nothing yet
+        [System.IO.File]::WriteAllText($card, $asBackground)
+        (Get-Item -LiteralPath $alive).LastWriteTimeUtc = [DateTime]::UtcNow
+        @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Be ''
+        # Seven minutes without a wait: marked, with the minutes since its last sign of life
+        (Get-Item -LiteralPath $alive).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-7)
+        $jack = @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' })[0]
+        $jack.attention | Should -Match '^has an open task and no wait running, last sign of life [78] min ago: no message reaches it; ask the owner to tell that session to check the room$'
+        ((& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow') -join "`n") | Should -Match 'ATTENTION: has an open task and no wait running, last sign of life [78] min ago'
+        # The feed carries the same words in the field it always had
+        $feed = Invoke-RelayTestScript -Script 'Watch-RelayFeed.ps1' -Arguments @('-Room', 'flow', '-Json', '-Once', '-NoHeartbeat', '-NoTamperCheck') -Environment $local
+        $feed.ExitCode | Should -Be 0 -Because $feed.Error
+        $snapshot = ConvertFrom-Json -InputObject (@($feed.Output -split "`n" | Where-Object { $_.Trim() })[0])
+        @($snapshot.agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Match '^has an open task and no wait running'
+        # A wait that runs keeps its lease fresh: nothing is said
+        [System.IO.File]::WriteAllText($lease, "token: abc`ngen: 1`nhost: elsewhere`npid: 1`n")
+        @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Be ''
+        # A lease nobody refreshed for minutes is the lease of a wait that is gone
+        (Get-Item -LiteralPath $lease).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-5)
+        @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Match '^has an open task and no wait running'
+        # Once it has reported, it owes nothing
+        Remove-Item -LiteralPath $lease -Force
+        $null = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('report', 'olivia-jack-0001') -Text "Reviewed`n`n1. Result: fine."
+        (Get-Item -LiteralPath $alive).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-7)
+        @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Be ''
+    }
+
+    It 'shows what a task should take next to it, and OVERDUE when its agent has sent nothing for that long' {
+        $age = { param([string]$Path, [double]$Minutes) [System.IO.File]::SetLastWriteTimeUtc($Path, [DateTime]::UtcNow.AddMinutes(-$Minutes)) }
+        $line = { param([string]$Id) @((Get-RelayBoard (Resolve-RelayRoom 'flow')).open | Where-Object { $_.id -eq $Id })[0] }
+        $print = { (& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow') -join "`n" }
+        $task = Join-Path $room 'agents\jack\inbox\olivia-0001.md'
+        # Jack introduced itself when the template was made: no word of its is newer than a task made older here
+        & $age (Join-Path $room 'agents\olivia\inbox\jack-0001.md') 600
+        # What the coordinator's tool noted on this PC when it sent the task: the room's default, 15 minutes
+        (Read-RelayTaskLog $object)['olivia-jack-0001'].Minutes | Should -Be 15
+        Test-Path -LiteralPath (Join-Path $room 'tasks.log') | Should -BeFalse
+        $row = & $line 'olivia-jack-0001'
+        $row.expectedMinutes | Should -Be 15
+        $row.isDelivered | Should -BeFalse
+        $row.isOverdue | Should -BeFalse
+        (& $print) | Should -Match '(?m)^  olivia-jack-0001  task to jack, \d+ min: Review\n      expected 15 min, not delivered yet: the agent has not picked it up, sent \d+ min ago$'
+        # An agent's question is no task of the coordinator: nothing is expected of it here
+        (& $line 'emma-olivia-0003').expectedMinutes | Should -Be 0
+        (& $print) | Should -Not -Match '(?m)^  emma-olivia-0003 .*\n      expected'
+
+        # Twenty minutes after it was sent, and jack has sent nothing
+        & $age $task 20
+        $row = & $line 'olivia-jack-0001'
+        $row.isOverdue | Should -BeTrue
+        $row.elapsedMinutes | Should -Be 20
+        $row.quietMinutes | Should -Be 20
+        (& $print) | Should -Match '(?m)^      OVERDUE: expected 15 min, not delivered yet: the agent has not picked it up, sent 20 min ago, no word from jack for 20 min$'
+
+        # The time the coordinator gave with the task counts, from this PC's record. What the message file in the
+        # room says about it counts for nothing: any agent can write there.
+        [System.IO.File]::AppendAllText((Get-RelayTaskLogPath $object), "2026-10-12T10:00:00Z`tolivia-jack-0001`tsent`t40`n")
+        [System.IO.File]::WriteAllText($task, (([System.IO.File]::ReadAllText($task)) -replace '(?m)^expects: reply$', "expects: reply`nexpected_minutes: 1"))
+        & $age $task 20
+        $row = & $line 'olivia-jack-0001'
+        $row.expectedMinutes | Should -Be 40
+        $row.isOverdue | Should -BeFalse
+        (& $print) | Should -Match '(?m)^      expected 40 min, not delivered yet: the agent has not picked it up, sent 20 min ago$'
+
+        # Shown to jack 45 minutes ago: the count runs from there
+        $null = Invoke-RelayTool -Room $room -Agent 'jack' -Engine $engine -Words @('check')
+        & $age $task 50
+        & $age (Join-Path $room 'agents\jack\delivered') 45
+        $row = & $line 'olivia-jack-0001'
+        $row.isDelivered | Should -BeTrue
+        $row.elapsedMinutes | Should -Be 45
+        $row.isOverdue | Should -BeTrue
+        (& $print) | Should -Match '(?m)^      OVERDUE: expected 40 min, delivered 45 min ago, no word from jack for 45 min$'
+        # A word of jack, about anything, starts the count again
+        $null = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('note') -Text "By the way`n`nThe notes have a typo."
+        $row = & $line 'olivia-jack-0001'
+        $row.isOverdue | Should -BeFalse
+        $row.quietMinutes | Should -Be 0
+        (& $print) | Should -Match '(?m)^      expected 40 min, delivered 45 min ago$'
+        # So does a progress line; and 41 minutes after the last of them the task is overdue again
+        & $age (Join-Path $room 'agents\olivia\inbox\jack-0002.md') 50
+        $null = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('progress') -Text 'Half of the notes are read'
+        (& $line 'olivia-jack-0001').isOverdue | Should -BeFalse
+        & $age (Join-Path $room 'agents\jack\progress') 41
+        # What the coordinator's wait has already said about it is shown with it
+        [System.IO.File]::AppendAllText((Get-RelayTaskLogPath $object), "2026-10-12T10:50:00Z`tolivia-jack-0001`talert1`t2026-10-12T10:50:00.0000000Z`n")
+        (& $line 'olivia-jack-0001').alerts | Should -Be 1
+        (& $print) | Should -Match '(?m)^      OVERDUE: expected 40 min, delivered 45 min ago, no word from jack for 41 min; your wait has told you once$'
+        # With nothing left that waits on the coordinator, the board says what to do about it
+        (& $print) | Should -Match '(?m)^NEXT: answer what waits on you'
+        $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('reply', 'emma-olivia-0003') -Text "The work folder`n`nThe work folder, still."
+        (& $print) | Should -Match '(?m)^NEXT: a task is OVERDUE: ask its agent for its status now \(ask jack\); when that stays unanswered too, give the task to another agent that can do it, or tell the owner that the agent is not responding and what is blocked\.$'
+        # The feed's lines carry no new field for any of this
+        $feed = Invoke-RelayTestScript -Script 'Watch-RelayFeed.ps1' -Arguments @('-Room', 'flow', '-Json', '-Once', '-NoHeartbeat', '-NoTamperCheck') -Environment $local
+        $feed.ExitCode | Should -Be 0 -Because $feed.Error
+        $feed.Output | Should -Not -Match 'expectedMinutes|isOverdue|quietMinutes'
     }
 
     It 'marks an agent that has not picked up a message for a long time: its session may have ended' {
@@ -1458,9 +1623,13 @@ Describe 'Open seats' -Tag 'Scripts' {
         $created.JoinPrompt | Should -Match 'your reasoning effort setting if your session or its configuration shows one'
         $created.JoinPrompt | Should -Match 'what kind of agent you are, the computer and its address, the user, whether you run elevated, and your shell'
         $created.JoinPrompt | Should -Match 'Do not work around it and do not try other paths unless your owner gives you one'
-        # Agents guessed their model and effort at join: the prompt says to ask the user of the session, by a typed answer
-        $created.JoinPrompt | Should -Match 'ask the user of your own session for them, as a question the user answers by typing, and wait for the answer'
-        $created.JoinPrompt | Should -Match 'Take the words the user typed as they are'
+        # Agents guessed their model and effort at join: the prompt says to ask the user of the session. With choices
+        # to pick from where the agent's host has a tool for that; a typed answer only where it has none
+        $created.JoinPrompt | Should -Match 'When you do not know your model or your effort setting, ask the user of your own session before you run it, and wait for the answer'
+        $created.JoinPrompt | Should -Match 'Ask through your question tool when you have one \(the one that shows choices to pick from\): offer the models and the effort levels your own product has, and "other" for typing'
+        $created.JoinPrompt | Should -Match 'Ask as a question the user answers by typing only when you have no such tool'
+        # The answer is taken as it is given, a name of several words too
+        $created.JoinPrompt | Should -Match 'Take the answer as it is given: a name of several words is fine, the command turns its blanks into dashes'
         # Agents worked inside the room folder and on the share: the prompt says where to work
         $created.JoinPrompt | Should -Match 'Work from a local folder of your own on this machine, never from the room folder and never from a folder on a share'
         # An agent in a sandbox cannot run join at all: the prompt itself says what to do then, and names no product
@@ -1641,6 +1810,53 @@ Describe 'Open seats' -Tag 'Scripts' {
         { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'params' -Assign $open[0] } | Should -Throw '*Give the assignment*'
         { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'params' -Assign $open[0] -Roots '=src/*' } | Should -Throw '*A root is a folder*'
         @(Test-RelayTamper (Resolve-RelayRoom 'params')).Count | Should -Be 0
+    }
+
+    It 'keeps a room working whose ROOM, seats, saved answers and kinds still carry park_after: nothing reads the number' {
+        $room = (New-RelayTestRoom -Root $root -RoomId 'older' -Extra @{ open_seats = 1 }).Path
+        $object = Resolve-RelayRoom 'older'
+        $seatName = @(Get-RelayTestOpenSeat $room)[0]
+        # A room as an earlier package made it: the number in ROOM, in every seat, in the saved answers of every
+        # seat and in the table of kinds; and no task_minutes
+        $facts = (Read-RelayText (Join-Path $object.Canon 'ROOM')) -replace '(?m)^task_minutes: .*\n', "park_after: 6`n"
+        Write-RelayGuardedText $object 'ROOM' $facts
+        foreach ($name in @(Get-RelayRoster $object)) {
+            Write-RelayGuardedText $object "agents/$name/seat" ((Read-RelayText (Join-Path $object.Canon "agents/$name/seat")).TrimEnd("`n") + "`npark_after: 2`n")
+            $specFile = Join-Path (Join-Path $object.Local 'specs') "$name.json"
+            $spec = ConvertFrom-RelayJson (Read-RelayText $specFile)
+            $spec | Add-Member -NotePropertyName 'park_after' -NotePropertyValue 2 -Force
+            [System.IO.File]::WriteAllText($specFile, (ConvertTo-Json -InputObject $spec -Depth 8))
+        }
+        Write-RelayGuardedText $object 'tools/kinds' ((Read-RelayText (Join-Path $object.Canon 'tools/kinds')) + "generic.park_after: 1`ncodex.park_after: 0`n")
+        $object = Resolve-RelayRoom 'older'
+        $object.Info.Contains('task_minutes') | Should -BeFalse
+        # The agents start, join and wait as in any room; waits that end with nothing end with nothing
+        Start-TestAgent $room @('olivia', 'emma')
+        $joined = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'some-agent', 'm', 'e')
+        $joined.ExitCode | Should -Be 0 -Because $joined.Output
+        [System.IO.File]::SetLastWriteTimeUtc((Join-Path $room 'agents\olivia\alive'), [DateTime]::UtcNow.AddMinutes(30))
+        foreach ($name in 'emma', $seatName) {
+            foreach ($round in 1..2) {
+                $quiet = Invoke-RelayTool -Room $room -Agent $name -Engine $engine -Words @('wait', '1') -Environment @{ RELAY_MINUTE_SECONDS = '1' }
+                $quiet.ExitCode | Should -Be 0
+                $quiet.Output | Should -Match 'nothing arrived in 1 minutes: that is normal, not an error'
+                $quiet.Output | Should -Not -Match 'parked'
+            }
+        }
+        # The board and a task work, with 15 minutes as the time a task should take
+        $task = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Count`n`nCount the files."
+        $task.Output | Should -Match '(?m)^expected: 15 minutes\. '
+        $board = Get-RelayBoard $object
+        @($board.open | Where-Object { $_.id -eq 'olivia-emma-0001' })[0].expectedMinutes | Should -Be 15
+        @($board.agents | Where-Object { $_.attention -match 'park|nudge' }).Count | Should -Be 0
+        # A new assignment, a new seat and the update write the seats again from the saved answers, without the number
+        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'older' -Assign 'emma' -Role 'counter'
+        (Read-RelayKeyValue (Join-Path $room 'agents\emma\seat')).Contains('park_after') | Should -BeFalse
+        $text = (& (Join-Path $scripts 'Update-RelayRoom.ps1') -Room 'older') -join "`n"
+        $text | Should -Match 'UPDATED room older'
+        (Get-Content -LiteralPath (Join-Path $room 'tools\kinds') -Raw) | Should -Not -Match 'park'
+        foreach ($name in @(Get-RelayRoster $object | Where-Object { $_ -ne 'olivia' })) { (Read-RelayKeyValue (Join-Path $room "agents\$name\seat")).Contains('park_after') | Should -BeFalse -Because $name }
+        @(Test-RelayTamper (Resolve-RelayRoom 'older')).Count | Should -Be 0
     }
 
     It 'brings the tools of a running room up to the package, and only when asked' {

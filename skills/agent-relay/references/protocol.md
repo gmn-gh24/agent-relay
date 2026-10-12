@@ -9,7 +9,8 @@ which files this PC writes, how the pieces fit, and where state lives.
 <rooms root>/<room id>/
   ROOM                      key: value: room, protocol, package, job, coordinator, authority, created_utc,
                             stale_minutes, pickup_minutes (the board's limit for a message nobody picked
-                            up), silent_minutes, park_after, proposal_limit
+                            up), silent_minutes, task_minutes (how long a task should take when the
+                            coordinator names no number, 15), proposal_limit
   DECISIONS.md              standing rules and owner decisions (Add-RelayDecision.ps1 only)
   PLAN                      the team plan: parts, owners, status (Set-RelayPlan.ps1 only); see "The team plan"
   PROTOCOL.md               agents' reference
@@ -87,7 +88,11 @@ environment turns that off).
   is never closed by one, is no message. `show`, `reply` and `report <id>` say there is none, and it is never
   a request and never closes one.
 - Header: `id, from, to, type, re, subject, sent_utc, expects`. Types: `hello, task, question, proposal,
-  result, answer, note, bye`. `expects`: `reply`, `none`, or `proceed <minutes>`.
+  result, answer, note, bye`. `expects`: `reply`, `none`, or `proceed <minutes>`. A `task` carries one more
+  line after `expects`, `expected_minutes: <N>`: how long the coordinator expects it to take, printed with the
+  task for its receiver. Every reader takes the header lines it knows by their key and passes over the others,
+  so a tool or a script that does not know the line reads the message as before; a task without the line has
+  no expected duration for its receiver, and the room's default for the coordinator.
 - A request (`task`, `question`, `proposal`) is open until a `result` or `answer` names it in `re`.
 - `delivered` is the receiver's append-only list of ids its tool has shown. Delivery and "answered" are
   separate: a message shown to a session that then died is shown again as an open request at the next `start`.
@@ -114,8 +119,43 @@ environment turns that off).
 `join` (room-level), `start`, `wait [minutes]`, `check`, `show <id>|open|rules`, `reply <id> [approve|deny]`,
 `report [<task id>]`, `ask`, `propose <minutes>`, `note`, `who`, `team`, `progress`, `remember [tag ...]`,
 `find [word|tag:name ...]`, `bye`; the coordinator
-also has `task <name>`, `ask <name>`, `note <name>|all`. Arguments are single plain words; text comes from the
-draft file.
+also has `task <name> [anyway] [<minutes>]`, `ask <name>`, `note <name>|all`. Arguments are single plain words;
+text comes from the draft file. The words of `join` and `start` (product, model, effort) are taken as a user
+types them: a quoted word with blanks, or more than three words, becomes product, one model word with a dash
+for each blank, and effort; what then holds another character than letters, digits, dot and dash is refused
+with the join (or start) command and an example, never with a pointer to a draft.
+
+A draft the seat keeps in the agent's working folder (`draft` in `seat` is a file name, not a path) lies in
+the folder the agent ran `start` or `join` from, which its `card` holds as `cwd`: every verb reads that one
+file, whatever folder it is run from, and `start` prints its full path and fills it into the instructions.
+`RELAY_DRAFT` names another file for a call (the coordinator's launcher sets it).
+
+## Tasks and their time
+
+`task <name> <minutes>` says how long the task should take; without a number it is `task_minutes` of this
+PC's copy of `ROOM` (15). The coordinator's tool writes the number into the message (`expected_minutes`) for
+the receiver, and into `tasks.log` next to its launcher for itself: one line per event, tab-separated (`utc`,
+task id, `sent` with the minutes, `delivered`, `alert1`, `alert2` with the room's time, `closed`). Nothing
+this PC goes by lies in the room: what was expected and which alerts were given is that record, and what the
+receiver did (its receipt, its messages, its `progress` file) is read off the room on the room's clock.
+
+- The clock of a task starts when the coordinator's tool first sees the task on the receiver's `delivered`
+  list (the time of that list then); until then it runs from the time of the message file. Every message of
+  the receiver in the coordinator's inbox, and every write of its `progress` file, starts it again.
+- The coordinator's `wait` (and its `check`) looks at its open tasks every half minute. A task whose clock has
+  reached the expected minutes ends the wait with an `OVERDUE` block, once (`alert1`). A second block comes,
+  once (`alert2`): when half the expected minutes have passed since the first and the receiver has sent
+  nothing since; or, when it did send something after the first, when it has then been silent for the whole
+  expected time again. A `result` or `answer` that names the task, or a retired receiver, closes the record.
+- The board shows the same for every open task of the coordinator (`expected N min, delivered M min ago`, or
+  `OVERDUE: ...`), reading the record without writing it.
+- An agent that wakes on a background command and has a task it was shown and has not reported on, while no
+  wait of its own runs (no `wait.lease`, or one whose process on that machine is gone), gets one line first
+  from every verb but `wait` and `bye`: `=== you have an open task and no wait running: start <call> wait as a
+  background command now ===`. The board marks such an agent ATTENTION once its heartbeat is two minutes old
+  (it has no lease, or one that was not refreshed for a minute).
+  An agent that waits in the foreground gets neither: it has no wait while it works, by its nature, and the
+  delivery tells it to run `check` after every step.
 
 ## The team plan
 
@@ -167,7 +207,6 @@ An entry identical to one anybody already recorded prints `ALREADY RECORDED by <
 | 3 | `check` found nothing new (a `wait` exited 3 on a time-out before package 3.3.0; a shell that wraps the call may report 1 for any code but 0: agents go by the `NEXT:` line) |
 | 4 | another `wait` already runs for this agent |
 | 5 | stop: room closed, or the agent was stopped, replaced or retired |
-| 6 | parked: wait for the owner |
 | 7 | on hold (`check` only, package 3.4.0): the coordinator's hold lasts, start nothing new; every verb prints the hold first |
 
 ## Waiting
@@ -183,7 +222,9 @@ which lets its cleanup run and remove the lease, or broken by an error) prints t
 watcher every ten minutes. It returns on: new messages, a proposal's time running out, pause or resume, a hold
 and its lift (control state `hold`: messages are still delivered meanwhile, every verb prints the hold first, and
 `check` exits 7 while it lasts), stop,
-replacement, the coordinator's silence, and its own time limit. A wait whose inbox folder is not there takes the
+replacement, the coordinator's silence, for the coordinator a task that is overdue, and its own time limit. A
+wait that reaches its time limit says that nothing arrived, that this is normal, and to run it again: every
+agent waits until it is retired or the room is closed, however many waits end with nothing. A wait whose inbox folder is not there takes the
 room for unreachable (a share that is gone looks the same) and ends with code 2 after thirty minutes of it; a
 folder that comes back starts the count again, whether the agent is paused or not. A `control` file that is there
 but gives no `state:` at that moment (this PC writes it by emptying and filling it) says nothing in that round: no
@@ -256,8 +297,9 @@ guarded files too.
 `%LOCALAPPDATA%\agent-relay` for an installed copy (`AGENT_RELAY_LOCAL` overrides both). It holds
 `rooms.json` (the room index), `names.json` (which named other machine and role has which name, and the
 names handed out lately), `machines.json` (known shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `prompts/`, `quarantine/`,
-`alarms.log`, `stats.json`, `sent.log` (what the coordinator's tool sent), the coordinator's launcher
-(`relay.ps1`, `relay.cmd`) and its `draft.md`;
+`alarms.log`, `stats.json`, `sent.log` (what the coordinator's tool sent), `tasks.log` (what it expects of
+its tasks and which overdue alerts it gave), the coordinator's launcher (`relay.ps1`, `relay.cmd`) and its
+`draft.md`;
 `archive/` holds one zip per closed room. None of it is in git.
 
 ## Limits

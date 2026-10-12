@@ -94,23 +94,21 @@ Describe 'Parity on <Engine>' -Tag 'Parity' -ForEach $engineCases {
         $room = Copy-RelayTestRoom -Template $template -Target (Join-Path $root ('room-' + (New-RelayTestId)))
     }
 
-    Context 'F10: a parked agent is told to stop, and nothing else' {
-        It 'ends with one NEXT line' {
+    Context 'F10: a wait that ends with nothing tells the agent to wait again, and nothing else' {
+        It 'prints the same two lines after every quiet wait, and ends with one NEXT line' {
+            # A seat of a room made by an earlier package still carries a park_after number: it is not read
             $seat = Join-Path $room 'agents\emma\seat'
-            $text = [System.IO.File]::ReadAllText($seat)
-            $text = $text -replace 'park_after: \d+', 'park_after: 2'
-            Write-ParityFile $seat $text
+            Write-ParityFile $seat (([System.IO.File]::ReadAllText($seat)).TrimEnd("`n") + "`npark_after: 2`n")
             $call = Get-ParityCall
             $fast = @{ RELAY_MINUTE_SECONDS = '1' }
-            $quiet = Invoke-Parity 'emma' @('wait', '2') $fast
-            $quiet.ExitCode | Should -Be 0
-            (Get-ParityLine $quiet.Output) | Should -Contain '=== nothing arrived in 2 minutes: that is normal, not an error ==='
-            $parked = Invoke-Parity 'emma' @('wait', '2') $fast
-            $parked.ExitCode | Should -Be 6
-            $lines = Get-ParityLine $parked.Output
-            $lines[$lines.Count - 1] | Should -BeExactly "NEXT: stop calling wait. Tell your user in one line that you are parked in room template. When your user tells you to continue, run: $call wait"
-            @($lines | Where-Object { $_ -like 'NEXT: *' }).Count | Should -Be 1
-            $lines | Should -Contain '=== nothing arrived in 2 waits in a row: you are parked ==='
+            foreach ($round in 1..3) {
+                $quiet = Invoke-Parity 'emma' @('wait', '2') $fast
+                $quiet.ExitCode | Should -Be 0
+                Join-ParityLine (Get-ParityLine $quiet.Output) | Should -BeExactly (Join-ParityLine @(
+                        '=== nothing arrived in 2 minutes: that is normal, not an error ==='
+                        "NEXT: run it again: $call wait"
+                    ))
+            }
         }
     }
 

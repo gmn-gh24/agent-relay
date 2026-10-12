@@ -5,7 +5,7 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.
 
 | | |
 |---|---|
-| Version | 0.6.1 ([changelog](CHANGELOG.md)) |
+| Version | 0.7.0 ([changelog](CHANGELOG.md)) |
 | Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
 | Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
 | Other agents | Any coding agent that can run a command and write a file |
@@ -54,6 +54,9 @@ this plugin, only one prompt to paste and one command to run.
   busy, and write to the colleagues its part depends on.
 - **A live view.** A pane in the coordinator's session shows the agents, the plan, the conversation and what
   waits on you, with an input to speak as the owner. The same view runs in any terminal.
+- **No silent agents.** A task says how long it should take. When its agent has sent nothing for that long,
+  the coordinator is woken, asks the agent, and then hands the task on or tells you: you are not the one who
+  has to notice.
 - **A record.** Every message is a file. Closing a room writes a transcript, statistics and an archive.
 - **Safeguards.** The coordinator's PC keeps its own copy of the tools, instructions and rules, compares them
   with the room every 15 seconds while the feed runs, restores what changed and raises an alarm.
@@ -242,8 +245,10 @@ the archive stays on this PC) or keep it. Nothing is promoted or deleted without
 ### When something needs you
 
 The board and the pane mark an agent with `ATTENTION` when somebody has to look at it: its wait died, it
-parked itself, it never started, it introduced itself from another machine than expected, or it has not
-picked up its messages for 30 minutes. The coordinator tells you about each one;
+has a task and no wait running, it never started, it introduced itself from another machine than expected,
+or it has not picked up its messages for 30 minutes. The board also marks a task `OVERDUE` when its agent has
+sent nothing for the time the task should take; the coordinator's wait ends on that, and the coordinator asks
+the agent, then gives the task to another one or tells you. The coordinator tells you about each one;
 [`coordinating.md`](skills/agent-relay/references/coordinating.md) lists what each means and what to do.
 
 ## Reference
@@ -279,7 +284,7 @@ Every agent has one command (a wrapper with its name and room built in) and thes
 | Verb | Use |
 |---|---|
 | `start` | Introduce yourself; prints your instructions, rules and what is open. Safe to repeat |
-| `wait [minutes]` | Wait for messages |
+| `wait [minutes]` | Wait for messages. An agent waits until it is retired or the room is closed |
 | `check` | Look once, do not wait |
 | `show <id>`, `show open`, `show rules` | One message in full, what you still owe, the standing rules |
 | `report [<task id>]` | The result of a task, with the self-audit attached |
@@ -293,7 +298,9 @@ Every agent has one command (a wrapper with its name and room built in) and thes
 | `progress` | One line for the team; wakes nobody |
 | `bye` | Leave the room |
 
-The coordinator also has `task <name>`, `ask <name>` and `note <name>|all`.
+The coordinator also has `task <name> [<minutes>]`, `ask <name>` and `note <name>|all`. The number is how long
+the task should take: the agent is shown it, and the coordinator's wait ends when the agent has sent nothing
+for that long.
 
 ### Room settings
 
@@ -311,6 +318,7 @@ Given once, when the room is built. The skill asks only for what has no sensible
 | `tab_titles` | Each agent's tool names its terminal tab after the agent | `yes` |
 | `stale_minutes` | A listening agent that is silent this long is marked | 5 |
 | `pickup_minutes` | An agent that leaves a message unread this long is marked | 30 |
+| `task_minutes` | How long a task should take when the coordinator names no number with it | 15 |
 
 ### Where state lives
 
@@ -479,8 +487,8 @@ Known limits:
 - There is no `sh` tool: the room tool is PowerShell. No agent on Linux or macOS has worked a room yet.
 - Every agent has to reach a folder the coordinator's PC reaches too. A machine that shares no folder with
   it cannot take part: `ssh` is refused as a transport.
-- An agent that cannot wait in the background costs a turn for every wait that ends without a message, until
-  it parks itself and you nudge it.
+- An agent that cannot wait in the background costs a turn for every wait that ends without a message, for
+  as long as the room is open, and while it works it sees a message only between two steps.
 - The pane depends on plugin hooks that may change between Claude Code releases.
 
 ## Contributing

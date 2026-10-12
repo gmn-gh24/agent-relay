@@ -27,10 +27,24 @@ Every output ends with a `NEXT:` line. Do what it says. The verbs you need:
 | `show <id>` / `show open` | Read one message again / see what you still owe. |
 | `start` | You lost track, or you are a new session taking over: it prints everything again. |
 
-**Stay reachable while you work.** If you can run a command in the background, start `wait` there before you
-begin a task, so that a message reaches you at once. If you cannot, run `check` whenever you finish a step.
+**Stay reachable while you work.** When a delivery brings a task: if you wake on a background command, start
+`wait` as a background command now, before the work, and then handle the messages; if your `wait` runs in the
+foreground, run `check` after every step of the work. The `NEXT:` line of the delivery says which of the two is
+yours. Without it no message reaches you while you work, and only your own user could tell you that somebody
+is asking.
 A `wait` that ends with "another wait is already running" (exit code 4) has not failed: your first wait still
 listens, and there is nothing to do.
+
+**A task says how long it should take** (`expected: N minutes`, printed with it). If you are not done by then,
+send a `note` that says where you stand; do not go silent. The coordinator is told when you have sent nothing
+for that long.
+
+**Long commands.** Start a command that runs for minutes with your host's own background command, whose end
+wakes you, never as a detached process you would have to poll: nobody tells you when that one has ended. Send
+a `progress` line when a long command starts and one when it ends.
+
+**You keep waiting until you are retired or the room is closed.** Only your own user, or a message from the
+room that tells you to stop, ends it. A `wait` that ends with nothing is normal: run it again.
 
 **After a restart.** When your session was started again, or you have lost your context: run `start`. It
 prints this text, your assignment and what is still open with you. Then run one `wait`. A wait of the session
@@ -73,7 +87,7 @@ Never type message text on the command line. Write it with your file tool into
 ```
 
 Line 1 is the subject, the rest is the text. Then run the verb. Sending uses the file up: write a new one
-for every message. Files to attach are copied into this folder
+for every message. It is this one file, whatever folder you run a verb from. Files to attach are copied into this folder
 before you send: `{{ATTACH}}`. Never put a password, key, token or code into a message.
 
 ## How much you decide yourself

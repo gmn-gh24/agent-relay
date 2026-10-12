@@ -76,7 +76,9 @@ function Start-RelayTool {
         [string[]]$Words = @(), [hashtable]$Environment = @{}, [int]$Generation = 1,
         # The way an agent calls: its shell starts the tool and nothing catches the tool's output on the way.
         # The tool then inherits the shell's output instead of being handed one, which Windows treats differently.
-        [switch]$ThroughShell
+        [switch]$ThroughShell,
+        # The folder the agent's session stands in when it calls; the room folder when left out
+        [string]$WorkingDirectory = ''
     )
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $arguments = New-Object System.Collections.Generic.List[string]
@@ -112,6 +114,7 @@ function Start-RelayTool {
     $startInfo.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
     $startInfo.StandardErrorEncoding = New-Object System.Text.UTF8Encoding($false)
     $startInfo.WorkingDirectory = $Room
+    if ($WorkingDirectory) { $startInfo.WorkingDirectory = $WorkingDirectory }
     $variables = $startInfo.EnvironmentVariables
     # Also what would tell the tool which agent session calls: the suite itself may run inside one
     foreach ($name in 'RELAY_NAME', 'RELAY_GEN', 'RELAY_ROOM_ID', 'RELAY_WRAPPER', 'RELAY_DRAFT', 'RELAY_SENT_LOG', 'RELAY_NO_EVENTS', 'RELAY_POLL_SECONDS', 'RELAY_SETTLE_MS', 'RELAY_MINUTE_SECONDS', 'RELAY_SESSION', 'CLAUDE_CODE_SESSION_ID') {
@@ -179,9 +182,10 @@ function Wait-RelayTool {
 function Invoke-RelayTool {
     param(
         [Parameter(Mandatory)][string]$Room, [Parameter(Mandatory)][AllowEmptyString()][string]$Agent, [Parameter(Mandatory)][string]$Engine,
-        [string[]]$Words = @(), [hashtable]$Environment = @{}, [int]$Generation = 1, [int]$TimeoutSeconds = 120, [switch]$ThroughShell
+        [string[]]$Words = @(), [hashtable]$Environment = @{}, [int]$Generation = 1, [int]$TimeoutSeconds = 120, [switch]$ThroughShell,
+        [string]$WorkingDirectory = ''
     )
-    $handle = Start-RelayTool -Room $Room -Agent $Agent -Engine $Engine -Words $Words -Environment $Environment -Generation $Generation -ThroughShell:$ThroughShell
+    $handle = Start-RelayTool -Room $Room -Agent $Agent -Engine $Engine -Words $Words -Environment $Environment -Generation $Generation -ThroughShell:$ThroughShell -WorkingDirectory $WorkingDirectory
     return (Wait-RelayTool -Handle $handle -TimeoutSeconds $TimeoutSeconds)
 }
 

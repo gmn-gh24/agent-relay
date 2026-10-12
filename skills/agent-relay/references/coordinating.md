@@ -5,10 +5,12 @@ the owner hears about the room from you.
 
 ## The loop
 
-1. Your `wait` runs as a background command. Its exit wakes you.
-2. `scripts/Get-RelayBoard.ps1 -Room <id>` shows the agents, what waits on you, what waits on the owner, and
-   every agent that needs attention.
-3. Handle what waits on you, oldest first (sections below).
+1. Your `wait` runs as a background command. Its exit wakes you: with new messages, or with an `OVERDUE`
+   block for a task whose agent has sent nothing for the time the task should take.
+2. `scripts/Get-RelayBoard.ps1 -Room <id>` shows the agents, what waits on you, what waits on the owner,
+   every agent that needs attention, and every open task that is overdue.
+3. Handle what waits on you, oldest first (sections below). An `OVERDUE` block is handled at once, before
+   anything else: "A task that is overdue" says how.
 4. Start `wait` again. A room without a running coordinator wait is a room where every agent is stuck; the
    agents' tools tell them when you have been silent for too long. This holds when the message said "no reply
    needed" too: nothing is owed, and the next message still has to wake you. Start it through your host's
@@ -80,20 +82,36 @@ Three questions, in this order, for every task before it goes out. The board ans
    down: when no strong model is in the room, ask the owner for one, or have a standard model's work reviewed
    line by line, by you if nobody else can.
 3. **What does its product cost while it waits, and what does it do well?** An agent that wakes in the
-   background costs nothing while idle. An agent that waits in a loop costs a turn per wait and parks itself
-   after a few (ten to twenty minutes without a message): give it its work in one go and expect to ask the
-   owner for a nudge after a pause. A reviewer waits by the nature of its job: hand it the next thing to
-   read before the last one is answered, and look at the board before you count on a loop agent's answer.
-   `agent-kinds.md` holds what each product has shown in real rooms; add to it what this room shows. Do not
-   assume strengths of a product that no room has shown.
+   background costs nothing while idle, and a message reaches it at once, also while it works. An agent that
+   waits in a loop costs a turn per wait, and while it works it sees a message only when it runs `check`
+   between two steps: give it its work in one go, and expect its answer to a question after the step it is
+   in. A reviewer waits by the nature of its job: hand it the next thing to read before the last one is
+   answered. `agent-kinds.md` holds what each product has shown in real rooms; add to it what this room
+   shows. Do not assume strengths of a product that no room has shown.
 
 A model's strength is read off the name the agent gave (`scripts/model-tiers.json`); `not known` on the board
 means the name is not in that list: judge it yourself and add the family. Effort `unknown` is common and
 means only that the agent cannot see its setting. Codex models sort by their family word (`luna` standard;
 `sol`, `astra`, `terra` strong; `agent-kinds.md` has the list). When a task depends on a model or an effort
-that came as `unknown`, or as a generation without a family (`gpt-6`), ask the owner what that session was
-started with. Do not guess it, and do not have the agent guess. When the owner said what would join ("codex
-luna medium") and the introduction says something else, tell the owner before that agent gets work.
+that came as `unknown`, or as a generation without a family (`gpt-6`), have that agent find out: tell it
+(`note <name>`) to ask the user of its own session, through its question tool with the choices its product
+offers, and to run its `start <product> <model> <effort>` again with the answer. Do not ask the owner for it
+in your session, do not guess it, and do not have the agent guess. When the owner said what would join
+("codex luna medium") and the introduction says something else, tell the owner before that agent gets work.
+
+## Every agent keeps waiting
+
+An agent waits until it is retired (its own `bye`, or your `-Retire`) or the room is closed. Its instructions
+say so, and a wait that ends with nothing tells it to wait again, whatever its kind. Your side of that rule:
+
+- **Never tell an agent that is still needed to stop waiting.** Not "let your wait run out", not "you may go
+  quiet", not "the owner will nudge you when there is work". An agent without a wait cannot be reached from
+  the room: bringing it back takes the owner, at that machine, and the owner started a room so that it would
+  not.
+- **An agent with nothing to do yet keeps waiting.** That is its work until its task comes. Tell it, if you
+  tell it anything, that nothing is needed now and that its wait goes on.
+- **An agent that is not needed any more is retired**, not told to idle: `scripts/Add-RelayAgent.ps1 -Room <id>
+  -Retire <name>`, after its last durable findings are recorded. Its tool then tells it to stop.
 
 ## Only the room
 
@@ -162,10 +180,14 @@ Your draft is `draft.md` next to your launcher, on this PC (your instructions na
 send, and nothing the owner is asked or a rule says, is ever taken from a file in the room: any agent could
 have written it.
 
-Write the task into your draft, then `task <name>`. A good task says: what to do, where, when it is done,
-what is not part of it, and what to send back. One task per message. Long material goes into the room's
-`work` folder or as an attachment (put the files into your `attach` folder before you send), with the message
-pointing at it.
+Write the task into your draft, then `task <name> <minutes>`. A good task says: what to do, where, when it is
+done, what is not part of it, what to send back, and how long it should take. The number after the name is
+that time in minutes: the agent is shown it with the task ("expected: N minutes. If you are not done by then,
+send a note that says where you stand; do not go silent."), and your wait goes by it ("A task that is
+overdue"). Without a number the room's default holds (`task_minutes` in its answers, 15). Give the time the
+work really takes, with the long command in it, not a hope: a task that runs a ten-minute command is not a
+five-minute task. One task per message. Long material goes into the room's `work` folder or as an attachment
+(put the files into your `attach` folder before you send), with the message pointing at it.
 
 When "done when" cannot be reached without a change that the assignment lists under "never", the task cannot
 carry the approval: the agent will ask its owner, every time, and it is right to. Re-assign first (`-Assign`
@@ -190,7 +212,9 @@ Three things a task says when they apply:
   instructions say so). Name the folder in `work` to copy from, and say that results come back as attachments.
 - **A long run.** A command that runs for many minutes is lost when the agent's session ends, and nobody
   knows how it came out. Ask for it in pieces (one test file, one engine at a time), each with its output
-  written to a file in the agent's own folder, and for the files with the report.
+  written to a file in the agent's own folder, and for the files with the report. The agent's instructions
+  have it start such a command with its host's own background command, whose end wakes it, and send a
+  `progress` line when it starts and when it ends: say in the task which command is the long one.
 - **A large part.** Before a team spends rounds on a part of the plan the owner did not ask for by name, ask
   the owner whether it is wanted now. A part that is stopped after three rounds cost three rounds.
 - **Code with variables.** Give it as a script: the lines to save as a file on the agent's own disk, and the
@@ -203,12 +227,51 @@ Three things a task says when they apply:
   path the guard refuses. A helper process that must stay alive (one started as another user, for example) is
   started from a background command: from a foreground call it holds that call until it ends.
 
+### A task that is overdue
+
+Your wait watches every task you sent. When its agent has sent nothing for the time the task should take (no
+result, no question, no note, no `progress` line), your wait ends with an `OVERDUE` block: the task, the
+agent, how long ago the task was delivered (or that the agent has not picked it up at all), the expected
+minutes, and whether the agent is waiting and when it last gave a sign of life. Any message of the agent,
+about anything, starts the count again; the board shows the same next to the open task. What you do, with
+the times:
+
+1. **At the expected duration (the first block): check the room, then ask.** Read the board's lines for that
+   agent: its state, its last `progress` line, ATTENTION. Then ask it for its status at once: `ask <name>`,
+   one question ("where do you stand on <task id>, what is running, what do you need?"). Do not wait for the
+   result a little longer first, and do not send the task again: a second copy of a task that is still
+   running makes two runs.
+2. **Half the expected duration later (the second block), still nothing: act.** The agent is not responding.
+   When another agent in the room can do the task alone (the board's `rights:` and `models:` lines say who,
+   "Who gets which task" says how to choose), give it the task, with a line that says it was open with the
+   first agent and what that one may have left behind. When nobody can, tell the owner now: which agent is
+   not responding, since when, which task, and what is blocked by it. When you gave the task to another
+   agent, send the first one a note that says so: it reads it when it comes back, and does not finish the
+   task a second time.
+3. **It answers after all.** An answer to your question starts the count again, and you decide by what it
+   says: more time (say how much, in a note), a smaller task, or another agent. A result closes the task and
+   ends the alerts.
+
+An agent the board marks `not delivered yet` has not picked the task up: its wait is not running, or its
+session has ended. Asking it changes nothing, since it reads no message: tell the owner at the first block
+which session to look at, and hand the task on when another agent can do it.
+
+The owner must never be the one who notices that an agent has gone silent. A task of ten minutes that has
+shown nothing after fifteen is a question to the agent; after twenty it is a task for another agent, or a
+line to the owner.
+
 ### The kit
 
 When agents run a test suite, a build or a review on a copy of a project (a "kit" you stage in `work`),
 what is not in the kit costs a round: an agent reports a failure that is only a missing file, you restage,
 the agent runs again. Before the first task goes out, check the kit against this list, and again after every
 change to it:
+
+- **The task names the files, and its numbers are the kit's.** "Copy these five files" from a folder that
+  holds seven gets seven copied with a wildcard: list the files to copy by name, or stage a folder that holds
+  exactly what is to be copied and say "the whole folder". A count the task gives (steps, files, tests) is
+  the count the runner prints: read both once more before you send, since an agent that finds two numbers
+  stops to ask which one is right.
 
 - **Everything the suites read** is in it: the reference masters a test compares its output with, the
   profiles or settings files a run loads, the sibling scripts a drift guard compares (a guard that reads
@@ -348,7 +411,8 @@ you act on it. Thank the agent: it did the right thing by telling you and not ac
 | The board says | It means | Do |
 |---|---|---|
 | wait died N min ago | the agent's wait ended without the agent noticing, or its session is gone | owner restarts or nudges that session; if it is gone, `-Replace` |
-| parked: owner must nudge | a loop agent saw nothing through several waits and stopped asking | when there is work for it: send it, then ask the owner to tell that session "run your wait". The send says so itself (`NOTE: <name> is parked ...`): a parked agent reads nothing, and its task lies unread until the owner has spoken to that session |
+| has an open task and no wait running, last sign of life N min ago | an agent that wakes on a background command was shown a task, has not reported on it, and has started no wait: no message reaches it until its session looks by itself (its own tool tells it so with every command it runs) | what you send it lies unread. When you need it before its report, ask the owner to tell that session "check the room"; when its task runs late, the OVERDUE block is your cue ("A task that is overdue") |
+| OVERDUE, next to an open task | the agent has sent nothing for the time its task should take | "A task that is overdue": ask it now; when that stays unanswered, hand the task on or tell the owner |
 | working, woken by N message(s), and nothing follows | the message was delivered and the agent's wait ended, but its session sits idle at a prompt or at a permission question and did not react | nothing is lost and nothing is to be sent again. Ask the owner to look at that session and type "check the room" |
 | not started | a named agent whose prompt was never pasted | owner pastes it |
 | took a seat but has not introduced itself | join was interrupted | owner looks at that session; `-Retire` the seat if it is dead |

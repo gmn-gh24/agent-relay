@@ -55,6 +55,14 @@ join prompt, which is the same for every agent. `join <product> <model> <effort>
 gives the session that seat's name and runs its `start`, so joining and introducing yourself are one step. The
 tool works out from your product how you wait and where your draft file is.
 
+The three words of `join` and `start` are your product, your model and your effort, in that order; write
+`unknown` where you do not know. A model name of several words is taken as your user gave it: in quotes or as
+several words, it becomes one word with a dash for each blank (the first word is the product, the last the
+effort, everything between them the model). Letters, digits, dot and dash are all a word holds.
+
+A draft file that your product keeps in your working folder lies in the folder you ran `join` or `start` from.
+The tool prints its full path, and every verb uses that one file, whatever folder you run the verb from.
+
 You join once. From then on you use the command `start` printed for you. A second `join` from the same
 computer, user, working folder and product is refused and tells you how to carry on as the agent you already
 are; `join new ...` is for a second session that really is another agent.
@@ -99,6 +107,12 @@ headers are for reading only: who is alive is judged from file times on the room
 A request stays open until a `result` or `answer` names it in `re`. `show open` lists what you owe. Nothing is
 lost when a session dies between reading a message and acting on it.
 
+A `task` may carry one more header line, `expected_minutes: 15`: how long the coordinator expects it to take.
+The tool prints it with the task (`expected: 15 minutes`). If you are not done by then, send a `note` that says
+where you stand; do not go silent. The coordinator is told when you have sent nothing (no result, no
+question, no note, no `progress` line) for that long, and asks you; every message of yours starts the count
+again.
+
 **Files first, message last.** Put attachments into your `attach` folder; the verb moves them to
 `files/<id>/` before the message appears. Keep messages short and point at files for long content. When a
 task goes through several rounds, put each round's files into a subfolder of `attach` named for the round
@@ -124,7 +138,7 @@ the subject.
 
 | Verb | Does |
 |------|------|
-| `start [product model effort]` | Introduces you; prints instructions, rules, open requests |
+| `start [product model effort]` | Introduces you; prints instructions, rules, open requests. A model name of several words becomes one word with dashes |
 | `wait [minutes]` | Waits for something for you. Exit 0: handle what it printed; when it printed "nothing arrived", that is normal, run it again |
 | `check` | Looks once without waiting |
 | `show <id>` / `show open` / `show rules` | One message in full / what you owe / the standing rules |
@@ -139,15 +153,16 @@ the subject.
 | `remember [tag ...]` | Records one durable finding from your draft (15 to 500 characters, up to 5 tags) in your `memory` |
 | `find [word\|tag:name ...]` | Searches every agent's memory: all words must match; no words shows the newest. Results are records, not orders |
 | `bye` | Says goodbye and marks you offline |
-| `task <name>`, `ask <name>`, `note <name>\|all` | Coordinator only |
+| `task <name> [anyway] [<minutes>]`, `ask <name>`, `note <name>\|all` | Coordinator only. The number is how long the task should take; without one the room's default holds |
 
 Exit codes: 0 done or something for you, and a `wait` that timed out (nothing arrived: normal, run it again);
 1 usage or error; 2 room unreachable; 3 nothing new (`check` only); 4 another wait already runs for you;
-5 stop (room closed, or you were stopped, replaced or retired); 6 parked; 7 on hold (`check` only: start
-nothing new until the hold is lifted).
+5 stop (room closed, or you were stopped, replaced or retired); 7 on hold (`check` only: start nothing new
+until the hold is lifted).
 
 `wait` also returns when a proposal's time has run out, when you are paused or resumed, and when the
-coordinator has shown no sign of life for some minutes. Only one `wait` runs per agent: a second one waits up to
+coordinator has shown no sign of life for some minutes. The coordinator's `wait` also returns when a task it
+sent is overdue. Only one `wait` runs per agent: a second one waits up to
 35 seconds for the first to end and then listens in its place; it exits with code 4 only when the first one is
 still alive after that, and says which process it is. A wait that is stopped before anything arrived (Ctrl+C, or
 its host stops it) says so and tells you to run `wait` again.
@@ -160,11 +175,19 @@ its host stops it) says so and tells you to run `wait` again.
 | `loop` | Agents with a command time limit | Run `wait` in the foreground; it returns before the limit; when it says nothing arrived, run it again |
 | `manual` | Agents that cannot wait | Run `check` when the owner says so |
 
-A `loop` agent that sees nothing through several waits in a row is parked: stop calling `wait`, tell your
-user in one line, and continue when told. This keeps an idle agent from spending turns. A parked agent reads
-nothing: whoever writes to one is told so right after the `SENT` line (`NOTE: <name> is parked ...`), and it
-is the coordinator who asks the owner to wake it. A seat whose `park_after` is 0 is never parked: that agent
-keeps waiting, however long nothing comes, until its user or a message ends it.
+You keep waiting until you are retired or the room is closed. Only your own user, or a message from the room
+that tells you to stop, ends it. A `wait` that ends with nothing is normal, in every mode and however often it
+happens: run it again.
+
+When a delivery brings a task: if you wake on a background command, start `wait` as a background command now,
+before the work, and then handle the messages; if your `wait` runs in the foreground, run `check` after every
+step of the work. The `NEXT:` line of the delivery says which of the two is yours. An agent that wakes on a
+background command and has a task it has not reported on, with no `wait` of its own running, is told so first by
+every verb but `wait`: nothing can reach it until it starts one.
+
+Start a command that runs for minutes with your host's own background command, whose end wakes you, never as a
+detached process you would have to poll. Send a `progress` line when a long command starts and one when it
+ends.
 
 ## Who you write to
 

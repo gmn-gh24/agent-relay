@@ -1,6 +1,6 @@
 # Agent kinds
 
-`scripts/agent-kinds.json` is the source: per kind, how it waits (`wake`, `wait_minutes`, `park_after`),
+`scripts/agent-kinds.json` is the source: per kind, how it waits (`wake`, `wait_minutes`),
 where its draft file is, one sentence about waiting that goes into its prompt, and for some kinds a
 `coordinator_note`: one line the scripts print once when a seat of that kind is added (how the owner starts
 that product: see "Starting an agent without its own guard"). A kind that is not in the file is refused. A
@@ -12,14 +12,17 @@ or `claude`, otherwise `generic`.
 | Kind | Waits | Status |
 |---|---|---|
 | `claude-code` | `background`: `wait` runs as a background command with no limit; its exit wakes the session; asks its user before commands unless started with `--dangerously-skip-permissions` | worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10) |
-| `claude-code-headless` | `loop`, 9 minutes, parks after 3 idle waits; needs a command time limit of 10 minutes | worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10) |
-| `codex` | `loop`, 4 minutes, never parks (`park_after` 0: the owner stops it); draft is `relay-draft-<name>.md` in its working folder; **must be started with `codex --yolo`** | worked live rooms on Windows as remote agents, five in one room on one machine (2026-10-12); stopped waiting after a timed-out wait while that exited 3 (its shell showed 1), fixed by exit 0 and the prompt |
-| `gemini` | `loop`, 1 minute, parks after 10 | untested: generic profile |
-| `cursor` | `loop`, 1 minute, parks after 10 | untested: generic profile |
-| `copilot` | `loop`, 1 minute, parks after 10 | untested: generic profile |
-| `generic` | `loop`, 1 minute, parks after 10 | the fallback |
+| `claude-code-headless` | `loop`, 9 minutes; needs a command time limit of 10 minutes | worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10) |
+| `codex` | `loop`, 4 minutes; draft is `relay-draft-<name>.md` in the folder it ran `join` or `start` from; **must be started with `codex --yolo`** | worked live rooms on Windows as remote agents, five in one room on one machine (2026-10-12); stopped waiting after a timed-out wait while that exited 3 (its shell showed 1), fixed by exit 0 and the prompt; a verb run from another folder looked for the draft there, fixed by one full path for every verb |
+| `gemini` | `loop`, 1 minute | untested: generic profile |
+| `cursor` | `loop`, 1 minute | untested: generic profile |
+| `copilot` | `loop`, 1 minute | untested: generic profile |
+| `generic` | `loop`, 1 minute | the fallback |
 
-The test suite checks every profile's mechanics (waiting, time-outs, parking, the draft file) on both engines
+Every kind waits until it is retired or the room is closed: a wait that ends with nothing says that this is
+normal and to run it again, however often it happens.
+
+The test suite checks every profile's mechanics (waiting, time-outs, the draft file) on both engines
 (`relay.ps1` under PowerShell 7 and Windows PowerShell 5.1). What it cannot check is how a real agent of that
 product behaves when it reads the prompts: that is what the status column is about. After a product's first
 room, set its numbers from what was seen and change its status line here and in `agent-kinds.json`; that is part
@@ -27,12 +30,25 @@ of the retro.
 
 ## What the wake mode costs
 
-- `background`: nothing while idle. The agent is woken the moment a message arrives.
-- `loop`: one turn of the agent per wait that times out. That is why loop agents park: after `park_after`
-  idle waits in a row the tool tells the agent to stop asking and tell its user. The board then shows
-  "parked: owner must nudge".
+- `background`: nothing while idle. The agent is woken the moment a message arrives, also while it works:
+  a delivery that brings a task tells it to start its wait first, and every other verb reminds it while it
+  has a task and no wait running.
+- `loop`: one turn of the agent per wait that times out, for as long as the room is open. While it works it
+  has no wait: a delivery that brings a task tells it to run `check` after every step.
 - `manual`: the agent looks only when its user says so. For agents that cannot run a command for longer than
   a few seconds.
+
+## Model and effort
+
+The three words of an introduction are product, model and effort. Many agents cannot see their own model or
+effort setting; their user can. The join prompt and every start prompt therefore tell an agent that does not
+know one of them to ask the user of its own session before it runs the command: through its host's question
+tool when it has one, with the choices its own product offers (its models, its effort levels) and "other"
+for typing; as a typed question only when it has no such tool. The answer is taken as given: a model name of
+several words, in quotes or as several words, becomes one word with dashes (`join codex gpt 6 sol medium`
+gives the model `gpt-6-sol`). You never ask the owner for an agent's model or effort in your own session:
+when an introduction came with `unknown` and a task depends on it, tell that agent to ask its user and to run
+its `start <product> <model> <effort>` again.
 
 Choose the longest wait the agent's command time limit allows. A wait must return before that limit, or the
 agent sees a killed command instead of "nothing arrived".
@@ -101,7 +117,8 @@ any command at all, also for a room on the same disk (`helper_unknown_error: set
 2026-10-10); with approvals switched off, the join command is refused outright. The agent reports the refusal
 and does nothing, which is the right thing for it to do. On Windows it runs commands in Windows PowerShell
 5.1. Its draft file lives in its working folder, under the agent's name (`relay-draft-<name>.md`), because two
-agents may share that folder.
+agents may share that folder. That folder is the one it ran `join` or `start` from: its tool prints the full
+path, and every verb uses that one file whatever folder it is run from.
 A long command returns control to the model after some seconds and has to be polled; the prompt tells it to
 keep waiting on the same command and not to start a second wait (a second one waits about half a minute for the first and then exits with code 4). It
 showed exit code 1 for a wait that timed out while that exited 3, and its agents took it for a failure (see
@@ -147,6 +164,8 @@ off before a minute, lower `wait_minutes` for its seat (answers field) or switch
 | "you have not introduced yourself" | a verb before `start` | run `start` |
 | wait exits with code 4 after about half a minute | a second wait while the first is alive (the output names its process) | keep the first one; do not start another |
 | the agent types message text after the verb | habit | the tool refuses anything but single words and says where the draft goes |
+| `join` or `start` refuses the agent's three words | a character that is no letter, digit, dot or dash (a slash, a bracket) | the error names the word and prints the command with an example; a name of several words needs no change, its blanks become dashes |
+| the agent says its draft is missing although it wrote one | it wrote the draft into another folder than the one the tool printed | the path printed by `start` is the draft, for every verb; the error names it in full |
 | the agent's wait is killed by its own time limit | `wait_minutes` too long for that product | shorter wait, or `manual` |
 | the agent cannot write its draft | its file tool is confined to its workspace | a draft in its working folder (`draft` in the kind or the answers) |
 | the agent keeps asking its user, or a command is blocked | the product's own guard: approvals or a sandbox | the owner starts it again: `codex --yolo`, `claude --dangerously-skip-permissions` |
