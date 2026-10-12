@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.6.0 (2026-10-12)
+
+Three things the seven-agent room lacked (room package 3.4.0; running rooms:
+`scripts/Update-RelayRoom.ps1 -Room <id>`):
+
+- `Add-RelayAgent.ps1 -Assign` takes the assignment as parameters (`-Role -Work -Task -DoneWhen -NonGoals
+  -Roots -May -ProposeOk -AskFirst -Never -MachineCare -MachineNotes -Expertise -Standards -DocTools`) and
+  several names in one call (`-Assign emma, jack`), every name checked before the first is written. `-Roots`
+  takes `'<folder>'`, `'<folder>=<pattern>,<pattern>'` or a hashtable. `-AnswersFile` still works, and a
+  parameter given with it wins. The coordinator hand-wrote the JSON through another shell and lost two
+  rounds to backslashes, a `$name` and an escape error.
+- `New-RelayRoom.ps1` takes the room's answers as parameters too (`-Job -RoomName -RoomId -RoomsRoot
+  -Authority -OpenSeats -WorkFiles -ReachPath -NoTabTitles`): a room of open seats needs no file; named
+  agents still come from the file.
+- A hold as room state: `Add-RelayAgent.ps1 -Control <name>|all -State hold -Note '<why>'`. Every verb of
+  the agent prints `=== HOLD: <why> ===` first, `check` exits 7 while the hold lasts (a run script can test
+  it before it starts), `wait` tells the agent once and again when the hold is lifted (`-State run`), and
+  messages still reach it. `-Control all` covers every agent but the coordinator and the retired, for every
+  state. A hold that was a plain note reached an agent after its run had started.
+- `relay.ps1`: a `task` whose words run into a line of the receiver's "Never" or "Not part of this task"
+  (two telling words of the line in the task, one when it has only one) is not sent: `NOT SENT` names the
+  line and the words, the draft stays, and `task <name> anyway` sends it as it is. The coordinator
+  re-assigns first, or overrides. A word match, not a judgment: the message says so.
+- The board: `control: hold (<why>)`. `coordinating.md`: the parameters, the hold, the refusal;
+  `PROTOCOL.md`: on hold, exit code 7; the skill names the parameters.
+- Tests: `-Assign` with parameters for two agents, `-Control all -State hold` and the board, a room from
+  parameters, in `Relay.Scripts.Tests.ps1`; the hold on every verb, `check` 7, the lift, and the task
+  refusal with `anyway`, in `Relay.Tool.Tests.ps1`.
+
 ## 0.5.1 (2026-10-12)
 
 Wording from the same room (room package 3.3.1: `START-HERE.md` and `ASSIGNMENT.md` change; running rooms:

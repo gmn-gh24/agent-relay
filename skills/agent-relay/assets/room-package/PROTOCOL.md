@@ -143,7 +143,8 @@ the subject.
 
 Exit codes: 0 done or something for you, and a `wait` that timed out (nothing arrived: normal, run it again);
 1 usage or error; 2 room unreachable; 3 nothing new (`check` only); 4 another wait already runs for you;
-5 stop (room closed, or you were stopped, replaced or retired); 6 parked.
+5 stop (room closed, or you were stopped, replaced or retired); 6 parked; 7 on hold (`check` only: start
+nothing new until the hold is lifted).
 
 `wait` also returns when a proposal's time has run out, when you are paused or resumed, and when the
 coordinator has shown no sign of life for some minutes. Only one `wait` runs per agent: a second one waits up to
@@ -246,6 +247,10 @@ without regard to case.
 
 - **Paused:** `wait` tells you. Stop where you are, start nothing new, and run `wait` again; it returns when
   you are resumed.
+- **On hold:** every verb prints `=== HOLD: <why> ===` first, `wait` tells you once, and `check` exits 7
+  while it lasts: a script that runs `check` before it starts a run can test the code. Start nothing new (no
+  run, no change) until `wait` says the hold is lifted; finish only what stopping would leave broken. Messages
+  still reach you, so keep waiting.
 - **Stopped:** every verb tells you. Stop working and leave things as they are. `bye` still works.
 - **Replaced or retired:** a new session has taken over your name, or your role has ended. Stop and send
   nothing more.

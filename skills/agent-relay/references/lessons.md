@@ -646,3 +646,24 @@ day. What cost rounds, and what was changed:
 - **Codex's command time limit is still a guess.** `wait_minutes` 4 worked, but nobody measured when the
   product kills a foreground command. Not changed: the number stays; `agent-kinds.md` says how to measure it
   in one Codex session and where to write the result. A cloud session without Codex cannot do it.
+
+## 2026-10-12: the open items of that room, behaviour (0.6.0)
+
+- **Hand-written JSON cost two rounds.** The coordinator wrote an agent's assignment as JSON through a
+  heredoc of another shell: the first lost its backslashes and a `$name`, the second failed on a JSON escape,
+  and the agent sat without an assignment both times. Changed: `Add-RelayAgent.ps1 -Assign` takes every field
+  of the assignment as a parameter and several agents in one call, and `New-RelayRoom.ps1` takes the room's
+  answers as parameters; a room of open seats needs no JSON at all. The file still works for named agents.
+- **A hold was a note, and a note is read when the agent next looks.** The coordinator asked everybody in a
+  note not to start the next round while the kit was restaged; one agent had already started its run when
+  it read the note, and the run went against the old kit. Changed: a hold is a control state
+  (`-Control <name>|all -State hold`): every verb of the agent prints it first, `check` exits 7 while it
+  lasts so a run script can test it before it starts, `wait` says it once and says when it is lifted, and
+  messages still arrive. A state that must stop something from starting belongs where the tool reads before
+  every command, not in the inbox.
+- **A task asked for what the assignment forbade, and the agent was right to stop.** Twice a task needed a
+  change under the agent's "Never" or outside its non-goals; the agent asked, the coordinator re-assigned,
+  and a round was gone each time. Changed: the coordinator's `task` compares the draft with the receiver's
+  "Never" and "Not part of this task" lines and refuses with `NOT SENT` when two telling words of a line are
+  in the task; the draft stays, and `anyway` sends it. It is a word match: it says so, and the coordinator
+  reads the line before deciding.

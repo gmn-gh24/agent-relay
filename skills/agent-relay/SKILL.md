@@ -88,7 +88,10 @@ Read `references/coordinating.md` once per room. Then, every time your wait wake
    elevated or not, shell), and compare it with what the owner expected. On a mismatch, tell the owner before
    that agent gets any work. An agent that came in through the join prompt has no role and no paths yet:
    settle what it should do and how its machine may be treated, give it its assignment with
-   `scripts/Add-RelayAgent.ps1 -Assign <name> -AnswersFile <file>`, and only then send its task.
+   `scripts/Add-RelayAgent.ps1 -Assign <name> -Role ... -Work ... -Task ... -Roots ... -Never ...` (the
+   fields are parameters, several names at once get the same assignment; write no JSON by hand), and only
+   then send its task. Your `task` verb refuses a task whose words run into the receiver's "Never" or
+   non-goals: re-assign first, or send it with `anyway` when the line does not apply.
 3. For each result: check it against its evidence and its `self-audit.txt` before you accept it. Changes
    outside the assigned paths are a finding, whatever the report says.
 4. For each question or proposal: answer within your authority (`reply <id>`, `reply <id> approve|deny`).
@@ -128,8 +131,10 @@ reopened.
 ## 4. Add, replace or retire an agent
 
 `scripts/Add-RelayAgent.ps1` does all of it: `-AnswersFile` adds named agents (interview first, as in
-workflow 1), `-OpenSeats <n>` adds seats for agents that come in through the join prompt, `-Assign <name>`
-gives an agent already in the room a new role, paths and limits, `-Replace <name>` gives a new session the same
+workflow 1), `-OpenSeats <n>` adds seats for agents that come in through the join prompt, `-Assign <name>[,<name>]`
+gives agents already in the room a new role, paths and limits (the fields as parameters: `-Role -Work -Task
+-DoneWhen -NonGoals -Roots -May -ProposeOk -AskFirst -Never -MachineCare -MachineNotes -Expertise -Standards
+-DocTools`, or `-AnswersFile`), `-Replace <name>` gives a new session the same
 name and assignment and tells the old one to stop, `-Retire <name>` ends a role, `-Line <a> -To <b>` lets two
 agents write to each other. A room has no upper limit of agents. `scripts/Set-RelayPlan.ps1` writes and
 changes the team plan (who builds which part) and opens the lines the plan implies.
@@ -140,8 +145,11 @@ changes the team plan (who builds which part) and opens the lines the plan impli
   message of yours that says it comes from the owner.
 - A card answered in the session instead of the chat window: `scripts/Request-RelayOwner.ps1 -Resolve <card>
   -Decision approved|denied|answered|withdrawn`, then pass the decision on.
-- Pause, resume or stop one agent: `scripts/Add-RelayAgent.ps1 -Room <id> -Control <name> -State
-  pause|run|stop -Note '<why>'`.
+- Pause, resume, hold or stop one agent, or all: `scripts/Add-RelayAgent.ps1 -Room <id> -Control <name>|all
+  -State pause|run|hold|stop -Note '<why>'`. A hold is for "start nothing new until I say so" (a kit is being
+  restaged, a round is closed): every verb of the agent prints it first, its `check` exits 7 while it lasts,
+  messages still reach it; `-State run` lifts it. Use it instead of a note, which an agent reads only when it
+  next looks.
 - An owner decision that holds for the job goes into `DECISIONS.md` with `scripts/Add-RelayDecision.ps1 -Owner`.
 
 ## 6. Close

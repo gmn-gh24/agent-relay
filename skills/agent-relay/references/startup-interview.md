@@ -50,7 +50,7 @@ or answered three turns later when the room is half built. The shape that works:
 | Decided in advance | role, machine, agent kind, task, paths | nothing |
 | Prompt | its own start prompt (`PROMPT-<name>.txt`) | the join prompt, the same for every agent (`PROMPT-JOIN.txt`) |
 | What it is and where it runs | the owner says; the introduction is compared with it | the introduction says |
-| Task and limits | in its assignment from the start | given after the introduction with `Add-RelayAgent.ps1 -Assign` |
+| Task and limits | in its assignment from the start | given after the introduction with `Add-RelayAgent.ps1 -Assign <name> -Role ... -Task ... -Roots ...` (the fields are parameters; no JSON to write) |
 | Use it when | the owner has a plan per agent | the owner wants to paste one prompt into whatever is running |
 
 Both can be mixed in one room. Seats can be added at any time.
