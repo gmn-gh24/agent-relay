@@ -31,7 +31,13 @@ Five rules hold in every workflow:
   (`references/coordinating.md`, "Who gets which task").
 - **Text never goes on a command line.** Write a message into your draft file, then run the verb. Your
   draft is `draft.md` next to your launcher, on this PC; a card for the owner and a standing rule are written
-  there too, and no script takes such a text from a file in the room.
+  there too, and no script takes such a text from a file in the room. Line 1 of the draft is the subject,
+  the rest is the text, and the send consumes the draft: write it fresh for every message, and never expect a
+  draft to still be there after a verb has run.
+- **A task never exceeds the assignment.** What a task asks for must be inside the receiver's "may",
+  "propose_ok" and roots, and outside its "never" and "ask first": an agent that is asked for more stops and
+  asks, every time, and it is right to. When a task needs more, re-assign first
+  (`scripts/Add-RelayAgent.ps1 -Assign`), then send the task.
 - **The room is your only channel to an agent.** Everything you say to another agent goes through your
   launcher's verbs (`task`, `reply`, `note`). A session that is not in the room is not yours to reach: do
   not list, message, assign or coordinate it through your host's own session-to-session tools, whether it
@@ -44,7 +50,10 @@ Five rules hold in every workflow:
 ## 1. Start a room
 
 1. Run `scripts/Get-RelayRooms.ps1`. If the job already has an open room, go to workflow 3.
-2. Interview the owner with `references/startup-interview.md`. Ask only what is not already known; always ask
+2. Interview the owner with `references/startup-interview.md`. Ask through your host's question tool when
+   it has one (the one that shows choices to pick from), one question per decision, with the choices and
+   the default named; prose questions in the session get skipped or half-answered (`startup-interview.md`,
+   "How to ask"). Ask only what is not already known; always ask
    how each machine may be treated and how far your own authority goes. Do not ask what an agent is or where it
    runs when the owner would rather just start it: give the room **open seats** instead. An agent that takes
    one says in its introduction what and where it is. Name the room after the project, script or task

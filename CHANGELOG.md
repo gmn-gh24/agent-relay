@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.0 (2026-10-12)
+
+What a room of seven agents on one machine taught over five rounds (room package 3.3.0; running rooms:
+`scripts/Update-RelayRoom.ps1 -Room <id>`, and tell the loop agents in a note that a quiet wait now exits 0):
+
+- `relay.ps1`: a `wait` that timed out exits 0, like one that delivered, and says "nothing arrived in N
+  minutes: that is normal, not an error". It exited 3, and a product that shows every exit code but 0 as a
+  failed command had several agents stop waiting after their first quiet wait. `check` keeps 3 for "nothing
+  new", so a script can still test it; the idle status is written as before.
+- `relay.ps1`: a seat whose `park_after` is 0 is never parked. The Codex profile uses it: the owner stops a
+  Codex agent, the tool does not. Its prompt says that a quiet wait is normal and that the agent never stops
+  waiting on its own.
+- `relay.ps1`: a draft of one line is sent whole. The line is the subject, cut at 120 characters, and when it
+  is longer than that the whole line is the text too; the text beyond the subject was lost.
+- The join prompt: an agent that does not know its model or effort asks the user of its session for them by a
+  typed answer instead of guessing, and every agent works from a local folder of its own, never from the room
+  folder or a share.
+- `START-HERE.md`: a task never widens the assignment (the agent answers with `ask` and keeps working on the
+  rest), and a new assignment carries the owner's decision whole. `PROTOCOL.md`: the exit codes; one subfolder
+  per round in `attach`, with that round's changed files and a diff against the round before; scratch files
+  belong in the results folder on the agent's own disk; `park_after` 0.
+- The skill: the startup interview goes through the host's question tool with choices
+  (`startup-interview.md`, "How to ask"); line 1 of a draft is the subject and the send consumes the draft; a
+  task never exceeds the assignment, re-assign first. `agent-kinds.md`: the Codex row and the paragraph on the
+  exit code of a wait. A lesson records the room.
+- Tests: every timed-out wait expects 0 and the new text; `never parks a loop agent whose seat says
+  park_after 0` and `sends a one-line draft whole` in `Relay.Tool.Tests.ps1`; the join prompt's new sentences
+  in `Relay.Scripts.Tests.ps1`.
+
 ## 0.4.4 (2026-10-12)
 
 An agent in a room stopped at one blocked command (room package 3.2.4; running rooms:

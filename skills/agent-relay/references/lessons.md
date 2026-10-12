@@ -580,3 +580,45 @@ last hour showed:
   depend on the answer; only a blocked `wait` means stop and tell the session's user. Lesson for the next
   prompt rule: a rule promoted from a lesson into a prompt needs its own "when this applies", or the agent
   keeps it for the whole room.
+
+## 2026-10-12: seven agents, one machine, five rounds (a live room, from its statistics and byes)
+
+Seven agents of two products on one machine reviewed and reworked a script through five rounds; the room ran a
+day. What cost rounds, and what was changed:
+
+- **A timed-out wait looked like a failure.** The wait exited 3 when nothing arrived, and the agents' product
+  showed every exit code but 0 as a failed command. Several agents of that product took the first quiet wait
+  for an error, stopped waiting and told nobody; the owner had to nudge each session by hand, and the ones
+  that kept waiting were parked after four quiet waits and had to be nudged too. Changed: a wait that timed
+  out exits 0 and says "nothing arrived in N minutes: that is normal, not an error" (`check` keeps 3, so a
+  script can test it); that product's profile never parks (`park_after` 0 means never) and its prompt says
+  that a quiet wait is normal and that the agent never stops waiting on its own.
+- **A one-line draft lost its text.** An agent wrote a whole result as one line; the tool took the first 120
+  characters as the subject and sent the subject as the text, and the rest was gone. Changed: a one-line draft
+  is sent whole, the line as the subject (cut at 120) and the whole line as the text.
+- **Agents guessed their model and effort at join.** The join prompt said "write unknown where you do not
+  know; do not guess", and agents guessed anyway, or wrote unknown where their user could have told them.
+  Changed: the join prompt says to ask the user of the session for the two words by a typed answer, and to take
+  them as typed.
+- **Agents worked inside the room folder and on the share.** Test runs and scratch files landed in the room,
+  one agent's runner started from a share and failed, and every such file showed as outside the assignment
+  in the next self-audit. Changed: the join prompt and `PROTOCOL.md` say to work from a local folder of one's
+  own, one subfolder per round in `attach` with that round's changed files and a diff against the round
+  before, and scratch files in the results folder, never beside the assigned folders.
+- **A task asked for more than the assignment allowed, twice.** The agent stopped at the line of its
+  assignment and asked, which was right, and the round was lost. A replaced assignment was then read as
+  needing a further approval. Changed: `START-HERE.md` says that a task never widens the assignment (answer
+  with `ask`, keep working on the rest) and that a new assignment carries the owner's decision whole; the skill
+  has a rule "a task never exceeds the assignment: re-assign first".
+- **The coordinator asked the owner in prose and lost the answers.** Interview questions written into the
+  session were skipped or answered in part; the host's question tool, which shows choices, got answers at once.
+  Changed: the skill says to interview through that tool; `startup-interview.md` has a section "How to ask".
+- **The coordinator expected its draft to survive a send.** A second verb ran on a draft the first had consumed
+  and sent nothing. Changed: the skill's rule on drafts says that line 1 is the subject and the send consumes
+  the draft.
+- Still open after this room (each with its own entry when done): the assignment JSON that the coordinator
+  hand-writes (a heredoc lost backslashes and a variable, then a JSON escape error: two failed rounds), the
+  `remember` limits that an agent found only when the verb failed, a hold that was a plain note and reached
+  an agent after its run had started, a kit that lacked what the suites read, the product's command time
+  limit against `wait_minutes`, a task that contradicts the receiver's assignment, and scratch files next to
+  the working folder in the self-audit.

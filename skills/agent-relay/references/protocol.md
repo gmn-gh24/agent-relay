@@ -161,10 +161,10 @@ An entry identical to one anybody already recorded prints `ALREADY RECORDED by <
 
 | Code | Meaning |
 |---|---|
-| 0 | done, or something for you |
+| 0 | done, or something for you; also a `wait` that timed out ("nothing arrived in N minutes: that is normal, not an error"): run `wait` again |
 | 1 | usage or error; the `NEXT:` line says what to do |
 | 2 | the room is not reachable |
-| 3 | nothing arrived in time: run `wait` again (a shell that wraps the call may report 1: agents go by the `NEXT:` line) |
+| 3 | `check` found nothing new (a `wait` exited 3 on a time-out before package 3.3.0; a shell that wraps the call may report 1 for any code but 0: agents go by the `NEXT:` line) |
 | 4 | another `wait` already runs for this agent |
 | 5 | stop: room closed, or the agent was stopped, replaced or retired |
 | 6 | parked: wait for the owner |

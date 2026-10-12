@@ -2363,6 +2363,10 @@ function Get-RelayJoinPrompt {
         ''
         '1. Run ONE of these now, the one for your shell. The three words at the end say what you are: your agent product as exactly as you know it (claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent, copilot-cli, or its name as one word), your model, and your reasoning effort setting if your session or its configuration shows one (low, medium, high, ...). Write unknown where you do not know; do not guess. Type the words themselves, without the angle brackets, for example: claude-code-cli sonnet-5.5 medium'
         ''
+        '   Before you run it: when you do not know your model or your effort setting, ask the user of your own session for them, as a question the user answers by typing, and wait for the answer; the user can see the setting and you cannot. Take the words the user typed as they are.'
+        ''
+        '   Work from a local folder of your own on this machine, never from the room folder and never from a folder on a share: copy what a task needs out of the room, work on your own disk, and send results back as attachments. Running tests or scripts inside the room or on a share fails or disturbs the others.'
+        ''
         "   Windows, PowerShell (Windows PowerShell or pwsh) or Git Bash:  powershell -NoProfile -ExecutionPolicy Bypass -File $(ConvertTo-RelayPowerShellLiteral "$forward/join.ps1") <product> <model> <effort>"
         "   Windows, cmd:                                                  `"$base\join.cmd`" <product> <model> <effort>"
         ''
