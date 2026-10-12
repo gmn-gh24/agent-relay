@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1 (2026-10-12)
+
+- `New-RelayRoom.ps1 -ReachPath` (and `reach_path` in the answers file) is the room folder as other machines
+  reach it. When the value ends like the rooms root instead, the room id is appended and a NOTE says so: a room
+  built with the rooms root had its first join refused ("join.ps1 does not exist") and needed both ROOM copies
+  edited by hand. Any other folder name is still taken as given.
+
 ## 0.6.0 (2026-10-12)
 
 Three things the seven-agent room lacked (room package 3.4.0; running rooms:
