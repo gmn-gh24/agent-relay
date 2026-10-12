@@ -565,3 +565,18 @@ last hour showed:
   session tools while a room is bound, until the owner types `/relay outside on` and confirms it in the
   dialog. An eval case holds the coordinator to it. Not changed: the room package; agents never had such a
   channel.
+
+## 2026-10-12: an agent went silent after one blocked command (a live room, as the owner reported it)
+
+- **A sentence written for the join step became a standing rule.** The join prompt said, since 0.3.3: "if a
+  command is refused, blocked or cannot start ... change nothing, stop and tell your owner the exact error".
+  It was meant for an agent whose sandbox blocks `join` itself, which then has no room tool and no coordinator
+  to reach. An agent that had joined and was working had a command of its task blocked by its product's
+  permission guard, and did what the sentence said: it stopped, stopped running `wait`, and told nobody in the
+  room. Asked why, it quoted the sentence. Nothing in `PROTOCOL.md` said what to do with a blocked command
+  after join, so the join prompt's sentence was the only text on the subject. Changed: the sentence names the
+  join command and says it applies to joining only; `PROTOCOL.md` has a section "A command is blocked": `ask`
+  the coordinator with the exact command and error, keep waiting on the room, keep working on what does not
+  depend on the answer; only a blocked `wait` means stop and tell the session's user. Lesson for the next
+  prompt rule: a rule promoted from a lesson into a prompt needs its own "when this applies", or the agent
+  keeps it for the whole room.
