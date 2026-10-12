@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.4 (2026-10-12)
+
+An agent in a room stopped at one blocked command (room package 3.2.4; running rooms:
+`scripts/Update-RelayRoom.ps1 -Room <id>`):
+
+- The join prompt's sentence for a refused or blocked command (0.3.3) was written for the join step, where an
+  agent has no room tool yet, but it named "a command" and said "stop". An agent that had joined and was working
+  read it as a standing rule: after one blocked command it stopped watching the room and told nobody, and said
+  so when asked. The sentence now names the join command and says that it applies to joining only.
+- `PROTOCOL.md` has a section "A command is blocked": after join, a refused, blocked or failing command is sent
+  to the coordinator with `ask`, with the exact command and error, and the agent keeps waiting on the room and
+  working on what does not depend on the answer. Only a blocked `wait`, which leaves no way to the room, means
+  stop and tell the user of the session.
+- Tests: the join prompt's new wording and the section, in `Relay.Scripts.Tests.ps1`.
+
 ## 0.4.3 (2026-10-11)
 
 The release workflow completes a release it left half done (no change to the room package):
