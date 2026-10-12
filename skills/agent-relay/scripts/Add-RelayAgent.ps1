@@ -112,6 +112,17 @@ if (@('Add', 'Replace', 'Assign', 'Open') -contains $PSCmdlet.ParameterSetName) 
         throw "ERROR: the room $($roomObject.Id) runs room package $shown, older than 3.2.0: its tool has no find or remember, which the instructions of a new seat use. NEXT: run Update-RelayRoom.ps1 -Room $($roomObject.Id) first, then run this command again."
     }
 }
+# A hold is read by the room's own tool: one older than package 3.4.0 knows no hold and would read the state
+# as a resume, while the coordinator believes the agent is held
+if ($PSCmdlet.ParameterSetName -eq 'Control' -and $State -eq 'hold') {
+    $roomPackage = [string](Get-RelayValue $roomObject.Info 'package' '')
+    $parsedPackage = $null
+    if (-not [System.Version]::TryParse($roomPackage.Trim(), [ref]$parsedPackage) -or $parsedPackage -lt [System.Version]'3.4.0') {
+        $shown = $roomPackage
+        if (-not $shown) { $shown = '(none recorded)' }
+        throw "ERROR: the room $($roomObject.Id) runs room package $shown, older than 3.4.0: its tool knows no hold, and an agent would read the state as a resume. NEXT: run Update-RelayRoom.ps1 -Room $($roomObject.Id) first, then run this command again (a pause works on any package)."
+    }
+}
 $all = @(Get-RelayRoster $roomObject -IncludeRetired)
 
 function Assert-Agent {

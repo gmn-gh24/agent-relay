@@ -1602,13 +1602,17 @@ function Get-TextWord {
 function Get-AssignmentConflict {
     # The lines of the receiver's "Never" and "Not part of this task" that a task's text runs into: a line
     # counts when two of its telling words (one, when it has only one) are in the text. A warning for the
-    # coordinator, read from the receiver's ASSIGNMENT.md in the room; nothing is decided by it.
+    # coordinator; nothing is decided by it. The assignment is read from this tool's own copy of the room
+    # (the coordinator's launcher runs this PC's canonical copy, where only this PC writes), never from the
+    # room folder, where any agent could take a line out or put one in.
     param([string]$To, [string]$Text)
     $found = New-Object System.Collections.Generic.List[object]
-    $assignment = Read-Text (Join-Path (Get-AgentDir $To) 'ASSIGNMENT.md')
+    $ownCopy = [System.IO.Path]::GetFullPath((Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'agents') $To) 'ASSIGNMENT.md'))
+    $assignment = ''
+    if ([System.IO.File]::Exists($ownCopy)) { $assignment = Read-Text $ownCopy }
     if (-not $assignment.Trim()) { return @($found.ToArray()) }
     # Words every assignment and every task hold, which tell nothing
-    $plain = @('this', 'that', 'with', 'from', 'your', 'into', 'onto', 'what', 'when', 'then', 'than', 'them', 'they', 'there', 'their', 'have', 'will', 'would', 'could', 'should', 'which', 'while', 'where', 'every', 'each', 'only', 'also', 'more', 'most', 'some', 'such', 'other', 'another', 'outside', 'inside', 'room', 'agent', 'agents', 'file', 'files', 'folder', 'folders', 'anything', 'nothing', 'something', 'task', 'tasks', 'message', 'messages', 'send', 'sends', 'read', 'reads', 'write', 'writes', 'change', 'changes', 'assignment', 'except', 'unless', 'draft', 'attach', 'without', 'after', 'before', 'does', 'done', 'under', 'over', 'these', 'those', 'here', 'about', 'part', 'never', 'first', 'whatever', 'says', 'said', 'line', 'list', 'lists', 'make', 'makes', 'take', 'takes', 'tell', 'tells', 'work', 'working', 'report', 'result', 'results', 'coordinator', 'owner', 'machine', 'need', 'needs', 'want', 'wants', 'must', 'being', 'were', 'been', 'because', 'through', 'again', 'same', 'thing', 'things', 'come', 'comes', 'back')
+    $plain = @('a', 'an', 'the', 'and', 'or', 'nor', 'but', 'so', 'if', 'of', 'to', 'in', 'on', 'at', 'by', 'as', 'is', 'it', 'its', 'be', 'am', 'are', 'was', 'has', 'had', 'did', 'do', 'go', 'no', 'not', 'up', 'we', 'he', 'me', 'my', 'our', 'you', 'can', 'may', 'own', 'one', 'two', 'any', 'all', 'yet', 'via', 'per', 'for', 'off', 'out', 'let', 'get', 'put', 'see', 'how', 'why', 'who', 'new', 'old', 'this', 'that', 'with', 'from', 'your', 'into', 'onto', 'what', 'when', 'then', 'than', 'them', 'they', 'there', 'their', 'have', 'will', 'would', 'could', 'should', 'which', 'while', 'where', 'every', 'each', 'only', 'also', 'more', 'most', 'some', 'such', 'other', 'another', 'outside', 'inside', 'room', 'agent', 'agents', 'file', 'files', 'folder', 'folders', 'anything', 'nothing', 'something', 'task', 'tasks', 'message', 'messages', 'send', 'sends', 'read', 'reads', 'write', 'writes', 'change', 'changes', 'assignment', 'except', 'unless', 'draft', 'attach', 'without', 'after', 'before', 'does', 'done', 'under', 'over', 'these', 'those', 'here', 'about', 'part', 'never', 'first', 'whatever', 'says', 'said', 'line', 'list', 'lists', 'make', 'makes', 'take', 'takes', 'tell', 'tells', 'work', 'working', 'report', 'result', 'results', 'coordinator', 'owner', 'machine', 'need', 'needs', 'want', 'wants', 'must', 'being', 'were', 'been', 'because', 'through', 'again', 'same', 'thing', 'things', 'come', 'comes', 'back')
     $textWords = @(Get-TextWord $Text | Where-Object { $plain -notcontains $_ } | Select-Object -Unique)
     if ($textWords.Count -eq 0) { return @($found.ToArray()) }
     $section = ''
@@ -1617,7 +1621,8 @@ function Get-AssignmentConflict {
         if ($section -cne 'Never' -and $section -cne 'Not part of this task') { continue }
         if ($line -cnotmatch '^\s*[-*]\s+(\S.*)$') { continue }
         $bullet = $Matches[1].Trim()
-        $telling = @(Get-TextWord $bullet | Where-Object { $_.Length -ge 4 -and $plain -notcontains $_ } | Select-Object -Unique)
+        # A short word (npm, git, acl) tells as much as a long one: it has to match whole (Test-WordMatch)
+        $telling = @(Get-TextWord $bullet | Where-Object { $_.Length -ge 2 -and $plain -notcontains $_ } | Select-Object -Unique)
         if ($telling.Count -eq 0) { continue }
         $hits = New-Object System.Collections.Generic.List[string]
         foreach ($word in $telling) {

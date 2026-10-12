@@ -169,8 +169,9 @@ pointing at it.
 
 When "done when" cannot be reached without a change that the assignment lists under "never", the task cannot
 carry the approval: the agent will ask its owner, every time, and it is right to. Re-assign first (`-Assign`
-with the wider `-May` or `-ProposeOk`, or a shorter `-Never`), then send. Your tool reads the receiver's
-assignment before it sends a task: when the task's words run into a line under "Never" or "Not part of this
+with the wider `-May` or `-ProposeOk`, or a shorter `-Never`), then send. Your tool reads this PC's copy of
+the receiver's assignment before it sends a task (never the room's, which any agent can edit): when the
+task's words run into a line under "Never" or "Not part of this
 task" (two of that line's telling words in the task), it refuses with `NOT SENT`, names the line, and keeps
 your draft. Re-assign and send again; when the line does not apply, send it as it is with `task <name> anyway`.
 It is a word match, not a judgment: it misses what is said in other words and it flags a task that only

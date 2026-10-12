@@ -181,6 +181,35 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $anyway.Output | Should -Not -Match 'NOT SENT'
             # A note is never checked
             (Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Push`n`nSomebody will push and publish later.").ExitCode | Should -Be 0
+            # A line of short words only (npm, git) tells as much as a long one: they match whole
+            $text = [System.IO.File]::ReadAllText($assignment)
+            [System.IO.File]::WriteAllText($assignment, ($text -replace '- Push, publish, deploy or send anything outside this room\.', '- Run npm.'))
+            $short = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Install`n`nRun npm install in the kit and send the log."
+            $short.ExitCode | Should -Be 1
+            $short.Output | Should -Match '(?m)^  Emma, Never: Run npm\.   \(the task says: run, npm\)$'
+            # and a word that only begins the same way (npmrc is not npm) does not match a short one
+            $other = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Config`n`nRead the npmrc of the kit and send it."
+            $other.ExitCode | Should -Be 0
+        }
+
+        It 'reads the receiver''s assignment from this PC''s copy when the coordinator''s launcher runs the tool, not from the room, which any agent can edit' {
+            # The room's copy loses its Never section, as an agent could make it; the canonical copy keeps it
+            $roomFile = Join-Path $room 'agents\emma\ASSIGNMENT.md'
+            $text = [System.IO.File]::ReadAllText($roomFile)
+            $cut = $text.IndexOf('## Never', [System.StringComparison]::Ordinal)
+            $end = $text.IndexOf('## Your report', [System.StringComparison]::Ordinal)
+            ($cut -gt 0 -and $end -gt $cut) | Should -BeTrue
+            [System.IO.File]::WriteAllText($roomFile, $text.Substring(0, $cut) + $text.Substring($end))
+            $canon = Join-Path (Join-Path (Join-Path $env:AGENT_RELAY_LOCAL 'rooms') 'template') 'canon'
+            (Get-Content -LiteralPath (Join-Path $canon 'agents\emma\ASSIGNMENT.md') -Raw) | Should -Match '## Never'
+            $task = "Publish the package`n`nPush the branch and publish the package to the feed."
+            # The tool in the room reads the room's copy: the line is gone, the task goes
+            (Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text $task).ExitCode | Should -Be 0
+            # As the launcher runs it: this PC's copy of the tool, told where the room is, reads this PC's copy
+            Set-RelayTestDraft -Room $room -Agent 'olivia' -Text $task
+            $fromCanon = Invoke-RelayTool -Room $canon -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Environment @{ RELAY_ROOM = $room }
+            $fromCanon.ExitCode | Should -Be 1
+            $fromCanon.Output | Should -Match '(?m)^  Emma, Never: Push, publish, deploy or send anything outside this room\.'
         }
 
         It 'delivers a task once and keeps it open until it is reported on' {
