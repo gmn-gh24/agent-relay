@@ -206,6 +206,15 @@ lift it.
 Problems and ideas outside your task go under "Findings and suggestions" in your report. You do not act on
 them.
 
+## A command is blocked
+
+A command your task needs is refused, blocked by your product's permission or sandbox, or cannot start. Do not
+work around it, do not try another way to the same effect, and do not stop watching the room. `ask` the
+coordinator with the exact command and the exact error, then `wait`: the coordinator asks the owner, and the
+answer comes back as a message (permission, another way, or a change to your task). Keep working on what does
+not depend on the answer. If your own `wait` command is what is blocked, there is no way to reach the room:
+only then do you stop and tell the user of your session the exact error.
+
 ## The self-audit
 
 At `start` the tool notes what your assigned folders look like: for a git repository the commit and its

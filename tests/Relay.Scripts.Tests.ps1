@@ -1401,7 +1401,14 @@ Describe 'Open seats' -Tag 'Scripts' {
         $created.JoinPrompt | Should -Match 'what kind of agent you are, the computer and its address, the user, whether you run elevated, and your shell'
         $created.JoinPrompt | Should -Match 'Do not work around it and do not try other paths unless your owner gives you one'
         # An agent in a sandbox cannot run join at all: the prompt itself says what to do then, and names no product
-        $created.JoinPrompt | Should -Match 'If a command is refused, blocked or cannot start, or cannot reach the room folder: check once whether the folder exists, then change nothing, stop and tell your owner the exact error'
+        $created.JoinPrompt | Should -Match 'If the join command above is refused, blocked or cannot start, or cannot reach the room folder: check once whether the folder exists, then change nothing, stop and tell your owner the exact error'
+        # The stop is for joining only: an agent in the room that read it as a standing rule went silent after one
+        # blocked command instead of asking the coordinator. The prompt says so, and the instructions say what to do.
+        $created.JoinPrompt | Should -Match 'This applies to joining only: once you are in the room, a blocked command is reported to the coordinator'
+        $protocol = [System.IO.File]::ReadAllText((Join-Path $room 'PROTOCOL.md'))
+        $protocol | Should -Match '## A command is blocked'
+        $protocol | Should -Match 'do not stop watching the room\. `ask` the\s+coordinator with the exact command and the exact error, then `wait`'
+        $protocol | Should -Match 'If your own `wait` command is what is blocked, there is no way to reach the room:\s+only then do you stop'
         # The risk of a start without the product's guard is told to the owner, never to an agent
         $created.JoinPrompt | Should -Not -Match 'virtual machine|throwaway|\brisk|yolo|dangerously'
         # Two ways to join, both on Windows: no line for Linux or macOS, no sh
