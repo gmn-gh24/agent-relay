@@ -46,6 +46,12 @@ jobs:
           commit="$GIVEN_COMMIT"
           latest=true
           if [ -z "$commit" ]; then commit="$HEAD_COMMIT"; else latest=false; fi
+          # The input may be a short id or any other revision: it is resolved to the full id first, so that it
+          # compares with what a tag names
+          if ! commit="$(git rev-parse --verify --quiet "$commit^{commit}")"; then
+            echo "'$GIVEN_COMMIT' names no commit: nothing is tagged"
+            exit 1
+          fi
           if ! git merge-base --is-ancestor "$commit" origin/main; then
             echo "The commit $commit is not on main: nothing is tagged"
             exit 1
