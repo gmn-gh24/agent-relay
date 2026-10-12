@@ -173,6 +173,15 @@ if (Test-Path -LiteralPath $localRoom) { throw "This PC already keeps a folder f
 # subnet may not resolve the name this PC uses.
 $reachPath = ([string](Get-RelayProperty $answers 'reach_path' '')).TrimEnd('\', '/')
 if (-not $reachPath) { $reachPath = Resolve-RelayRemotePath $roomPath }
+# reach_path names the room folder itself, not the rooms root: a coordinator once passed the rooms root and
+# every join was refused ("join.ps1 does not exist"). A path that ends like the rooms root gets the room id
+# appended; any other folder name is taken as given (a share may show the room under another name).
+$reachLeaf = [System.IO.Path]::GetFileName($reachPath.Replace('/', '\'))
+$rootLeaf = [System.IO.Path]::GetFileName($roomsRoot.TrimEnd('\', '/').Replace('/', '\'))
+if ($reachLeaf -and $rootLeaf -and [string]::Equals($reachLeaf, $rootLeaf, [StringComparison]::OrdinalIgnoreCase) -and -not [string]::Equals($reachLeaf, $roomId, [StringComparison]::OrdinalIgnoreCase)) {
+    $reachPath = "$reachPath\$roomId"
+    "NOTE: reach_path named the rooms root; the room folder is what other machines must reach, so the room id was appended: $reachPath"
+}
 Assert-RelayPastePath $reachPath 'The path other machines reach the room by (reach_path)'
 
 # Every answer is checked before anything is built: a typo found halfway would leave half a room

@@ -223,6 +223,14 @@ Describe 'Quoting what is put into a command line for somebody to paste (G1)' -T
         $prompt | Should -Match ([regex]::Escape("-File '//server/sh''are/room/join.ps1'"))
     }
 
+    It 'appends the room id when reach_path names the rooms root, and keeps any other room folder name as given' {
+        $created = New-RelayTestRoom -Root $root -RoomId "quote-$case" -Extra @{ open_seats = 1; reach_path = '\\server\share\rooms' }
+        $created.JoinPrompt | Should -Match ([regex]::Escape("-File '//server/share/rooms/quote-$case/join.ps1' <product>"))
+        $created.JoinPrompt | Should -Match ([regex]::Escape("\\server\share\rooms\quote-$case\join.cmd"))
+        $other = New-RelayTestRoom -Root (Join-Path $TestDrive "quote-other-$case") -RoomId "quote-other-$case" -Extra @{ open_seats = 1; reach_path = '\\server\share\mapped-room' }
+        $other.JoinPrompt | Should -Match ([regex]::Escape("-File '//server/share/mapped-room/join.ps1' <product>"))
+    }
+
     It 'refuses a reach path with a double quote or a line break when the room is made' -ForEach @(
         @{ Name = 'a double quote'; Path = '\\server\sh"are\room' }
         @{ Name = 'a line break'; Path = "\\server\share`n\room" }

@@ -667,3 +667,19 @@ day. What cost rounds, and what was changed:
   "Never" and "Not part of this task" lines and refuses with `NOT SENT` when two telling words of a line are
   in the task; the draft stays, and `anyway` sends it. It is a word match: it says so, and the coordinator
   reads the line before deciding.
+
+## 2026-10-12: a five-agent room across two machines (0.6.1)
+
+- **The join prompt named the rooms root, and the first join was refused.** The coordinator passed the share's
+  rooms folder as `reach_path`; the prompt embeds that path verbatim, so the agent looked for `join.ps1` one
+  level too high, reported it exactly as its prompt says, and a round was lost to a hand edit of both ROOM
+  copies and a regenerated prompt. Changed: `New-RelayRoom.ps1` appends the room id when `reach_path` ends like
+  the rooms root (any other folder name is still taken as given, a share may show the room under another name)
+  and prints a NOTE; a test covers both cases. The skill's startup interview says `reach_path` is the room
+  folder itself.
+- **The wait whose "another wait is already running" was mine.** A second `wait` started while the first still
+  held the lease exited at once with code 4 and a text that says the running one listens; the host showed the
+  exit as a failure. Not changed: the text and the exit code are right, and the host's colour is the host's.
+- **What slowed the agents down, in their own words.** One lost ten minutes to a wrapper under test that waited
+  for its own shell (a project lesson of the owner's repo, not of the relay); one found a vendor switch by trial
+  because nothing documented it. Not changed here: both are the job's, not the room's.
