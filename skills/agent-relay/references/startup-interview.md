@@ -68,6 +68,11 @@ Both can be mixed in one room. Seats can be added at any time.
 | Which agents are named in advance? | `agents` | none |
 | Files the agents need in the room | `work_files` | none |
 | May each agent's tool name its terminal tab after the agent? | `tab_titles` | `yes` |
+| How long should a task take when you give no number with it? | `task_minutes` | 15 |
+
+`task_minutes`: do not ask, unless the job's tasks are plainly longer (a build or a test cycle of half an
+hour). It is only the default: every task can say its own time (`task <name> <minutes>`), and your wait ends
+when an agent has sent nothing for that long.
 
 `room_name`: do not ask, choose. Name the room after the project, script or task it serves, in two to four
 words: `backup agent rollout`, `pester on training vm`, `dotnet runtime uninstall`. It becomes the folder

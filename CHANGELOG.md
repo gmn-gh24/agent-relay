@@ -1,5 +1,70 @@
 # Changelog
 
+## 0.7.0 (2026-10-12)
+
+No silent agents, and a coordinator that is woken when one goes quiet (room package 3.5.0; running rooms:
+`scripts/Update-RelayRoom.ps1 -Room <id>`). From a room in which a task of a few minutes showed nothing for
+four times as long and it took the owner to notice.
+
+- **A task says how long it should take.** `task <name> [anyway] [<minutes>]`: a plain number is the expected
+  duration; without one the room's default holds (new room setting `task_minutes`, 15; `New-RelayRoom.ps1
+  -TaskMinutes`, or `task_minutes` in the answers file). The agent is shown it with the task: "expected: N
+  minutes. If you are not done by then, send a note that says where you stand; do not go silent." The message
+  carries it as one more header line, `expected_minutes`, which a reader that does not know it passes over:
+  no protocol change, and a room made before reads its messages as before.
+- **The coordinator's wait ends when a task is overdue.** When the receiver of a task has sent nothing (no
+  result, no question, no note, no `progress` line) for the expected minutes, the coordinator's `wait` ends,
+  as on a delivery, with an `OVERDUE` block: the task, the receiver, how long ago it was delivered (or "not
+  delivered yet: the agent has not picked it up"), the expected minutes, whether the receiver is waiting and
+  its last sign of life, and `DO: look at the board; ask <name> for its status now`. Half the expected time
+  later, with still no word, a second block: `DO: <name> is not responding: give the task to another agent
+  that can do it (the board's rights and models lines say who), or tell the owner now ...`. Each block comes
+  once per task; any message of the receiver, about anything, starts the count again (after the first block, a
+  second comes only when the receiver has then been silent for the whole expected time again). What was
+  expected and what was already said is kept on the coordinator's PC (`tasks.log` next to the launcher, like
+  `sent.log`), never in the room.
+- **The board** shows `expected N min, delivered M min ago` under every open task of the coordinator, and
+  `OVERDUE: ...` when its agent has sent nothing for that long; its `NEXT:` line says what to do about it. It
+  marks an agent that wakes on a background command, has a task it was shown and no wait running, with the
+  minutes since its last sign of life. The feed carries the mark in the `attention` field it always had: no
+  field of the feed changed.
+- **Reachable while working.** The `NEXT:` line of a delivery that brings a task tells an agent that wakes in
+  the background to start its wait now, before the work, and then to handle the messages; one that waits in
+  the foreground, to run `check` after every step of the work. `START-HERE.md` and `PROTOCOL.md` say it in the
+  same sentence (they said "start the wait before you begin" while the `NEXT:` line said "then wait"). Every
+  verb but `wait` and `bye` of an agent that wakes in the background, has an open task and no wait running,
+  prints first: `=== you have an open task and no wait running: start <call> wait as a background command now
+  ===`. `START-HERE.md`: start a long command with the host's own background command, never as a detached
+  process to poll, and send a `progress` line when it starts and when it ends.
+- **Every agent waits until it is retired or the room is closed.** There is no parking: `park_after` is gone
+  from `agent-kinds.json`, from `ROOM`, the seats and `tools/kinds`; the "you are parked" branch of `wait` and
+  its exit code 6, the board's "parked: owner must nudge", the `NOTE: <name> is parked` after a send and the
+  `parked` column of the statistics are gone. A wait that ends with nothing says, for every kind, that this is
+  normal and to run it again. A room whose files still carry `park_after` keeps working: nothing reads it.
+  The coordinator's manual: never tell an agent that is still needed to stop waiting or that it may go quiet;
+  an agent that is not needed any more is retired (`Add-RelayAgent.ps1 -Retire`).
+- **`join` and `start` take a model name as a user types it.** A quoted word with blanks, or more than three
+  words, becomes product, one model word with dashes, and effort (`join codex gpt 6 sol medium` gives the
+  model `gpt-6-sol`). A word that then holds another character than letters, digits, dot and dash is refused
+  with the join (or start) command, its three words, an example and "write unknown where you do not know";
+  the refusal no longer points a session that has not joined at a draft file and at `help`.
+- **The model and effort question.** The join prompt and every start prompt tell an agent that does not know
+  its model or its effort to ask its own user through its host's question tool, with the choices its product
+  offers and "other" for typing, and by a typed question only when it has no such tool. The coordinator never
+  asks the owner for it in its own session.
+- **One draft file per agent, whatever folder a verb is run from.** A draft a product keeps in the agent's
+  working folder (`relay-draft-<name>.md`) is the file in the folder of the agent's `start` or `join`: every
+  verb reads that one path, `start` prints it in full and fills it into the instructions. A verb run from
+  another folder looked for the draft there.
+- The skill: three more rules for every workflow (the model question, every agent keeps waiting, a silent
+  agent is the coordinator's to handle), the `OVERDUE` step in workflow 2. `coordinating.md`: "Every agent
+  keeps waiting", "A task that is overdue", and two lines for "The kit" (name the files to copy; a count in a
+  task is the count the runner prints). `agent-kinds.md`: "Model and effort". `COORDINATOR.md`: one paragraph.
+- Tests: the three words and their refusal, the draft from another folder for every drafting verb, the two
+  `NEXT:` lines and the line of an agent without a wait, a task's minutes, the two `OVERDUE` blocks and what
+  resets them, in `Relay.Tool.Tests.ps1`; `task_minutes`, the board's `OVERDUE` and its mark, a room that
+  still carries `park_after`, in `Relay.Scripts.Tests.ps1`. The tests that pinned parking pin its absence.
+
 ## 0.6.1 (2026-10-12)
 
 - `New-RelayRoom.ps1 -ReachPath` (and `reach_path` in the answers file) is the room folder as other machines

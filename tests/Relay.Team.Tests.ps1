@@ -912,11 +912,11 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             @((Get-TeamLine (Invoke-Team 'jack' @('team')).Output) | Where-Object { $_ -match ('^  ' + [regex]::Escape($display) + ' +not started') }).Count | Should -Be 1
         }
         It 'prints the state of the status file padded to 12, and the role of the seat' {
-            Write-TeamStatus $room 'adam' 'parked'
+            Write-TeamStatus $room 'adam' 'paused'
             $seat = Join-Path $room 'agents\emma\seat'
             Write-TeamFile $seat (([System.IO.File]::ReadAllText($seat)) -replace '(?m)^role: .*$', 'role: a role set on the seat')
             $lines = Get-TeamLine (Invoke-Team 'jack' @('team')).Output
-            $lines | Should -Contain (Format-TeamAgent 'Adam' 'parked' 'scout')
+            $lines | Should -Contain (Format-TeamAgent 'Adam' 'paused' 'scout')
             $lines | Should -Contain (Format-TeamAgent 'Emma' 'listening' 'a role set on the seat')
         }
 
@@ -1569,16 +1569,15 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             (Read-TeamKeyValue (Join-Path $room 'agents\emma\state')).ContainsKey('plan_seen') | Should -BeFalse
         }
 
-        It 'shows no banner and keeps plan_seen when a loop agent is parked' {
+        It 'shows no banner and keeps plan_seen when the waits of a loop agent end with nothing' {
             Write-TeamPlan $room $defaultPlan
-            $seat = Join-Path $room 'agents\emma\seat'
-            Write-TeamFile $seat (([System.IO.File]::ReadAllText($seat)) -replace 'park_after: \d+', 'park_after: 2')
             $fast = @{ RELAY_MINUTE_SECONDS = '1' }
             $first = Invoke-Team 'emma' @('wait', '2') $fast
             $first.ExitCode | Should -Be 0
             $first.Output | Should -Match 'nothing arrived in 2 minutes'
             $second = Invoke-Team 'emma' @('wait', '2') $fast
-            $second.ExitCode | Should -Be 6
+            $second.ExitCode | Should -Be 0
+            $second.Output | Should -Match 'nothing arrived in 2 minutes'
             $first.Output + $second.Output | Should -Not -Match 'the team plan changed'
             (Read-TeamKeyValue (Join-Path $room 'agents\emma\state')).ContainsKey('plan_seen') | Should -BeFalse
         }

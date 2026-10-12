@@ -122,7 +122,21 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
     ''
     $others = @($board.open | Where-Object { $_.to -ne $board.coordinator })
     "OPEN WITH THE AGENTS ($($others.Count))"
-    foreach ($request in $others) { "  $($request.id)  $($request.type) to $($request.to), $($request.ageMinutes) min: $($request.subject)" + $(if ($request.mismatch) { $headerMark } else { '' }) }
+    foreach ($request in $others) {
+        "  $($request.id)  $($request.type) to $($request.to), $($request.ageMinutes) min: $($request.subject)" + $(if ($request.mismatch) { $headerMark } else { '' })
+        # A task against the time it should take: OVERDUE when its receiver has sent nothing for that long
+        if ($request.expectedMinutes -gt 0) {
+            $delivered = "not delivered yet: the agent has not picked it up, sent $($request.elapsedMinutes) min ago"
+            if ($request.isDelivered) { $delivered = "delivered $($request.elapsedMinutes) min ago" }
+            if ($request.isOverdue) {
+                $asked = ''
+                if ($request.alerts -eq 1) { $asked = '; your wait has told you once' }
+                if ($request.alerts -ge 2) { $asked = '; your wait has told you twice' }
+                "      OVERDUE: expected $($request.expectedMinutes) min, $delivered, no word from $($request.to) for $($request.quietMinutes) min$asked"
+            }
+            else { "      expected $($request.expectedMinutes) min, $delivered" }
+        }
+    }
     if (@($board.ownerMessages).Count -gt 0) {
         ''
         'MESSAGES FROM THE OWNER'
@@ -138,7 +152,9 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
     }
     ''
     $attention = @($board.agents | Where-Object { $_.attention })
+    $overdue = @($others | Where-Object { $_.isOverdue })
     if (@($board.waitingOnCoordinator).Count -gt 0) { 'NEXT: answer what waits on you, oldest first; check each result against its evidence before you accept it.' }
+    elseif ($overdue.Count -gt 0) { "NEXT: a task is OVERDUE: ask its agent for its status now (ask $($overdue[0].to)); when that stays unanswered too, give the task to another agent that can do it, or tell the owner that the agent is not responding and what is blocked." }
     elseif (@($board.waitingOnOwner).Count -gt 0) { 'NEXT: the owner has open cards; carry on with whatever does not depend on them, then wait.' }
     elseif ($attention.Count -gt 0) { 'NEXT: tell the owner about the agents marked ATTENTION, then wait.' }
     else { 'NEXT: nothing waits on you; wait.' }

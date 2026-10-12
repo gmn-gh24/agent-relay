@@ -40,7 +40,7 @@
     of this PC for the same room id that an earlier attempt left is not built on: it is refused.
 
     The room's own answers can also be given as parameters, without a file: -Job, -RoomName (or -RoomId),
-    -RoomsRoot, -Authority, -OpenSeats, -WorkFiles, -ReachPath, -NoTabTitles. A room of open seats needs no
+    -RoomsRoot, -Authority, -OpenSeats, -WorkFiles, -ReachPath, -TaskMinutes, -NoTabTitles. A room of open seats needs no
     file at all; the agents then get their assignments with Add-RelayAgent.ps1 -Assign, whose fields are
     parameters too. A parameter given with a file wins over the file's value. Named agents still come from the
     file ("agents").
@@ -68,6 +68,10 @@
 
 .PARAMETER ReachPath
     The room folder as other machines reach it ("reach_path").
+
+.PARAMETER TaskMinutes
+    How many minutes a task should take when the coordinator names no number with it ("task_minutes", 15):
+    its wait ends with an OVERDUE block when the receiver has sent nothing for that long.
 
 .PARAMETER NoTabTitles
     The agents' tools do not name their terminal tabs ("tab_titles": no).
@@ -99,6 +103,7 @@ param(
     [ValidateRange(0, 200)][int]$OpenSeats,
     [AllowEmptyCollection()][string[]]$WorkFiles,
     [string]$ReachPath,
+    [ValidateRange(1, 1440)][int]$TaskMinutes,
     [switch]$NoTabTitles,
     [switch]$NoClipboard,
     [switch]$PassThru
@@ -116,7 +121,7 @@ if ($AnswersFile) {
     if ($null -eq $answers -or $answers -is [array] -or $answers -is [string] -or $answers -is [ValueType]) { throw "The answers file $AnswersFile does not hold one JSON object" }
 }
 # A parameter given as well wins over the file's value
-$byParameter = [ordered]@{ Job = 'job'; RoomName = 'room_name'; RoomId = 'room_id'; RoomsRoot = 'rooms_root'; Authority = 'authority'; OpenSeats = 'open_seats'; WorkFiles = 'work_files'; ReachPath = 'reach_path' }
+$byParameter = [ordered]@{ Job = 'job'; RoomName = 'room_name'; RoomId = 'room_id'; RoomsRoot = 'rooms_root'; Authority = 'authority'; OpenSeats = 'open_seats'; WorkFiles = 'work_files'; ReachPath = 'reach_path'; TaskMinutes = 'task_minutes' }
 foreach ($parameter in $byParameter.Keys) {
     if (-not $PSBoundParameters.ContainsKey($parameter)) { continue }
     $value = $PSBoundParameters[$parameter]
@@ -158,6 +163,9 @@ $agentAnswers = @(Get-RelayProperty $answers 'agents' @())
 $openSeats = [int](Get-RelayProperty $answers 'open_seats' 0)
 if ($openSeats -lt 0 -or $openSeats -gt 200) { throw '"open_seats" is a number from 0 to 200' }
 if ($agentAnswers.Count -lt 1 -and $openSeats -lt 1) { throw 'The answers file needs at least one entry under "agents", or "open_seats" of 1 or more' }
+# How long a task should take when the coordinator gives no number with it
+$minutesPerTask = [int](Get-RelayProperty $answers 'task_minutes' 15)
+if ($minutesPerTask -lt 1 -or $minutesPerTask -gt 1440) { throw '"task_minutes" is a number from 1 to 1440' }
 
 $roomPath = Get-RelayNormalPath (Join-Path $roomsRoot $roomId)
 # What is put into a command line for somebody to paste cannot hold a double quote or a line break
@@ -234,7 +242,7 @@ try {
         stale_minutes  = [int](Get-RelayProperty $answers 'stale_minutes' 5)
         pickup_minutes = [int](Get-RelayProperty $answers 'pickup_minutes' 30)
         silent_minutes = [int](Get-RelayProperty $answers 'silent_minutes' 10)
-        park_after     = [int](Get-RelayProperty $answers 'park_after' 6)
+        task_minutes   = $minutesPerTask
         proposal_limit = [int](Get-RelayProperty $answers 'proposal_limit' 3)
     }
     # Each agent's tool names its terminal tab after the agent, unless the owner does not want that

@@ -52,8 +52,8 @@ if ($AsJson) { return (ConvertTo-Json -InputObject $stats -Depth 6) }
     foreach ($report in @($stats.reportsWithChangesOutside)) { "  $($report.id) from $($report.from): $($report.outside) outside" }
     "alarms from the tamper check: $($stats.alarms)"
     ''
-    'agent      sent  recv  sessions  timeouts  parked  2nd-wait  silent  proceeded'
-    foreach ($agent in @($stats.agents)) { '{0,-10} {1,4}  {2,4}  {3,8}  {4,8}  {5,6}  {6,8}  {7,6}  {8,9}' -f $agent.agent, $agent.sent, $agent.received, $agent.sessions, $agent.waitTimeouts, $agent.parked, $agent.secondWaits, $agent.coordinatorSilent, $agent.proposalsProceeded }
+    'agent      sent  recv  sessions  timeouts  2nd-wait  silent  proceeded'
+    foreach ($agent in @($stats.agents)) { '{0,-10} {1,4}  {2,4}  {3,8}  {4,8}  {5,8}  {6,6}  {7,9}' -f $agent.agent, $agent.sent, $agent.received, $agent.sessions, $agent.waitTimeouts, $agent.secondWaits, $agent.coordinatorSilent, $agent.proposalsProceeded }
     if (@($stats.byes).Count -gt 0) {
         ''
         'what the agents said on leaving:'

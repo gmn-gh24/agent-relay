@@ -774,6 +774,89 @@ function Initialize-RelaySentLog {
     Write-RelayTextAtomic $path $text
 }
 
+function Get-RelayTaskLogPath {
+    # This PC's record of the coordinator's tasks, next to the record of what it sent: how long each should take,
+    # when its receiver was shown it, and which overdue alerts the coordinator's wait gave. The coordinator's
+    # tool writes it (tab-separated: utc, task id, sent|delivered|alert1|alert2|closed, a value); nothing of it
+    # lies in the room.
+    param([Parameter(Mandatory)]$Room)
+    return (Join-Path $Room.Local 'tasks.log')
+}
+
+function Read-RelayTaskLog {
+    # The record as a table by task id, compared exactly. A "sent" line starts a task afresh; the lines after it
+    # say what happened to it since. A record that is not there, or cannot be read now, is an empty table: the
+    # board then goes by the room's default, it decides nothing by this.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseLiteralInitializerForHashtable', '', Justification = 'Message ids are compared exactly: the table is built with the ordinal comparer, which a literal cannot take')]
+    param([Parameter(Mandatory)]$Room)
+    $tasks = New-Object System.Collections.Hashtable -ArgumentList ([System.StringComparer]::Ordinal)
+    foreach ($line in ((Read-RelayText (Get-RelayTaskLogPath $Room)) -split "`n")) {
+        $parts = @($line -split "`t")
+        if ($parts.Count -lt 3 -or -not $parts[1]) { continue }
+        $id = [string]$parts[1]
+        $value = ''
+        if ($parts.Count -ge 4) { $value = [string]$parts[3] }
+        if ($parts[2] -ceq 'sent') {
+            $minutes = 0
+            if (-not [int]::TryParse($value, [ref]$minutes) -or $minutes -lt 1) { $minutes = 0 }
+            $tasks[$id] = [pscustomobject]@{ Id = $id; Minutes = $minutes; Delivered = ''; Alerts = 0; IsClosed = $false }
+            continue
+        }
+        if (-not $tasks.ContainsKey($id)) { continue }
+        if ($parts[2] -ceq 'delivered' -and -not $tasks[$id].Delivered) { $tasks[$id].Delivered = $value }
+        elseif ($parts[2] -ceq 'alert1' -and $tasks[$id].Alerts -lt 1) { $tasks[$id].Alerts = 1 }
+        elseif ($parts[2] -ceq 'alert2') { $tasks[$id].Alerts = 2 }
+        elseif ($parts[2] -ceq 'closed') { $tasks[$id].IsClosed = $true }
+    }
+    return $tasks
+}
+
+function Get-RelayTaskClock {
+    # Where an open task of the coordinator stands against the time it should take, as the coordinator's wait
+    # judges it: the clock starts when the receiver was shown the task (when it was sent, until then) and starts
+    # again with every message of the receiver to the coordinator and every progress line. Overdue is a task
+    # whose receiver has sent nothing for the expected duration. What was expected comes from this PC's record,
+    # or the room's default (task_minutes of this PC's ROOM, 15); what the receiver did is read off the room.
+    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)]$Message, [AllowEmptyCollection()][object[]]$Messages = @(), [Parameter(Mandatory)][DateTime]$Now, [System.Collections.IDictionary]$TaskLog = @{})
+    $expected = 15
+    $parsed = 0
+    if ([int]::TryParse((Get-RelayValue $Room.Info 'task_minutes' '15'), [ref]$parsed) -and $parsed -gt 0) { $expected = $parsed }
+    $record = $null
+    if ($TaskLog.Contains([string]$Message.Id)) { $record = $TaskLog[[string]$Message.Id] }
+    if ($null -ne $record -and $record.Minutes -gt 0) { $expected = $record.Minutes }
+    $dir = Join-Path (Join-Path $Room.Path 'agents') ([string]$Message.To)
+    $deliveredAt = $null
+    if ($null -ne $record -and $record.Delivered) { $deliveredAt = ConvertFrom-RelayUtc $record.Delivered }
+    if ($null -eq $deliveredAt) {
+        # A line of the receiver's delivered list that does not end in the word unreadable is its receipt
+        foreach ($line in ((Read-RelayText (Join-Path $dir 'delivered')) -split "`n")) {
+            $words = @($line.Trim() -split ' ')
+            if ($words[0] -cne [string]$Message.Id -or ($words.Count -ge 3 -and $words[2] -ceq 'unreadable')) { continue }
+            $deliveredAt = Get-RelayFileTimeUtc (Join-Path $dir 'delivered')
+            if ($deliveredAt -eq [DateTime]::MinValue -or $deliveredAt -gt $Now) { $deliveredAt = $Now }
+            break
+        }
+    }
+    $start = $Message.Time
+    if ($null -ne $deliveredAt) { $start = $deliveredAt }
+    $lastWord = [DateTime]::MinValue
+    foreach ($other in @($Messages)) { if ($other.From -ceq [string]$Message.To -and $other.To -ceq $Room.Coordinator -and $other.Time -gt $lastWord) { $lastWord = $other.Time } }
+    $progressAt = Get-RelayFileTimeUtc (Join-Path $dir 'progress')
+    if ($progressAt -gt $lastWord) { $lastWord = $progressAt }
+    $quietSince = $start
+    if ($lastWord -gt $quietSince) { $quietSince = $lastWord }
+    $alerts = 0
+    if ($null -ne $record) { $alerts = $record.Alerts }
+    return [pscustomobject]@{
+        expectedMinutes = $expected
+        isDelivered     = ($null -ne $deliveredAt)
+        elapsedMinutes  = [int][Math]::Max(0, [Math]::Floor(($Now - $start).TotalMinutes))
+        quietMinutes    = [int][Math]::Max(0, [Math]::Floor(($Now - $quietSince).TotalMinutes))
+        isOverdue       = (($Now - $quietSince).TotalMinutes -ge $expected)
+        alerts          = $alerts
+    }
+}
+
 function Add-RelayAlarm {
     param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Text)
     Add-RelayLine (Join-Path $Room.Local 'alarms.log') ('{0} {1}' -f (Format-RelayUtc), (ConvertTo-RelayHeaderText $Text))
@@ -1435,7 +1518,6 @@ function Get-RelayAgentState {
         elseif ($isFree) { $state = 'free seat' }
         elseif ($expected -and $computer -and $expected -ne $computer) { $attention = "introduced itself from $computer, expected ${expected}: check with the owner before giving it work" }
         elseif ($isStale) { $attention = "wait died $silent min ago: owner must restart that session" }
-        elseif ($state -eq 'parked') { $attention = 'parked: owner must nudge' }
         elseif ($state -eq 'not started' -and $isOpen) { $attention = 'took a seat but has not introduced itself: owner must look at that session' }
         elseif ($state -eq 'not started') { $attention = 'not started: owner must paste the start prompt' }
         elseif ($control -ne 'run') { $attention = "control: $control"; if ($control -eq 'hold' -and $controlNote) { $attention += " ($controlNote)" } }
@@ -1447,6 +1529,17 @@ function Get-RelayAgentState {
             if ($lying.Count -gt 0) {
                 $oldest = [int][Math]::Max(0, ($now - @($lying | Sort-Object Time)[0].Time).TotalMinutes)
                 if ($oldest -ge $pickupMinutes) { $attention = "has not picked up $($lying.Count) message(s) for $oldest min: its session may have ended, owner must look at it" }
+            }
+            # An agent that wakes on a background command, with a task it was shown and has not reported on, and
+            # no wait running: no message reaches it until its session looks by itself. Its heartbeat is what its
+            # last wait left: two minutes without one is more than the moment between a delivery and the next
+            # wait. An agent that waits in the foreground has no wait while it works, by its nature: its tool
+            # tells it to check between the steps, and a task of its that runs late is marked OVERDUE.
+            if (-not $attention -and (Get-RelayValue $card 'wake' (Get-RelayValue $seat 'wake' '')) -eq 'background' -and $silent -ge 2) {
+                $tasks = @($open | Where-Object { $_.To -eq $name -and $_.Type -ceq 'task' -and $shown.ContainsKey([string]$_.Id) })
+                $leaseAt = Get-RelayFileTimeUtc (Join-Path $dir 'wait.lease')
+                $hasWait = ($leaseAt -ne [DateTime]::MinValue -and ($now - $leaseAt).TotalSeconds -lt 60)
+                if ($tasks.Count -gt 0 -and -not $hasWait) { $attention = "has an open task and no wait running, last sign of life $silent min ago: no message reaches it; ask the owner to tell that session to check the room" }
             }
         }
         $owes = @($open | Where-Object { $_.To -eq $name })
@@ -1618,17 +1711,28 @@ function Get-RelayBoard {
     $agents = @(Get-RelayAgentState -Room $Room -Now $now -Open $open -Plan $plan -Messages $messages)
 
     $openRows = New-Object System.Collections.Generic.List[object]
+    $taskLog = Read-RelayTaskLog $Room
     foreach ($message in $open) {
+        # A task of the coordinator against the time it should take: OVERDUE when its receiver has sent nothing
+        # for that long (0 expected minutes: not a task of the coordinator)
+        $clock = [pscustomobject]@{ expectedMinutes = 0; isDelivered = $false; elapsedMinutes = 0; quietMinutes = 0; isOverdue = $false; alerts = 0 }
+        if ($message.Type -ceq 'task' -and $message.From -ceq $Room.Coordinator) { $clock = Get-RelayTaskClock -Room $Room -Message $message -Messages $messages -Now $now -TaskLog $taskLog }
         $openRows.Add([pscustomobject]@{
-                id         = $message.Id
-                from       = $message.From
-                to         = $message.To
-                type       = $message.Type
-                subject    = $message.Subject
-                expects    = $message.Expects
-                ageMinutes = [int][Math]::Max(0, ($now - $message.Time).TotalMinutes)
+                id              = $message.Id
+                from            = $message.From
+                to              = $message.To
+                type            = $message.Type
+                subject         = $message.Subject
+                expects         = $message.Expects
+                ageMinutes      = [int][Math]::Max(0, ($now - $message.Time).TotalMinutes)
                 # The header names another sender, receiver or number than the file's place does
-                mismatch   = [bool]$message.Mismatch
+                mismatch        = [bool]$message.Mismatch
+                expectedMinutes = $clock.expectedMinutes
+                isDelivered     = $clock.isDelivered
+                elapsedMinutes  = $clock.elapsedMinutes
+                quietMinutes    = $clock.quietMinutes
+                isOverdue       = $clock.isOverdue
+                alerts          = $clock.alerts
             })
     }
     $cards = New-Object System.Collections.Generic.List[object]
@@ -1756,7 +1860,7 @@ function Get-RelayStatistic {
         $duplicates = $delivered.Count - @($delivered | Sort-Object -Unique).Count
         $duplicateDeliveries += $duplicates
         $numbers = @{}
-        foreach ($key in 'start', 'timeout', 'parked', 'second-wait', 'coordinator-silent', 'proposal-due') { $numbers[$key] = 0; if ($count.ContainsKey($key)) { $numbers[$key] = $count[$key] } }
+        foreach ($key in 'start', 'timeout', 'second-wait', 'coordinator-silent', 'proposal-due') { $numbers[$key] = 0; if ($count.ContainsKey($key)) { $numbers[$key] = $count[$key] } }
         $sentCount = 0
         if ($sentBy.Contains($name)) { $sentCount = $sentBy[$name] }
         $agents.Add([pscustomobject]@{
@@ -1765,7 +1869,6 @@ function Get-RelayStatistic {
                 received           = $delivered.Count
                 sessions           = $numbers['start']
                 waitTimeouts       = $numbers['timeout']
-                parked             = $numbers['parked']
                 secondWaits        = $numbers['second-wait']
                 coordinatorSilent  = $numbers['coordinator-silent']
                 proposalsProceeded = $numbers['proposal-due']
@@ -2081,7 +2184,6 @@ function ConvertTo-RelaySeatSpec {
         shell           = $shell
         wake            = $wake
         wait_minutes    = [int](Get-RelayProperty $Agent 'wait_minutes' $kind.wait_minutes)
-        park_after      = [int](Get-RelayProperty $Agent 'park_after' $kind.park_after)
         draft           = [string](Get-RelayProperty $Agent 'draft' $kind.draft)
         prompt_extra    = [string]$kind.prompt_extra
         room_path       = $roomPath
@@ -2096,6 +2198,13 @@ function ConvertTo-RelaySeatSpec {
         ask_first       = @(Get-RelayProperty $Agent 'ask_first' @())
         never           = @(Get-RelayProperty $Agent 'never' @())
     }
+}
+
+function Get-RelayModelQuestionText {
+    # What every prompt says about the model and the effort an agent cannot see: it asks its own user, with
+    # choices to pick from where its host has a tool for that. Nobody else can answer it: the coordinator does
+    # not ask the owner for it in its own session.
+    return 'When you do not know your model or your effort setting, ask the user of your own session before you run it, and wait for the answer: the user can see the setting and you cannot. Ask through your question tool when you have one (the one that shows choices to pick from): offer the models and the effort levels your own product has, and "other" for typing. Ask as a question the user answers by typing only when you have no such tool. Take the answer as it is given: a name of several words is fine, the command turns its blanks into dashes.'
 }
 
 function Get-RelayStartPrompt {
@@ -2113,6 +2222,8 @@ function Get-RelayStartPrompt {
     $lines.Add("You are $display, the $($Spec['role']) on a job that several coding agents work on for the same owner. Your instructions are in a shared folder, the `"room`". Run this one command now. Replace the three words at the end with your agent product as exactly as you know it (for example claude-code-cli or codex-cli), your model, and your reasoning effort setting if your session shows one; write unknown where you do not know:")
     $lines.Add('')
     $lines.Add("$call start <product> <model> <effort>")
+    $lines.Add('')
+    $lines.Add((Get-RelayModelQuestionText))
     $lines.Add('')
     if ($isDual) {
         $lines.Add('The line works as it is in PowerShell and in Git Bash.')
@@ -2156,7 +2267,6 @@ function Add-RelayAgentSeat {
         shell           = $Spec['shell']
         wake            = $Spec['wake']
         wait_minutes    = $Spec['wait_minutes']
-        park_after      = $Spec['park_after']
         draft           = ([string]$Spec['draft']).Replace('{name}', $Name)
         room_path       = $Spec['room_path']
         ssh_target      = $Spec['ssh_target']
@@ -2196,7 +2306,10 @@ function Add-RelayAgentSeat {
     $draftText = $agentFolder + '\draft.md'
     # A draft kept in the working folder carries the agent's name: two agents may share that folder
     $draftName = ([string]$Spec['draft']).Replace('{name}', $Name)
-    if ($draftName) { $draftText = "$draftName   (in your working folder)" }
+    # Where that folder is, only the agent's own start knows: its tool fills the full path in when it prints the
+    # text, and every verb uses that one path
+    $hasOwnDraft = ($draftName -and -not $IsCoordinator)
+    if ($hasOwnDraft) { $draftText = '{{DRAFT}}' }
     # The coordinator's draft is a file on this PC, next to its launcher: nobody else can put a text there
     if ($IsCoordinator) { $draftText = Join-Path $Room.Local 'draft.md' }
     # The machine of an open seat has no name until the agent on it has introduced itself
@@ -2268,6 +2381,7 @@ function Add-RelayAgentSeat {
         foreach ($key in 'CALL', 'DRAFT', 'ATTACH', 'WAIT_LINE', 'ROOM_PATH') { $values[$key] = '{{' + $key + '}}' }
         $values['FILE_NOTE'] = ' (In the file itself some commands and paths stand in double braces: your command fills them in when it prints this text, so read it with `start`.)'
     }
+    elseif ($hasOwnDraft) { $values['FILE_NOTE'] = ' (In the file itself the path of your draft stands in double braces: your command fills it in when it prints this text, so read it with `start`.)' }
     $startTemplate = 'START-HERE.md.tmpl'
     $assignmentTemplate = 'ASSIGNMENT.md.tmpl'
     if ($IsCoordinator) { $startTemplate = 'COORDINATOR.md.tmpl'; $assignmentTemplate = '' }
@@ -2325,7 +2439,6 @@ function Write-RelayKindTable {
     foreach ($kind in $all.PSObject.Properties) {
         $lines.Add("$($kind.Name).wake: $($kind.Value.wake)")
         $lines.Add("$($kind.Name).wait_minutes: $($kind.Value.wait_minutes)")
-        $lines.Add("$($kind.Name).park_after: $($kind.Value.park_after)")
         $lines.Add("$($kind.Name).draft: $($kind.Value.draft)")
         $lines.Add("$($kind.Name).hint: " + (ConvertTo-RelayHeaderText ([string]$kind.Value.prompt_extra)))
     }
@@ -2367,7 +2480,7 @@ function Get-RelayJoinPrompt {
         ''
         '1. Run ONE of these now, the one for your shell. The three words at the end say what you are: your agent product as exactly as you know it (claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent, copilot-cli, or its name as one word), your model, and your reasoning effort setting if your session or its configuration shows one (low, medium, high, ...). Write unknown where you do not know; do not guess. Type the words themselves, without the angle brackets, for example: claude-code-cli sonnet-5.5 medium'
         ''
-        '   Before you run it: when you do not know your model or your effort setting, ask the user of your own session for them, as a question the user answers by typing, and wait for the answer; the user can see the setting and you cannot. Take the words the user typed as they are.'
+        ('   ' + (Get-RelayModelQuestionText))
         ''
         '   Work from a local folder of your own on this machine, never from the room folder and never from a folder on a share: copy what a task needs out of the room, work on your own disk, and send results back as attachments. Running tests or scripts inside the room or on a share fails or disturbs the others.'
         ''
@@ -2536,7 +2649,6 @@ function Switch-RelaySeatKind {
     $Spec['kind'] = $Kind
     $Spec['wake'] = [string]$profileOfKind.wake
     $Spec['wait_minutes'] = [int]$profileOfKind.wait_minutes
-    $Spec['park_after'] = [int]$profileOfKind.park_after
     $Spec['draft'] = [string]$profileOfKind.draft
     $Spec['prompt_extra'] = [string]$profileOfKind.prompt_extra
     $Spec['shell'] = [string](Get-RelayProperty $profileOfKind.shell 'windows' 'powershell')

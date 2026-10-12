@@ -683,3 +683,57 @@ day. What cost rounds, and what was changed:
 - **What slowed the agents down, in their own words.** One lost ten minutes to a wrapper under test that waited
   for its own shell (a project lesson of the owner's repo, not of the relay); one found a vendor switch by trial
   because nothing documented it. Not changed here: both are the job's, not the room's.
+
+## 2026-10-12: a silent agent, and a coordinator that did not notice (a live room, two agents on one machine, 0.7.0)
+
+- **A model name with blanks was refused, and the refusal pointed at a draft.** An agent asked its user for
+  its model, got a name of three words, passed it in quotes and was told that arguments are single plain
+  words; the next line named "your draft file" and `help`, though a session that has not joined has neither a
+  draft nor a command of its own. It took the owner to find the form with dashes. Changed: `join` and `start`
+  take the three words as a user types them (a quoted word with blanks, or more than three words, becomes
+  product, one model word with dashes, and effort); what is then still no plain word is refused with the join
+  (or start) command, its three words, an example and "write unknown where you do not know", and with nothing
+  about a draft or `help`. Every other verb keeps its refusal.
+- **An agent that must ask for its model was told to ask for a typed answer.** The owner wants choices to pick
+  from. Changed: the join prompt and every start prompt say to ask through the host's question tool when there
+  is one, with the models and effort levels of the agent's own product and "other" for typing, and to fall back
+  to a typed question only without such a tool. The skill and `agent-kinds.md` ("Model and effort") say that
+  the coordinator never asks the owner for it in its own session: it has the agent ask its user.
+- **The coordinator told an idle agent that its wait could run out.** It had no work for a loop agent yet, and
+  wrote that the owner would nudge it later; the manual's own words about loop agents that "park themselves"
+  led there. The owner's rule, final: an agent never stops monitoring the room until it is retired or the room
+  is closed, and the coordinator never tells an agent that is still needed to stop waiting. Changed: there is
+  no parking. The numbers, the branch of `wait`, the board state and the note after a send are gone; a wait
+  that ends with nothing says, for every kind, that this is normal and to run it again; the instructions say
+  once that the agent keeps waiting until it is retired or the room is closed; `coordinating.md` has "Every
+  agent keeps waiting" (an agent that is not needed any more is retired, not told to idle). A room made before
+  still carries the number in its files: nothing reads it.
+- **A verb looked for the draft in the folder it was run from.** A product keeps its draft in the agent's
+  working folder under a file name; the tool joined that name to the current folder on every call, so a verb
+  run from the work folder did not find the draft the join had printed in full for the home folder. Changed:
+  one path per agent, the file in the folder of its `start` or `join` (the card holds that folder), used by
+  every verb and filled into the printed instructions; a named seat's `START-HERE.md` keeps the place of the
+  path instead of a bare file name. A test runs every drafting verb from another folder than the one of join.
+- **An agent was unreachable for the whole of its task, and nobody but the owner noticed.** A task expected to
+  take some minutes produced nothing for four times as long. The agent had followed the `NEXT:` line of the
+  delivery (handle the messages, then wait) and not its instructions (start the wait first), so no wait ran
+  while it worked and the coordinator's question lay unread; it had started its long command as a detached
+  process and watched for a signal file that was never written, so it never learned that the run had ended;
+  and the coordinator waited, because nothing woke it. Changed, on the agent's side: the `NEXT:` line of a
+  delivery that brings a task tells an agent that wakes in the background to start its wait now, before the
+  work, and one that waits in the foreground to run `check` after every step; `START-HERE.md` and `PROTOCOL.md`
+  say it in the same sentence, and a test holds the three together. Every verb but `wait` and `bye` of such an
+  agent prints first that it has an open task and no wait running. The instructions say to start a long command
+  with the host's own background command, never as a detached process to poll, and to send a `progress` line
+  when it starts and when it ends. Changed, on the coordinator's side: a task carries the minutes it should
+  take (`task <name> <minutes>`, or the room's `task_minutes`, 15), the agent is shown them, and the
+  coordinator's wait ends with an `OVERDUE` block when the agent has sent nothing for that long, and once more
+  half that time later when it has still sent nothing; what was expected and what was already said is kept on
+  the coordinator's PC, never in the room. The board marks the task `OVERDUE` and the agent that has a task and
+  no wait. The skill's loop and `coordinating.md` ("A task that is overdue") say what to do at each of the two:
+  ask the agent, then hand the task on or tell the owner. A loop agent gets no "no wait running" line and no
+  such mark on the board: it has no wait while it works, by its nature.
+- **A kit that said five and held seven.** The task said to copy five files from a folder of seven, and the
+  agent copied all of them with a wildcard; a count of steps in the task differed from the runner's, and the
+  agent stopped to ask. Changed: "The kit" in `coordinating.md` says to name the files to copy, or to stage a
+  folder that holds exactly them, and that a count in a task is the count the runner prints.
