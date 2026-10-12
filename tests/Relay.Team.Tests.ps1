@@ -1280,7 +1280,8 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             Start-Sleep -Seconds 1
             Write-TeamPlan $room (@('plan: 4') + $defaultPlan[1..8])
             $ended = Wait-RelayTool -Handle $waiting -TimeoutSeconds 60
-            $ended.ExitCode | Should -Be 3
+            $ended.ExitCode | Should -Be 0
+            $ended.Output | Should -Match 'nothing arrived in 1 minutes'
             $ended.Output | Should -Not -Match 'the team plan changed'
             $state = Read-TeamKeyValue (Join-Path $room 'agents\emma\state')
             $state.ContainsKey('plan_seen') | Should -BeFalse
@@ -1574,7 +1575,8 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             Write-TeamFile $seat (([System.IO.File]::ReadAllText($seat)) -replace 'park_after: \d+', 'park_after: 2')
             $fast = @{ RELAY_MINUTE_SECONDS = '1' }
             $first = Invoke-Team 'emma' @('wait', '2') $fast
-            $first.ExitCode | Should -Be 3
+            $first.ExitCode | Should -Be 0
+            $first.Output | Should -Match 'nothing arrived in 2 minutes'
             $second = Invoke-Team 'emma' @('wait', '2') $fast
             $second.ExitCode | Should -Be 6
             $first.Output + $second.Output | Should -Not -Match 'the team plan changed'
@@ -1590,7 +1592,8 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $paused.Output | Should -Match '=== you are paused ==='
             $null = Send-TeamNote 'olivia' 'emma'
             $held = Invoke-Team 'emma' @('wait', '3') @{ RELAY_MINUTE_SECONDS = '1' }
-            $held.ExitCode | Should -Be 3
+            $held.ExitCode | Should -Be 0
+            $held.Output | Should -Match 'nothing arrived in 3 minutes'
             $paused.Output + $held.Output | Should -Not -Match 'the team plan changed'
             (Read-TeamKeyValue $state).ContainsKey('plan_seen') | Should -BeFalse
             Write-TeamFile $control "state: run`nnote: `n"

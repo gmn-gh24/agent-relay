@@ -189,6 +189,11 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         (Read-RelayKeyValue (Join-Path $created.Path 'agents\emma\seat'))['wake'] | Should -Be 'background'
         $codex = [string]$created.Prompts['jack']
         $codex | Should -Match 'keep waiting on that same running command'
+        # Codex took a quiet wait for a failure and stopped waiting: its prompt says that it is normal, and that the agent
+        # never stops on its own; its seat is never parked
+        $codex | Should -Match 'a wait that ends with nothing is normal, not an error'
+        $codex | Should -Match 'You never stop waiting on your own'
+        (Read-RelayKeyValue (Join-Path $created.Path 'agents\jack\seat'))['park_after'] | Should -Be '0'
         # In its sandbox Codex CLI cannot run the room's commands: its prompt says what to do when they are refused
         $codex | Should -Match 'tell your user to start you again with codex --yolo'
         # The risk of a start without the product's guard is told to the owner, never to an agent
@@ -1400,6 +1405,11 @@ Describe 'Open seats' -Tag 'Scripts' {
         $created.JoinPrompt | Should -Match 'your reasoning effort setting if your session or its configuration shows one'
         $created.JoinPrompt | Should -Match 'what kind of agent you are, the computer and its address, the user, whether you run elevated, and your shell'
         $created.JoinPrompt | Should -Match 'Do not work around it and do not try other paths unless your owner gives you one'
+        # Agents guessed their model and effort at join: the prompt says to ask the user of the session, by a typed answer
+        $created.JoinPrompt | Should -Match 'ask the user of your own session for them, as a question the user answers by typing, and wait for the answer'
+        $created.JoinPrompt | Should -Match 'Take the words the user typed as they are'
+        # Agents worked inside the room folder and on the share: the prompt says where to work
+        $created.JoinPrompt | Should -Match 'Work from a local folder of your own on this machine, never from the room folder and never from a folder on a share'
         # An agent in a sandbox cannot run join at all: the prompt itself says what to do then, and names no product
         $created.JoinPrompt | Should -Match 'If the join command above is refused, blocked or cannot start, or cannot reach the room folder: check once whether the folder exists, then change nothing, stop and tell your owner the exact error'
         # The stop is for joining only: an agent in the room that read it as a standing rule went silent after one

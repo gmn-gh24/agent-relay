@@ -102,7 +102,9 @@ Describe 'Parity on <Engine>' -Tag 'Parity' -ForEach $engineCases {
             Write-ParityFile $seat $text
             $call = Get-ParityCall
             $fast = @{ RELAY_MINUTE_SECONDS = '1' }
-            (Invoke-Parity 'emma' @('wait', '2') $fast).ExitCode | Should -Be 3
+            $quiet = Invoke-Parity 'emma' @('wait', '2') $fast
+            $quiet.ExitCode | Should -Be 0
+            (Get-ParityLine $quiet.Output) | Should -Contain '=== nothing arrived in 2 minutes: that is normal, not an error ==='
             $parked = Invoke-Parity 'emma' @('wait', '2') $fast
             $parked.ExitCode | Should -Be 6
             $lines = Get-ParityLine $parked.Output

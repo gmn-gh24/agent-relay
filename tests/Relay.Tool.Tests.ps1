@@ -285,6 +285,26 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             (Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('show', 'open')).Output | Should -Match 'no open requests'
         }
 
+        It 'sends a one-line draft whole: the line is the subject, cut at 120 characters, and the whole line is the text' {
+            # A result written as one long line lost everything after the subject's 120 characters
+            $line = 'Result: the build passed on both engines, every test file ended with its RESULT line, and the two findings are in the attached report under the names of the files they concern.'
+            $line.Length | Should -BeGreaterThan 120
+            $sent = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text $line
+            $sent.ExitCode | Should -Be 0
+            $sentId = [regex]::Match($sent.Output, 'SENT olivia-emma-(\d+) ').Groups[1].Value
+            $sentId | Should -Match '^\d{4}$'
+            $message = Read-RelayTestMessage (Join-Path $room "agents\emma\inbox\olivia-$sentId.md")
+            $message['subject'] | Should -BeExactly $line.Substring(0, 120).TrimEnd()
+            $message['Body'] | Should -BeExactly $line
+            # A short line is the subject and the text, as before
+            $short = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text 'Done.'
+            $shortId = [regex]::Match($short.Output, 'SENT olivia-emma-(\d+) ').Groups[1].Value
+            $shortId | Should -Match '^\d{4}$'
+            $message = Read-RelayTestMessage (Join-Path $room "agents\emma\inbox\olivia-$shortId.md")
+            $message['subject'] | Should -BeExactly 'Done.'
+            $message['Body'] | Should -BeExactly 'Done.'
+        }
+
         It 'takes only a file named like a message for one: an agent name, a hyphen, four to six digits, .md' {
             $inbox = Join-Path $room 'agents\emma\inbox'
             $task = "---`nid: olivia-emma-0012`nfrom: olivia`nto: emma`ntype: task`nre: `nsubject: a file with another name`nsent_utc: 2026-10-10T08:00:00Z`nexpects: reply`n---`nDo it.`n"
@@ -468,7 +488,8 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             (Read-RelayTestMessage (Join-Path $room 'agents\olivia\inbox\emma-0002.md'))['expects'] | Should -Be 'proceed 1'
 
             $unseen = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '2') -Environment $fast
-            $unseen.ExitCode | Should -Be 3
+            $unseen.ExitCode | Should -Be 0
+            $unseen.Output | Should -Match 'nothing arrived in 2 minutes: that is normal, not an error'
             $unseen.Output | Should -Not -Match 'no objection'
 
             (Invoke-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('check')).Output | Should -Match 'proposal from Emma'
@@ -496,7 +517,7 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $told.Output | Should -Match 'DO: it was denied\.'
             $told.Output | Should -Not -Match 'no objection'
             $after = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '3') -Environment $fast
-            $after.ExitCode | Should -Be 3
+            $after.ExitCode | Should -Be 0
             $after.Output | Should -Not -Match 'no objection'
         }
 
@@ -535,18 +556,37 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $woken.Output | Should -Match 'Found by the rescan\.'
         }
 
-        It 'returns 3 when nothing arrives, and parks a loop agent after its limit' {
+        It 'returns 0 and says that it is normal when nothing arrives, and parks a loop agent after its limit' {
+            # A timed-out wait is not an error: a product that showed every exit code but 0 as a failure made its agent
+            # stop waiting after the first quiet wait
             $seat = Join-Path $room 'agents\emma\seat'
             [System.IO.File]::WriteAllText($seat, (([System.IO.File]::ReadAllText($seat)) -replace 'park_after: \d+', 'park_after: 2'))
             $fast = @{ RELAY_MINUTE_SECONDS = '1' }
             $first = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '2') -Environment $fast
-            $first.ExitCode | Should -Be 3
+            $first.ExitCode | Should -Be 0
+            $first.Output | Should -Match '(?m)^=== nothing arrived in 2 minutes: that is normal, not an error ===$'
             $first.Output | Should -Match 'NEXT: run it again'
             (Get-Content -LiteralPath (Join-Path $room 'agents\emma\status') -Raw) | Should -Match 'state: idle'
             $second = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '2') -Environment $fast
             $second.ExitCode | Should -Be 6
             $second.Output | Should -Match 'you are parked'
             (Get-Content -LiteralPath (Join-Path $room 'agents\emma\status') -Raw) | Should -Match 'state: parked'
+        }
+
+        It 'never parks a loop agent whose seat says park_after 0' {
+            $seat = Join-Path $room 'agents\emma\seat'
+            [System.IO.File]::WriteAllText($seat, (([System.IO.File]::ReadAllText($seat)) -replace 'park_after: \d+', 'park_after: 0'))
+            # A minute of one second makes the coordinator's heartbeat look old at once: keep it in the future
+            [System.IO.File]::SetLastWriteTimeUtc((Join-Path $room 'agents\olivia\alive'), [DateTime]::UtcNow.AddMinutes(30))
+            $fast = @{ RELAY_MINUTE_SECONDS = '1' }
+            foreach ($round in 1..3) {
+                $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '1') -Environment $fast
+                $result.ExitCode | Should -Be 0
+                $result.Output | Should -Match 'nothing arrived in 1 minutes: that is normal, not an error'
+                $result.Output | Should -Not -Match 'parked'
+            }
+            (Get-Content -LiteralPath (Join-Path $room 'agents\emma\state') -Raw) | Should -Match 'idle_timeouts: 3'
+            (Get-Content -LiteralPath (Join-Path $room 'agents\emma\status') -Raw) | Should -Match 'state: idle'
         }
 
         It 'ends a second wait with 4 while the first one stays alive, and frees the lease of a killed one at once' {
@@ -561,7 +601,8 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $first.Process.Kill()
             $null = $first.Process.WaitForExit(5000)
             $third = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '2') -Environment @{ RELAY_MINUTE_SECONDS = '1' } -TimeoutSeconds 40
-            $third.ExitCode | Should -Be 3
+            $third.ExitCode | Should -Be 0
+            $third.Output | Should -Match 'nothing arrived in 2 minutes'
         }
 
         It 'says that its wait was stopped, and how to listen again, when its host stops it gracefully' {
@@ -587,7 +628,8 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $silent.ExitCode | Should -Be 0
             $silent.Output | Should -Match 'the coordinator has given no sign of life for \d+ minutes'
             $again = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '15') -Environment @{ RELAY_MINUTE_SECONDS = '1' } -TimeoutSeconds 60
-            $again.ExitCode | Should -Be 3
+            $again.ExitCode | Should -Be 0
+            $again.Output | Should -Match 'nothing arrived in 15 minutes'
         }
 
         It 'counts a room whose inbox folder is gone as unreachable, and ends the wait after thirty minutes of it' {
@@ -617,7 +659,8 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $paused.Output | Should -Match '=== you are paused ==='
             $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Held`n`nThis waits."
             $held = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '3') -Environment @{ RELAY_MINUTE_SECONDS = '1' }
-            $held.ExitCode | Should -Be 3
+            $held.ExitCode | Should -Be 0
+            $held.Output | Should -Match 'nothing arrived in 3 minutes'
             $held.Output | Should -Not -Match 'This waits\.'
             [System.IO.File]::WriteAllText($control, "state: run`nnote: `n")
             $resumed = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')

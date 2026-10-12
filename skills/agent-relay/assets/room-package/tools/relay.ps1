@@ -14,9 +14,9 @@
     it. Every output ends with a NEXT: line that says what to do now. PROTOCOL.md in the room is the reference.
 
 .NOTES
-    Exit codes: 0 done, or something for you; 1 usage or error; 2 room unreachable; 3 nothing arrived in time,
-    run wait again; 4 another wait already runs for you; 5 stop (room closed, or you were stopped, replaced or
-    retired); 6 parked, wait for the owner.
+    Exit codes: 0 done, or something for you (a wait that timed out too: nothing arrived, run it again);
+    1 usage or error; 2 room unreachable; 3 nothing new (check only); 4 another wait already runs for you;
+    5 stop (room closed, or you were stopped, replaced or retired); 6 parked, wait for the owner.
 
     No param block on purpose: arguments are plain words, and the tool reads them itself. ASCII only.
 #>
@@ -30,7 +30,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.2.3'
+$script:ToolVersion = '3.3.0'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -613,11 +613,14 @@ function Read-Draft {
     $lines = @($text -split "`n")
     $index = 0
     while ($index -lt $lines.Count -and [string]::IsNullOrWhiteSpace($lines[$index])) { $index++ }
-    $subject = ConvertTo-HeaderText ((($lines[$index]) -replace '^\s*#+\s*', '') -replace '^(?i)subject:\s*', '')
+    $first = ConvertTo-HeaderText ((($lines[$index]) -replace '^\s*#+\s*', '') -replace '^(?i)subject:\s*', '')
+    $subject = $first
     if ((Get-CharCount $subject) -gt 120) { $subject = (Get-CharPrefix $subject 120).TrimEnd(' ', "`t") }
     $body = ''
     if ($index + 1 -lt $lines.Count) { $body = ((($lines[($index + 1)..($lines.Count - 1)]) -join "`n") -replace '^(\s*\n)+', '').TrimEnd() }
-    if ([string]::IsNullOrWhiteSpace($body)) { $body = $subject }
+    # A draft of one line is sent whole: the line is the subject (cut at 120 characters) and, when it is longer
+    # than that, the whole line is the text too, so nothing an agent wrote is lost
+    if ([string]::IsNullOrWhiteSpace($body)) { $body = $first }
     return [pscustomobject]@{ Subject = $subject; Body = $body; Path = $path }
 }
 
@@ -2815,6 +2818,8 @@ function Invoke-Wait {
     $lastSilenceCheck = [DateTime]::MinValue
     $unreachableSince = $null
     $code = -1
+    # Set when the wait ran out of time (or a check found nothing): the status says idle then, whatever the code
+    $timedOut = $false
     if (-not $Once) { Add-Journal 'wait' "process $PID listens" }
     Write-Status 'listening' ''
     # While this agent listens, its tab says who it is
@@ -2908,6 +2913,7 @@ function Invoke-Wait {
             if ($Once) {
                 Say "=== nothing new for $($script:Me) ==="
                 Say "NEXT: nothing to do now. Look again with: $(Get-Call) check"
+                $timedOut = $true
                 $code = 3
                 break
             }
@@ -2915,7 +2921,9 @@ function Invoke-Wait {
                 $idle = (Get-Number (Get-State) 'idle_timeouts' 0) + 1
                 Save-StateValue 'idle_timeouts' ([string]$idle)
                 Add-Journal 'timeout' "$MaxMinutes minutes, $idle in a row"
-                if ($script:Wake -eq 'loop' -and $idle -ge $script:ParkAfter) {
+                # park_after 0: this agent is never parked, however long nothing comes (a product whose user wants
+                # it to keep listening)
+                if ($script:Wake -eq 'loop' -and $script:ParkAfter -gt 0 -and $idle -ge $script:ParkAfter) {
                     Add-Journal 'parked' ''
                     Write-Status 'parked' "idle through $idle waits"
                     Say "=== nothing arrived in $idle waits in a row: you are parked ==="
@@ -2923,9 +2931,12 @@ function Invoke-Wait {
                     $code = 6
                     break
                 }
-                Say "=== nothing arrived in $MaxMinutes minutes ==="
+                # A wait that timed out ends with 0, like one that delivered: a product that shows every code but 0
+                # as a failure made its agent stop waiting after the first quiet wait
+                Say "=== nothing arrived in $MaxMinutes minutes: that is normal, not an error ==="
                 Say "NEXT: run it again: $(Get-Call) wait$(Get-WaitMode)"
-                $code = 3
+                $timedOut = $true
+                $code = 0
                 break
             }
 
@@ -2942,7 +2953,7 @@ function Invoke-Wait {
             $watcher.Dispose()
         }
         Clear-Lease $token
-        if ($code -eq 3) { Write-Status 'idle' 'wait timed out' }
+        if ($timedOut) { Write-Status 'idle' 'wait timed out' }
         if (-not $Once) { Add-Journal 'wait-end' "process $PID code $code" }
         # A wait that ends with no answer (stopped by its host or by Ctrl+C, or broken by an error) says so: an exit
         # without a word would leave the agent believing it still listens, with nobody listening for it

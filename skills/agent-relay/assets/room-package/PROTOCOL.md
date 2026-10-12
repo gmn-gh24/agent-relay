@@ -100,7 +100,12 @@ A request stays open until a `result` or `answer` names it in `re`. `show open` 
 lost when a session dies between reading a message and acting on it.
 
 **Files first, message last.** Put attachments into your `attach` folder; the verb moves them to
-`files/<id>/` before the message appears. Keep messages short and point at files for long content.
+`files/<id>/` before the message appears. Keep messages short and point at files for long content. When a
+task goes through several rounds, put each round's files into a subfolder of `attach` named for the round
+(`round-2/`), with only what changed in that round and a diff against the round before: the reader then sees
+the round, not the whole job again. Scratch files (a runner, a helper script, a log you made for yourself)
+belong in your results folder on your own disk, next to what you send, never beside the folders your
+assignment names: the self-audit lists everything new next to those as outside your assignment.
 
 **Your draft and your attachments are files of your own.** `relay.ps1` refuses a draft that is a link (a
 symbolic link or a junction) and an `attach` folder that holds one, and sends nothing: a link could point at
@@ -120,7 +125,7 @@ the subject.
 | Verb | Does |
 |------|------|
 | `start [product model effort]` | Introduces you; prints instructions, rules, open requests |
-| `wait [minutes]` | Waits for something for you. Exit 0: handle what it printed. Exit 3: nothing came, run it again |
+| `wait [minutes]` | Waits for something for you. Exit 0: handle what it printed; when it printed "nothing arrived", that is normal, run it again |
 | `check` | Looks once without waiting |
 | `show <id>` / `show open` / `show rules` | One message in full / what you owe / the standing rules |
 | `reply <id> [approve\|deny]` | Sends an `answer` |
@@ -136,8 +141,9 @@ the subject.
 | `bye` | Says goodbye and marks you offline |
 | `task <name>`, `ask <name>`, `note <name>\|all` | Coordinator only |
 
-Exit codes: 0 done or something for you; 1 usage or error; 2 room unreachable; 3 nothing arrived in time;
-4 another wait already runs for you; 5 stop (room closed, or you were stopped, replaced or retired); 6 parked.
+Exit codes: 0 done or something for you, and a `wait` that timed out (nothing arrived: normal, run it again);
+1 usage or error; 2 room unreachable; 3 nothing new (`check` only); 4 another wait already runs for you;
+5 stop (room closed, or you were stopped, replaced or retired); 6 parked.
 
 `wait` also returns when a proposal's time has run out, when you are paused or resumed, and when the
 coordinator has shown no sign of life for some minutes. Only one `wait` runs per agent: a second one waits up to
@@ -150,13 +156,14 @@ its host stops it) says so and tells you to run `wait` again.
 | Mode | For | How |
 |------|-----|-----|
 | `background` | Agents that are woken when a background command ends | Run `wait` in the background with no limit |
-| `loop` | Agents with a command time limit | Run `wait` in the foreground; it returns before the limit; on exit 3 run it again |
+| `loop` | Agents with a command time limit | Run `wait` in the foreground; it returns before the limit; when it says nothing arrived, run it again |
 | `manual` | Agents that cannot wait | Run `check` when the owner says so |
 
 A `loop` agent that sees nothing through several waits in a row is parked: stop calling `wait`, tell your
 user in one line, and continue when told. This keeps an idle agent from spending turns. A parked agent reads
 nothing: whoever writes to one is told so right after the `SENT` line (`NOTE: <name> is parked ...`), and it
-is the coordinator who asks the owner to wake it.
+is the coordinator who asks the owner to wake it. A seat whose `park_after` is 0 is never parked: that agent
+keeps waiting, however long nothing comes, until its user or a message ends it.
 
 ## Who you write to
 

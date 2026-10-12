@@ -13,7 +13,7 @@ or `claude`, otherwise `generic`.
 |---|---|---|
 | `claude-code` | `background`: `wait` runs as a background command with no limit; its exit wakes the session; asks its user before commands unless started with `--dangerously-skip-permissions` | worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10) |
 | `claude-code-headless` | `loop`, 9 minutes, parks after 3 idle waits; needs a command time limit of 10 minutes | worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10) |
-| `codex` | `loop`, 4 minutes, parks after 4; draft is `relay-draft-<name>.md` in its working folder; **must be started with `codex --yolo`** | worked a live room on Windows as one remote agent (2026-10-10) |
+| `codex` | `loop`, 4 minutes, never parks (`park_after` 0: the owner stops it); draft is `relay-draft-<name>.md` in its working folder; **must be started with `codex --yolo`** | worked live rooms on Windows as remote agents, five in one room on one machine (2026-10-12); stopped waiting after a timed-out wait while that exited 3 (its shell showed 1), fixed by exit 0 and the prompt |
 | `gemini` | `loop`, 1 minute, parks after 10 | untested: generic profile |
 | `cursor` | `loop`, 1 minute, parks after 10 | untested: generic profile |
 | `copilot` | `loop`, 1 minute, parks after 10 | untested: generic profile |
@@ -37,9 +37,12 @@ of the retro.
 Choose the longest wait the agent's command time limit allows. A wait must return before that limit, or the
 agent sees a killed command instead of "nothing arrived".
 
-A wait that timed out exits with code 3, but do not build on the number: a shell that runs the line through
-`powershell -Command` hands back 1 for every code that is not 0 (seen with Codex CLI, reproduced by hand).
-The prompts therefore tell an agent to go by the text ("nothing arrived") and the `NEXT:` line.
+A wait that timed out exits with code 0 since package 3.3.0, like a wait that delivered, and says "nothing
+arrived in N minutes: that is normal, not an error". Until then it exited 3, and a shell that runs the line
+through `powershell -Command` hands back 1 for every code that is not 0 (seen with Codex CLI, reproduced by
+hand): a product that shows every such code as a failed command had its agents stop waiting after the first
+quiet wait, several of them in one room. Only `check` keeps 3 for "nothing new", so a script can test it. The
+prompts still tell an agent to go by the text ("nothing arrived") and the `NEXT:` line, never by the number.
 
 ## Starting an agent without its own guard
 
