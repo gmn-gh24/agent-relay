@@ -200,7 +200,8 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $end = $text.IndexOf('## Your report', [System.StringComparison]::Ordinal)
             ($cut -gt 0 -and $end -gt $cut) | Should -BeTrue
             [System.IO.File]::WriteAllText($roomFile, $text.Substring(0, $cut) + $text.Substring($end))
-            $canon = Join-Path (Join-Path (Join-Path $env:AGENT_RELAY_LOCAL 'rooms') 'template') 'canon'
+            # The template room's machine-state folder (another test may have pointed AGENT_RELAY_LOCAL elsewhere since)
+            $canon = Join-Path $root 'local\rooms\template\canon'
             (Get-Content -LiteralPath (Join-Path $canon 'agents\emma\ASSIGNMENT.md') -Raw) | Should -Match '## Never'
             $task = "Publish the package`n`nPush the branch and publish the package to the feed."
             # The tool in the room reads the room's copy: the line is gone, the task goes
