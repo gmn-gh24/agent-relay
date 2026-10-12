@@ -25,12 +25,12 @@
     "label": "Codex CLI",
     "wake": "loop",
     "wait_minutes": 4,
-    "park_after": 4,
+    "park_after": 0,
     "shell": { "windows": "powershell" },
     "draft": "relay-draft-{name}.md",
-    "prompt_extra": "The wait command runs for up to 4 minutes. Start it, then keep waiting on that same running command until it exits; do not start a second one. When it says nothing arrived, run it again. If the command above is refused or cannot start, change nothing, stop, and tell your user to start you again with codex --yolo.",
+    "prompt_extra": "The wait command runs for up to 4 minutes. Start it, then keep waiting on that same running command until it exits; do not start a second one. When it says nothing arrived, run it again at once: a wait that ends with nothing is normal, not an error, and it is never a reason to stop. You never stop waiting on your own; only your user, or a message from the room that tells you to, ends it. If the command above is refused or cannot start, change nothing, stop, and tell your user to start you again with codex --yolo.",
     "coordinator_note": "NOTE: start Codex with codex --yolo: without it Codex keeps asking its user and its sandbox blocks the room's commands",
-    "status": "worked a live room on Windows as one remote agent (2026-10-10): must be started with codex --yolo, reports exit code 1 for a wait that timed out, parks after four idle waits"
+    "status": "worked live rooms on Windows as remote agents, up to five in one room on one machine (2026-10-12): must be started with codex --yolo; took a wait that timed out (then exit 3, shown by its shell as 1) for a failure and stopped waiting, so a timed-out wait now exits 0 and says it is normal; is never parked (park_after 0), the owner stops it"
   },
   "gemini": {
     "label": "Gemini CLI",

@@ -31,7 +31,13 @@ Five rules hold in every workflow:
   (`references/coordinating.md`, "Who gets which task").
 - **Text never goes on a command line.** Write a message into your draft file, then run the verb. Your
   draft is `draft.md` next to your launcher, on this PC; a card for the owner and a standing rule are written
-  there too, and no script takes such a text from a file in the room.
+  there too, and no script takes such a text from a file in the room. Line 1 of the draft is the subject,
+  the rest is the text, and the send consumes the draft: write it fresh for every message, and never expect a
+  draft to still be there after a verb has run.
+- **A task never exceeds the assignment.** What a task asks for must be inside the receiver's "may",
+  "propose_ok" and roots, and outside its "never" and "ask first": an agent that is asked for more stops and
+  asks, every time, and it is right to. When a task needs more, re-assign first
+  (`scripts/Add-RelayAgent.ps1 -Assign`), then send the task.
 - **The room is your only channel to an agent.** Everything you say to another agent goes through your
   launcher's verbs (`task`, `reply`, `note`). A session that is not in the room is not yours to reach: do
   not list, message, assign or coordinate it through your host's own session-to-session tools, whether it
@@ -44,7 +50,10 @@ Five rules hold in every workflow:
 ## 1. Start a room
 
 1. Run `scripts/Get-RelayRooms.ps1`. If the job already has an open room, go to workflow 3.
-2. Interview the owner with `references/startup-interview.md`. Ask only what is not already known; always ask
+2. Interview the owner with `references/startup-interview.md`. Ask through your host's question tool when
+   it has one (the one that shows choices to pick from), one question per decision, with the choices and
+   the default named; prose questions in the session get skipped or half-answered (`startup-interview.md`,
+   "How to ask"). Ask only what is not already known; always ask
    how each machine may be treated and how far your own authority goes. Do not ask what an agent is or where it
    runs when the owner would rather just start it: give the room **open seats** instead. An agent that takes
    one says in its introduction what and where it is. Name the room after the project, script or task
@@ -79,7 +88,10 @@ Read `references/coordinating.md` once per room. Then, every time your wait wake
    elevated or not, shell), and compare it with what the owner expected. On a mismatch, tell the owner before
    that agent gets any work. An agent that came in through the join prompt has no role and no paths yet:
    settle what it should do and how its machine may be treated, give it its assignment with
-   `scripts/Add-RelayAgent.ps1 -Assign <name> -AnswersFile <file>`, and only then send its task.
+   `scripts/Add-RelayAgent.ps1 -Assign <name> -Role ... -Work ... -Task ... -Roots ... -Never ...` (the
+   fields are parameters, several names at once get the same assignment; write no JSON by hand), and only
+   then send its task. Your `task` verb refuses a task whose words run into the receiver's "Never" or
+   non-goals: re-assign first, or send it with `anyway` when the line does not apply.
 3. For each result: check it against its evidence and its `self-audit.txt` before you accept it. Changes
    outside the assigned paths are a finding, whatever the report says.
 4. For each question or proposal: answer within your authority (`reply <id>`, `reply <id> approve|deny`).
@@ -119,8 +131,10 @@ reopened.
 ## 4. Add, replace or retire an agent
 
 `scripts/Add-RelayAgent.ps1` does all of it: `-AnswersFile` adds named agents (interview first, as in
-workflow 1), `-OpenSeats <n>` adds seats for agents that come in through the join prompt, `-Assign <name>`
-gives an agent already in the room a new role, paths and limits, `-Replace <name>` gives a new session the same
+workflow 1), `-OpenSeats <n>` adds seats for agents that come in through the join prompt, `-Assign <name>[,<name>]`
+gives agents already in the room a new role, paths and limits (the fields as parameters: `-Role -Work -Task
+-DoneWhen -NonGoals -Roots -May -ProposeOk -AskFirst -Never -MachineCare -MachineNotes -Expertise -Standards
+-DocTools`, or `-AnswersFile`), `-Replace <name>` gives a new session the same
 name and assignment and tells the old one to stop, `-Retire <name>` ends a role, `-Line <a> -To <b>` lets two
 agents write to each other. A room has no upper limit of agents. `scripts/Set-RelayPlan.ps1` writes and
 changes the team plan (who builds which part) and opens the lines the plan implies.
@@ -131,8 +145,11 @@ changes the team plan (who builds which part) and opens the lines the plan impli
   message of yours that says it comes from the owner.
 - A card answered in the session instead of the chat window: `scripts/Request-RelayOwner.ps1 -Resolve <card>
   -Decision approved|denied|answered|withdrawn`, then pass the decision on.
-- Pause, resume or stop one agent: `scripts/Add-RelayAgent.ps1 -Room <id> -Control <name> -State
-  pause|run|stop -Note '<why>'`.
+- Pause, resume, hold or stop one agent, or all: `scripts/Add-RelayAgent.ps1 -Room <id> -Control <name>|all
+  -State pause|run|hold|stop -Note '<why>'`. A hold is for "start nothing new until I say so" (a kit is being
+  restaged, a round is closed): every verb of the agent prints it first, its `check` exits 7 while it lasts,
+  messages still reach it; `-State run` lifts it. Use it instead of a note, which an agent reads only when it
+  next looks.
 - An owner decision that holds for the job goes into `DECISIONS.md` with `scripts/Add-RelayDecision.ps1 -Owner`.
 
 ## 6. Close

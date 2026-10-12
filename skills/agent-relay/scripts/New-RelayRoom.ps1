@@ -39,8 +39,38 @@
     cannot be finished leaves nothing behind: its folder and this PC's folder of it are removed again. A folder
     of this PC for the same room id that an earlier attempt left is not built on: it is refused.
 
+    The room's own answers can also be given as parameters, without a file: -Job, -RoomName (or -RoomId),
+    -RoomsRoot, -Authority, -OpenSeats, -WorkFiles, -ReachPath, -NoTabTitles. A room of open seats needs no
+    file at all; the agents then get their assignments with Add-RelayAgent.ps1 -Assign, whose fields are
+    parameters too. A parameter given with a file wins over the file's value. Named agents still come from the
+    file ("agents").
+
 .PARAMETER AnswersFile
-    Path of the JSON answers file.
+    Path of the JSON answers file. Not needed when -Job is given.
+
+.PARAMETER Job
+    What the room is for, in one line ("job").
+
+.PARAMETER RoomName
+    The room's name in a few words ("room_name"); -RoomId sets the folder name as given ("room_id").
+
+.PARAMETER RoomsRoot
+    The folder the room is made in ("rooms_root").
+
+.PARAMETER Authority
+    within-task, report-after or owner-approves ("authority").
+
+.PARAMETER OpenSeats
+    How many seats nobody is named for ("open_seats").
+
+.PARAMETER WorkFiles
+    Files or folders copied into the room's work folder ("work_files").
+
+.PARAMETER ReachPath
+    The room folder as other machines reach it ("reach_path").
+
+.PARAMETER NoTabTitles
+    The agents' tools do not name their terminal tabs ("tab_titles": no).
 
 .PARAMETER NoClipboard
     Do not put the first start prompt on the clipboard (the tests use this).
@@ -51,13 +81,25 @@
 .EXAMPLE
     .\New-RelayRoom.ps1 -AnswersFile C:\temp\answers.json
 
+.EXAMPLE
+    .\New-RelayRoom.ps1 -Job 'Bring the import module tests to green' -RoomName 'import module tests' -RoomsRoot C:\temp\agent-relay -OpenSeats 3
+
 .NOTES
     Windows PowerShell 5.1 syntax, ASCII only.
 #>
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$AnswersFile,
+    [string]$AnswersFile = '',
+    [string]$Job,
+    [string]$RoomName,
+    [string]$RoomId,
+    [string]$RoomsRoot,
+    [ValidateSet('within-task', 'report-after', 'owner-approves')][string]$Authority,
+    [ValidateRange(0, 200)][int]$OpenSeats,
+    [AllowEmptyCollection()][string[]]$WorkFiles,
+    [string]$ReachPath,
+    [switch]$NoTabTitles,
     [switch]$NoClipboard,
     [switch]$PassThru
 )
@@ -66,8 +108,22 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 
-if (-not (Test-Path -LiteralPath $AnswersFile)) { throw "No answers file: $AnswersFile" }
-$answers = ConvertFrom-RelayJson (Read-RelayText $AnswersFile)
+if (-not $AnswersFile -and -not $PSBoundParameters.ContainsKey('Job')) { throw 'Give -AnswersFile, or the answers as parameters: -Job at least, with -OpenSeats (named agents need the file)' }
+$answers = [pscustomobject]@{}
+if ($AnswersFile) {
+    if (-not (Test-Path -LiteralPath $AnswersFile)) { throw "No answers file: $AnswersFile" }
+    $answers = ConvertFrom-RelayJson (Read-RelayText $AnswersFile)
+    if ($null -eq $answers -or $answers -is [array] -or $answers -is [string] -or $answers -is [ValueType]) { throw "The answers file $AnswersFile does not hold one JSON object" }
+}
+# A parameter given as well wins over the file's value
+$byParameter = [ordered]@{ Job = 'job'; RoomName = 'room_name'; RoomId = 'room_id'; RoomsRoot = 'rooms_root'; Authority = 'authority'; OpenSeats = 'open_seats'; WorkFiles = 'work_files'; ReachPath = 'reach_path' }
+foreach ($parameter in $byParameter.Keys) {
+    if (-not $PSBoundParameters.ContainsKey($parameter)) { continue }
+    $value = $PSBoundParameters[$parameter]
+    if ($value -is [array]) { $value = @(@($value) | ForEach-Object { [string]$_ }) }
+    $answers | Add-Member -NotePropertyName $byParameter[$parameter] -NotePropertyValue $value -Force
+}
+if ($NoTabTitles) { $answers | Add-Member -NotePropertyName 'tab_titles' -NotePropertyValue 'no' -Force }
 
 $job = ([string](Get-RelayProperty $answers 'job' '')).Trim()
 if (-not $job) { throw 'The answers file needs "job": one line that says what this room is for' }

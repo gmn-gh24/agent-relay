@@ -189,6 +189,11 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         (Read-RelayKeyValue (Join-Path $created.Path 'agents\emma\seat'))['wake'] | Should -Be 'background'
         $codex = [string]$created.Prompts['jack']
         $codex | Should -Match 'keep waiting on that same running command'
+        # Codex took a quiet wait for a failure and stopped waiting: its prompt says that it is normal, and that the agent
+        # never stops on its own; its seat is never parked
+        $codex | Should -Match 'a wait that ends with nothing is normal, not an error'
+        $codex | Should -Match 'You never stop waiting on your own'
+        (Read-RelayKeyValue (Join-Path $created.Path 'agents\jack\seat'))['park_after'] | Should -Be '0'
         # In its sandbox Codex CLI cannot run the room's commands: its prompt says what to do when they are refused
         $codex | Should -Match 'tell your user to start you again with codex --yolo'
         # The risk of a start without the product's guard is told to the owner, never to an agent
@@ -202,6 +207,8 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $jackStart | Should -Match 'relay-draft-jack\.md   \(in your working folder\)'
         $jackStart | Should -Match 'copied into this folder\s+before you send: `\S+agents\\jack\\attach`'
         $jackStart | Should -Match 'when it says nothing arrived, run it again'
+        # The limits of remember stand where the verb is explained, not only in the refusal
+        $jackStart | Should -Match 'it must be 15 to 500 characters long with up to 5 tags'
         $jackStart | Should -Not -Match '\{\{'
         $share | Should -Match 'your agent product as exactly as you know it \(for example claude-code-cli or codex-cli\), your model, and your reasoning effort setting'
         $shareSeat = Read-RelayKeyValue (Join-Path $created.Path 'agents\emma\seat')
@@ -246,6 +253,29 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         (Read-RelayKeyValue (Join-Path $fromJob.Path 'ROOM'))['tab_titles'] | Should -Be 'no'
         ConvertTo-RelayRoomSlug 'Deploy-BackupAgent.ps1 1.3' | Should -Be 'deploy-backupagent-ps1-1-3'
         ConvertTo-RelayRoomSlug '!!' | Should -Match '^room'
+    }
+
+    It 'builds a room of open seats from parameters alone, and lets a parameter win over the file' {
+        $null = New-Item -ItemType Directory -Path $root -Force
+        $env:AGENT_RELAY_LOCAL = Join-Path $root 'local'
+        $created = & (Join-Path $scripts 'New-RelayRoom.ps1') -Job 'Review the import module' -RoomName 'import module review' -RoomsRoot (Join-Path $root 'rooms') -Authority report-after -OpenSeats 2 -NoTabTitles -NoClipboard -PassThru
+        $created.Id | Should -Be 'import-module-review'
+        @($created.Seats).Count | Should -Be 3
+        $created.Prompts.Count | Should -Be 0
+        $created.JoinPrompt | Should -Match 'join\.cmd'
+        $info = Read-RelayKeyValue (Join-Path $created.Path 'ROOM')
+        $info['job'] | Should -Be 'Review the import module'
+        $info['authority'] | Should -Be 'report-after'
+        $info['tab_titles'] | Should -Be 'no'
+        # With a file: the parameter wins over the file's value, the rest comes from the file
+        $file = Join-Path $root 'both.json'
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject ([ordered]@{ job = 'From the file'; room_id = 'fromfile'; rooms_root = (Join-Path $root 'rooms'); open_seats = 1 })))
+        $both = & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $file -Job 'From the parameter' -OpenSeats 3 -NoClipboard -PassThru
+        $both.Id | Should -Be 'fromfile'
+        (Read-RelayKeyValue (Join-Path $both.Path 'ROOM'))['job'] | Should -Be 'From the parameter'
+        @(Get-RelayTestOpenSeat $both.Path).Count | Should -Be 3
+        # Neither a file nor a job: nothing to build from
+        { & (Join-Path $scripts 'New-RelayRoom.ps1') -OpenSeats 1 -NoClipboard } | Should -Throw '*Give -AnswersFile, or the answers as parameters*'
     }
 
     It 'refuses answers it cannot build a room from' {
@@ -639,14 +669,42 @@ Describe 'Add-RelayAgent' -Tag 'Scripts' {
         (Read-RelayKeyValue (Join-Path $room 'agents\emma\seat'))['kind'] | Should -Be 'generic'
     }
 
+    It 'refuses a hold on a room whose package knows none, names the update, and still pauses it' {
+        $object = Resolve-RelayRoom $id
+        $info = [ordered]@{}
+        foreach ($key in $object.Info.Keys) { $info[$key] = $object.Info[$key] }
+        $info['package'] = '3.3.1'
+        Write-RelayGuardedText $object 'ROOM' (ConvertTo-RelayKeyValueText $info)
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Control 'emma' -State hold -Note 'x' } | Should -Throw '*older than 3.4.0*Update-RelayRoom.ps1*'
+        (Read-RelayKeyValue (Join-Path $room 'agents\emma\control'))['state'] | Should -Be 'run'
+        (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Control 'emma' -State pause)[0] | Should -Match '^CONTROL emma: pause\.'
+    }
+
     It 'ends a retirement, a pause, a stop, a resume, a line and the join prompt with a NEXT line' {
         $retired = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Retire 'henry')
         $retired[$retired.Count - 1] | Should -Match '^NEXT: give what henry was working on to another agent'
-        foreach ($state in 'pause', 'stop', 'run') {
+        foreach ($state in 'pause', 'stop', 'run', 'hold') {
             $control = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Control 'emma' -State $state)
             $control[0] | Should -Match "^CONTROL emma: $state\."
             $control[$control.Count - 1] | Should -Match '^NEXT: '
         }
+        $control[$control.Count - 1] | Should -Match '^NEXT: every verb of the agent prints the hold first, its check exits 7 while it lasts'
+        # A hold on all: every agent but the coordinator and the retired, canonical copy first; the board says why
+        $held = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Control 'all' -State hold -Note 'the kit is being restaged')
+        $held[0] | Should -Match '^CONTROL emma, jack: hold\.'
+        $object = Resolve-RelayRoom $id
+        foreach ($name in 'emma', 'jack') {
+            (Read-RelayKeyValue (Join-Path $object.Canon "agents\$name\control"))['state'] | Should -Be 'hold'
+            (Read-RelayKeyValue (Join-Path $room "agents\$name\control"))['note'] | Should -Be 'the kit is being restaged'
+        }
+        (Read-RelayKeyValue (Join-Path $room 'agents\henry\control'))['state'] | Should -Be 'run'
+        (Read-RelayKeyValue (Join-Path $room 'agents\olivia\control'))['state'] | Should -Be 'run'
+        Start-TestAgent -Room $room -Names @('olivia', 'emma')
+        ((& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room $id) -join "`n") | Should -Match 'ATTENTION: control: hold \(the kit is being restaged\)'
+        $released = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Control 'all' -State run)
+        $released[0] | Should -Match '^CONTROL emma, jack: run\.'
+        (Read-RelayKeyValue (Join-Path $room 'agents\emma\control'))['state'] | Should -Be 'run'
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Control 'olivia' -State hold } | Should -Throw '*coordinator is not paused, held or stopped*'
         $line = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Line 'emma' -To 'jack')
         $line | Should -Be @('LINE open between emma and jack, both ways.', 'NEXT: tell both of them in a note what the line is for.')
         $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -OpenSeats 1 -NoClipboard
@@ -1400,6 +1458,11 @@ Describe 'Open seats' -Tag 'Scripts' {
         $created.JoinPrompt | Should -Match 'your reasoning effort setting if your session or its configuration shows one'
         $created.JoinPrompt | Should -Match 'what kind of agent you are, the computer and its address, the user, whether you run elevated, and your shell'
         $created.JoinPrompt | Should -Match 'Do not work around it and do not try other paths unless your owner gives you one'
+        # Agents guessed their model and effort at join: the prompt says to ask the user of the session, by a typed answer
+        $created.JoinPrompt | Should -Match 'ask the user of your own session for them, as a question the user answers by typing, and wait for the answer'
+        $created.JoinPrompt | Should -Match 'Take the words the user typed as they are'
+        # Agents worked inside the room folder and on the share: the prompt says where to work
+        $created.JoinPrompt | Should -Match 'Work from a local folder of your own on this machine, never from the room folder and never from a folder on a share'
         # An agent in a sandbox cannot run join at all: the prompt itself says what to do then, and names no product
         $created.JoinPrompt | Should -Match 'If the join command above is refused, blocked or cannot start, or cannot reach the room folder: check once whether the folder exists, then change nothing, stop and tell your owner the exact error'
         # The stop is for joining only: an agent in the room that read it as a standing rule went silent after one
@@ -1513,7 +1576,7 @@ Describe 'Open seats' -Tag 'Scripts' {
         $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'assign' -Control $name -State pause -Note 'wait a moment'
         $text = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'assign' -Assign $name -AnswersFile $file) -join "`n"
         $text | Should -Match "ASSIGNED ${name}: reviewer \(review\) on $([regex]::Escape([Environment]::MachineName)), machine in-use"
-        $text | Should -Match "NEXT: send $name its task now"
+        $text | Should -Match "NEXT: send $name the task now"
 
         $seat = Read-RelayKeyValue (Join-Path $room "agents\$name\seat")
         $seat['role'] | Should -Be 'reviewer'
@@ -1525,6 +1588,8 @@ Describe 'Open seats' -Tag 'Scripts' {
         Test-Path -LiteralPath (Join-Path $room "PROMPT-$name.txt") | Should -BeFalse
         $assignment = Get-Content -LiteralPath (Join-Path $room "agents\$name\ASSIGNMENT.md") -Raw
         $assignment | Should -Match '\*\*Role:\*\* reviewer'
+        # Where scratch files go, with and without assigned folders: next to a root they show as OUTSIDE in every audit
+        $assignment | Should -Match 'No work folder is assigned: your tasks say where to look\. Your own scratch files \(a runner, a helper script, a log\) go into a results folder on your own disk'
         $assignment | Should -Match 'Your field here: PowerShell'
         $assignment | Should -Match 'Review the module\.'
         $assignment | Should -Match '- Change any file\.'
@@ -1540,6 +1605,42 @@ Describe 'Open seats' -Tag 'Scripts' {
         $assignment | Should -Match '\*\*Role:\*\* reviewer'
         [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject ([ordered]@{ work = 'juggling' })))
         { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'assign' -Assign $name -AnswersFile $file } | Should -Throw '*juggling*'
+    }
+
+    It 'assigns several joined agents at once from parameters, with no JSON, and checks every name before it writes' {
+        $room = (New-RelayTestRoom -Root $root -RoomId 'params' -Extra @{ open_seats = 2 }).Path
+        $open = @(Get-RelayTestOpenSeat $room)
+        foreach ($product in 'codex', 'gemini') { (Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', $product, 'm', 'e')).ExitCode | Should -Be 0 }
+        # A backslash path, a dollar sign and quotes survive the command line, which a JSON heredoc lost
+        $lines = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'params' -Assign "$($open[0]),$($open[1])" -Role tester -Work testing -Task 'Run tests\Invoke-AllTests.ps1 from a copy of the kit; $env:TEMP is the place for it.' -DoneWhen 'A report with the RESULT lines is sent.' -Roots 'C:\work\kit=tests/*,docs/*.md', 'C:\work\ref' -NonGoals 'Fixing what fails.' -Never 'Change a file under src.', 'Push anything.' -MachineCare in-use -Expertise 'Pester 6', 'PowerShell')
+        $text = $lines -join "`n"
+        foreach ($name in $open) { $text | Should -Match "ASSIGNED ${name}: tester \(testing\)" }
+        $text | Should -Match "NEXT: send $($open[0]), $($open[1]) the task now"
+        foreach ($name in $open) {
+            $assignment = Get-Content -LiteralPath (Join-Path $room "agents\$name\ASSIGNMENT.md") -Raw
+            $assignment | Should -Match '\*\*Role:\*\* tester'
+            $assignment | Should -Match ([regex]::Escape('Run tests\Invoke-AllTests.ps1 from a copy of the kit; $env:TEMP is the place for it.'))
+            $assignment | Should -Match ([regex]::Escape('- `C:\work\kit`: you may change `tests/*`, `docs/*.md`. The rest of this folder is read-only for you.'))
+            $assignment | Should -Match ([regex]::Escape('- `C:\work\ref`: read-only for you.'))
+            $assignment | Should -Match '- Fixing what fails\.'
+            $assignment | Should -Match '- Change a file under src\.\s+- Push anything\.'
+            $assignment | Should -Match 'Your field here: Pester 6, PowerShell'
+            (Get-Content -LiteralPath (Join-Path $room "agents\$name\scope") -Raw) | Should -Match 'root: C:\\work\\kit\s+may: tests/\*\s+may: docs/\*\.md\s+root: C:\\work\\ref'
+        }
+        # A root as a hashtable, and the file's fields with a parameter over them
+        $file = Join-Path $root 'params.json'
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject ([ordered]@{ role = 'from-file'; work = 'review' })))
+        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'params' -Assign $open[0] -AnswersFile $file -Role reviewer -Roots @{ root = 'C:\work\kit'; may = @('src/*') }
+        $assignment = Get-Content -LiteralPath (Join-Path $room "agents\$($open[0])\ASSIGNMENT.md") -Raw
+        $assignment | Should -Match '\*\*Role:\*\* reviewer'
+        $assignment | Should -Match ([regex]::Escape('- `C:\work\kit`: you may change `src/*`.'))
+        (Read-RelayKeyValue (Join-Path $room "agents\$($open[0])\seat"))['role'] | Should -Be 'reviewer'
+        # A second name that fails leaves the first unchanged; no field at all is refused
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'params' -Assign $open[0], 'nobody' -Role builder } | Should -Throw "*There is no agent 'nobody'*"
+        (Read-RelayKeyValue (Join-Path $room "agents\$($open[0])\seat"))['role'] | Should -Be 'reviewer'
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'params' -Assign $open[0] } | Should -Throw '*Give the assignment*'
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'params' -Assign $open[0] -Roots '=src/*' } | Should -Throw '*A root is a folder*'
+        @(Test-RelayTamper (Resolve-RelayRoom 'params')).Count | Should -Be 0
     }
 
     It 'brings the tools of a running room up to the package, and only when asked' {

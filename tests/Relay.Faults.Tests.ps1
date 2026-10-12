@@ -280,7 +280,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
         It 'goes on waiting when every new file is unreadable' {
             Write-InboxFile -Room $room -Name 'olivia-0001.md' -Text ''
             $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '1') -Environment @{ RELAY_MINUTE_SECONDS = [string]$waitMinute } -TimeoutSeconds (60 * $pace)
-            $result.ExitCode | Should -Be 3
+            $result.ExitCode | Should -Be 0
             $result.Output | Should -Match 'nothing arrived in 1 minutes'
             Get-DeliveredText -Room $room | Should -Not -Match 'olivia-emma-0001'
         }
@@ -732,7 +732,8 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\proposals'), "emma-olivia-0002 1 $longAgo open`n")
             $after = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '3') -Environment $fast
             $after.Output | Should -Not -Match 'no objection'
-            $after.ExitCode | Should -Be 3
+            $after.ExitCode | Should -Be 0
+            $after.Output | Should -Match 'nothing arrived in 3 minutes'
             ([System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\proposals')) -replace "`r", '') | Should -Match '(?m)^emma-olivia-0002 1 \S+ closed$'
         }
 
@@ -764,7 +765,8 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             Write-InboxFile -Room $room -Name 'olivia-0001.md' -Text ''
             $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '1') -Environment $fast -TimeoutSeconds (60 * $pace)
             $result.Output | Should -Not -Match 'no objection'
-            $result.ExitCode | Should -Be 3
+            $result.ExitCode | Should -Be 0
+            $result.Output | Should -Match 'nothing arrived in 1 minutes'
         }
 
         It 'leaves the proposals file alone while another call holds its lock, and goes on' {
@@ -1061,7 +1063,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
                 $waited = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '1') -Environment @{ RELAY_MINUTE_SECONDS = '4' } -TimeoutSeconds (45 * $pace)
                 $watch.Stop()
                 $waited.TimedOut | Should -BeFalse
-                $waited.ExitCode | Should -BeIn @(3, 4)
+                $waited.ExitCode | Should -BeIn @(0, 4)
                 $watch.Elapsed.TotalSeconds | Should -BeLessThan (30 * $pace)
             }
             finally {
@@ -1177,7 +1179,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             # The wait is not ended by it (that is exit 4, only another token does that), whether or not it delivers meanwhile
             $result = Wait-RelayTool -Handle $waiting -TimeoutSeconds (90 * $pace)
             $result.TimedOut | Should -BeFalse
-            $result.ExitCode | Should -BeIn @(0, 3)
+            $result.ExitCode | Should -Be 0
             $result.Output | Should -Not -Match 'took over'
         }
         It 'refuses a start while a lease without a token is young, and takes the lease over when it is old' {
@@ -1248,10 +1250,10 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             # A minute of one second makes the coordinator's heartbeat look old at once: keep it in the future
             [System.IO.File]::SetLastWriteTimeUtc((Join-Path $room 'agents\olivia\alive'), [DateTime]::UtcNow.AddMinutes(30))
             $eight = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '08') -Environment $fast -TimeoutSeconds (60 * $pace)
-            $eight.ExitCode | Should -Be 3
+            $eight.ExitCode | Should -Be 0
             $eight.Output | Should -Match 'nothing arrived in 8 minutes'
             $ten = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '010') -Environment $fast -TimeoutSeconds (60 * $pace)
-            $ten.ExitCode | Should -Be 3
+            $ten.ExitCode | Should -Be 0
             $ten.Output | Should -Match 'nothing arrived in 10 minutes'
         }
     }

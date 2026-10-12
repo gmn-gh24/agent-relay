@@ -13,7 +13,7 @@ or `claude`, otherwise `generic`.
 |---|---|---|
 | `claude-code` | `background`: `wait` runs as a background command with no limit; its exit wakes the session; asks its user before commands unless started with `--dangerously-skip-permissions` | worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10) |
 | `claude-code-headless` | `loop`, 9 minutes, parks after 3 idle waits; needs a command time limit of 10 minutes | worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10) |
-| `codex` | `loop`, 4 minutes, parks after 4; draft is `relay-draft-<name>.md` in its working folder; **must be started with `codex --yolo`** | worked a live room on Windows as one remote agent (2026-10-10) |
+| `codex` | `loop`, 4 minutes, never parks (`park_after` 0: the owner stops it); draft is `relay-draft-<name>.md` in its working folder; **must be started with `codex --yolo`** | worked live rooms on Windows as remote agents, five in one room on one machine (2026-10-12); stopped waiting after a timed-out wait while that exited 3 (its shell showed 1), fixed by exit 0 and the prompt |
 | `gemini` | `loop`, 1 minute, parks after 10 | untested: generic profile |
 | `cursor` | `loop`, 1 minute, parks after 10 | untested: generic profile |
 | `copilot` | `loop`, 1 minute, parks after 10 | untested: generic profile |
@@ -37,9 +37,12 @@ of the retro.
 Choose the longest wait the agent's command time limit allows. A wait must return before that limit, or the
 agent sees a killed command instead of "nothing arrived".
 
-A wait that timed out exits with code 3, but do not build on the number: a shell that runs the line through
-`powershell -Command` hands back 1 for every code that is not 0 (seen with Codex CLI, reproduced by hand).
-The prompts therefore tell an agent to go by the text ("nothing arrived") and the `NEXT:` line.
+A wait that timed out exits with code 0 since package 3.3.0, like a wait that delivered, and says "nothing
+arrived in N minutes: that is normal, not an error". Until then it exited 3, and a shell that runs the line
+through `powershell -Command` hands back 1 for every code that is not 0 (seen with Codex CLI, reproduced by
+hand): a product that shows every such code as a failed command had its agents stop waiting after the first
+quiet wait, several of them in one room. Only `check` keeps 3 for "nothing new", so a script can test it. The
+prompts still tell an agent to go by the text ("nothing arrived") and the `NEXT:` line, never by the number.
 
 ## Starting an agent without its own guard
 
@@ -76,6 +79,9 @@ it has one, with a mark in front that moves while it works. The room tool's tab 
 the first live room. While the agent works on a task Claude Code's own title is back. If the name should stay
 then as well, the owner can type `/rename <Name>` in that session (Claude Code shows a session's name on its
 tab), or start it with the environment variable `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`.
+Its command tool shows every exit code but 0 as an error: `robocopy` returns 1 for "files were copied", and
+an agent that copies a kit with it reports a failed copy, or copies again, until it reads the code. A task
+that has it copy files says so (`robocopy` codes below 8 are success), or has it copy with `Copy-Item`.
 
 **Claude Code, headless (`claude -p`).** No background wake: the wait runs in the foreground under the
 command time limit. It needs its shell and file tools allowed and the room folder added (`--allowedTools`,
@@ -98,7 +104,14 @@ and does nothing, which is the right thing for it to do. On Windows it runs comm
 agents may share that folder.
 A long command returns control to the model after some seconds and has to be polled; the prompt tells it to
 keep waiting on the same command and not to start a second wait (a second one waits about half a minute for the first and then exits with code 4). It
-reports exit code 1 for a wait that timed out (see above). Files to attach go into the agent's `attach`
+showed exit code 1 for a wait that timed out while that exited 3, and its agents took it for a failure (see
+above; a timed-out wait exits 0 since package 3.3.0). Its `wait_minutes` (4) is a guess that worked, not a
+measurement: the product's command time limit, after which it kills a foreground command, has not been
+measured. Measure it before a room that leans on Codex: in a Codex session on the owner's machine, run
+`powershell -NoProfile -Command "Start-Sleep -Seconds 240; 'alive after 240'"` and double the seconds until
+the command is killed instead of printing; the longest one that printed, less a minute, is the limit to put
+into `wait_minutes` here and in `agent-kinds.json`, with the date and the Codex version. Until then leave
+4. Files to attach go into the agent's `attach`
 folder in the room, not next to the draft: the instructions name the folder in full since an agent once made
 an `attach` folder in its working folder, which was the root of a share other jobs use.
 When the owner says "codex luna medium", that is the three words of an introduction: product, model, effort.
