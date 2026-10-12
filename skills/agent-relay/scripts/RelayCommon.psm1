@@ -2182,8 +2182,10 @@ function Add-RelayAgentSeat {
     $scopeText = ''
     if ($scope.Count -gt 0) { $scopeText = ($scope -join "`n") + "`n" }
     Write-RelayGuardedText $Room "$base/scope" $scopeText
-    $rootsText = 'No work folder is assigned: your tasks say where to look.'
-    if ($rootLines.Count -gt 0) { $rootsText = ($rootLines -join "`n") + "`n`nEverything outside these folders is off limits unless a list below says otherwise." }
+    # Scratch files beside an assigned folder show in every later self-audit as outside the assignment
+    $scratchNote = 'Your own scratch files (a runner, a helper script, a log) go into a results folder on your own disk, never into or next to the folders you work in: the self-audit lists every new file there as outside your assignment.'
+    $rootsText = 'No work folder is assigned: your tasks say where to look. ' + $scratchNote
+    if ($rootLines.Count -gt 0) { $rootsText = ($rootLines -join "`n") + "`n`nEverything outside these folders is off limits unless a list below says otherwise. " + $scratchNote }
 
     $waitLine = 'Run it as a background command: its exit wakes you.'
     if ($Spec['wake'] -eq 'loop') { $waitLine = "It returns within $($Spec['wait_minutes']) minute(s); when it says nothing arrived, run it again." }

@@ -622,3 +622,27 @@ day. What cost rounds, and what was changed:
   an agent after its run had started, a kit that lacked what the suites read, the product's command time
   limit against `wait_minutes`, a task that contradicts the receiver's assignment, and scratch files next to
   the working folder in the self-audit.
+
+## 2026-10-12: the open items of that room, wording (0.5.1)
+
+- **The limits of `remember` were learned from its refusals.** An agent found the 15 to 500 character limit
+  of an entry by running the verb three times; the limit stood in `PROTOCOL.md`, which agents rarely read, and
+  in the error text. Changed: `START-HERE.md` says next to the verb what counts (the whole draft joined into
+  one line), the limits, and that the verb writes nothing when they are missed.
+- **A kit that lacked what the suites read cost a round each time.** Reference masters, profiles and the
+  sibling scripts a drift guard compares were not in the kit; the agents reported failures that were missing
+  files, and a runner written by hand set strict mode into the test scope and lost its cmdlets under Windows
+  PowerShell started from PowerShell 7. Changed: `coordinating.md` has a checklist "The kit" under "Tasks":
+  everything the suites read, per-round folders with only that round's changes and a diff against the round
+  before, and a tested runner template (`-PassThru` with `Run.Exit` false, no `Set-StrictMode`, `PSModulePath`
+  rebuilt from the registry under Windows PowerShell 5.1, output to a file in the results folder).
+- **Scratch files beside the working folder showed as outside the assignment in every audit.** The runner
+  and its logs lay next to the kit, and every report after the first listed them as `OUTSIDE`, which the
+  coordinator had to read past each time. Changed: `ASSIGNMENT.md` says under "Where you work" that scratch
+  files go into a results folder on the agent's own disk, and why; `PROTOCOL.md` said it since 0.5.0.
+- **A copy that worked was reported as failed.** The agent's command tool shows every exit code but 0 as an
+  error, and `robocopy` returns 1 for "files were copied". Changed: a note in `agent-kinds.md` under Claude
+  Code: say in the task that `robocopy` codes below 8 are success, or have it copy with `Copy-Item`.
+- **Codex's command time limit is still a guess.** `wait_minutes` 4 worked, but nobody measured when the
+  product kills a foreground command. Not changed: the number stays; `agent-kinds.md` says how to measure it
+  in one Codex session and where to write the result. A cloud session without Codex cannot do it.
