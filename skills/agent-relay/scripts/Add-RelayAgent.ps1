@@ -21,12 +21,19 @@
     -OpenSeats     Adds that many seats nobody is named for. Any agent given the room's join prompt
                    (PROMPT-JOIN.txt) takes the next free one and says what it is in its introduction.
     -JoinPrompt    Prints the room's join prompt again and puts it on the clipboard.
-    -Assign        Gives an agent that is already in the room a new assignment from a JSON file with one agent
-                   object: role, work, expertise, standards, doc_tools, task, done_when, non_goals, roots, may,
-                   propose_ok, ask_first, never, machine_care, machine_notes. Fields left out stay as they are.
-                   This is how an agent that came in through the join prompt gets its role and its limits, once
-                   its introduction has shown what and where it is. Its session, name and generation stay; the
-                   tool shows it the new assignment with the next message it receives.
+    -Assign        Gives one or more agents that are already in the room a new assignment. The fields come as
+                   parameters (-Role, -Work, -Task, -DoneWhen, -NonGoals, -Roots, -May, -ProposeOk, -AskFirst,
+                   -Never, -MachineCare, -MachineNotes, -Expertise, -Standards, -DocTools), or from a JSON file
+                   with one agent object (-AnswersFile; a parameter given as well wins over the file). Fields
+                   left out stay as they are. Several names (-Assign emma, jack, or emma,jack) get the same
+                   assignment; every name is checked before the first is written. This is how an agent that
+                   came in through the join prompt gets its role and its limits, once its introduction has
+                   shown what and where it is. Its session, name and generation stay; the tool shows it the new
+                   assignment with the next message it receives.
+                   -Roots takes each folder as '<folder>' (read-only) or '<folder>=<pattern>,<pattern>' (what
+                   may change inside it), or as a hashtable @{ root = '<folder>'; may = @('<pattern>') }.
+                   Writing the fields on the command line keeps backslashes and dollar signs as they are: a
+                   JSON file written through another shell lost both.
 
     Everything written here goes to the canonical copy on this PC first and to the room second.
 
@@ -42,6 +49,12 @@
 .EXAMPLE
     .\Add-RelayAgent.ps1 -Room 2026-10-10-docs -Control jack -State pause -Note 'owner is looking at the machine'
 
+.EXAMPLE
+    .\Add-RelayAgent.ps1 -Room 2026-10-10-docs -Control all -State hold -Note 'the kit is being restaged: start no run'
+
+.EXAMPLE
+    .\Add-RelayAgent.ps1 -Room 2026-10-10-docs -Assign emma, jack -Role tester -Work testing -Task 'Run the suite on the kit in work\kit and report every failure.' -DoneWhen 'A report with the full output is sent.' -Roots 'C:\work\kit=tests/*' -Never 'Change a file under src.'
+
 .NOTES
     Windows PowerShell 5.1 syntax, ASCII only.
 #>
@@ -49,13 +62,30 @@
 [CmdletBinding(DefaultParameterSetName = 'Add')]
 param(
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Room,
-    [Parameter(Mandatory, ParameterSetName = 'Add')][Parameter(Mandatory, ParameterSetName = 'Assign')][ValidateNotNullOrEmpty()][string]$AnswersFile,
-    [Parameter(Mandatory, ParameterSetName = 'Assign')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Assign,
+    [Parameter(Mandatory, ParameterSetName = 'Add')][Parameter(ParameterSetName = 'Assign')][ValidateNotNullOrEmpty()][string]$AnswersFile,
+    # One or more names; a name list typed as one word (emma,jack) is split below
+    [Parameter(Mandatory, ParameterSetName = 'Assign')][ValidateNotNullOrEmpty()][string[]]$Assign,
+    [Parameter(ParameterSetName = 'Assign')][string]$Role,
+    [Parameter(ParameterSetName = 'Assign')][string]$Work,
+    [Parameter(ParameterSetName = 'Assign')][string]$Task,
+    [Parameter(ParameterSetName = 'Assign')][string]$DoneWhen,
+    [Parameter(ParameterSetName = 'Assign')][ValidateSet('in-use', 'disposable')][string]$MachineCare,
+    [Parameter(ParameterSetName = 'Assign')][string]$MachineNotes,
+    [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$Expertise,
+    [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$Standards,
+    [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$DocTools,
+    [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$NonGoals,
+    [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][object[]]$Roots,
+    [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$May,
+    [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$ProposeOk,
+    [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$AskFirst,
+    [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$Never,
     [Parameter(Mandatory, ParameterSetName = 'Replace')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Replace,
     [Parameter(ParameterSetName = 'Replace')][string]$Kind = '',
     [Parameter(Mandatory, ParameterSetName = 'Retire')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Retire,
+    # One agent's name, or all: every agent but the coordinator and the retired
     [Parameter(Mandatory, ParameterSetName = 'Control')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Control,
-    [Parameter(Mandatory, ParameterSetName = 'Control')][ValidateSet('pause', 'run', 'stop')][string]$State,
+    [Parameter(Mandatory, ParameterSetName = 'Control')][ValidateSet('pause', 'run', 'stop', 'hold')][string]$State,
     [Parameter(ParameterSetName = 'Control')][string]$Note = '',
     [Parameter(Mandatory, ParameterSetName = 'Line')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Line,
     [Parameter(Mandatory, ParameterSetName = 'Line')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$To,
@@ -90,6 +120,33 @@ function Assert-Agent {
 }
 
 $useClipboard = -not $NoClipboard
+
+function ConvertTo-AssignRoot {
+    # One -Roots entry as the answers hold a root: '<folder>', '<folder>=<pattern>,<pattern>', or a hashtable or
+    # object with root and may. Patterns are split at commas and semicolons; a folder with '=' in its name goes
+    # in as a hashtable.
+    param($Entry)
+    if ($Entry -is [System.Collections.IDictionary]) {
+        $folder = [string]$Entry['root']
+        if (-not $folder.Trim()) { throw "A root given as a hashtable needs root = '<folder>' (and may = @('<pattern>') for what may change inside it)" }
+        return [pscustomobject]@{ root = $folder.Trim(); may = @(@($Entry['may']) | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ } | Where-Object { $_.Trim() }) }
+    }
+    if ($Entry -is [string]) {
+        $text = $Entry.Trim()
+        $at = $text.IndexOf([char]'=')
+        if ($at -lt 0) {
+            if (-not $text) { throw "A root is a folder: '<folder>' or '<folder>=<pattern>,<pattern>'" }
+            return [pscustomobject]@{ root = $text; may = @() }
+        }
+        $folder = $text.Substring(0, $at).Trim()
+        if (-not $folder) { throw "A root is a folder: '<folder>' or '<folder>=<pattern>,<pattern>', not '$Entry'" }
+        $patterns = @(($text.Substring($at + 1) -split '[,;]') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        return [pscustomobject]@{ root = $folder; may = $patterns }
+    }
+    $folder = [string](Get-RelayProperty $Entry 'root' '')
+    if (-not $folder.Trim()) { throw "A root needs a folder: give it as '<folder>', '<folder>=<pattern>,<pattern>', or @{ root = '<folder>'; may = @('<pattern>') }" }
+    return [pscustomobject]@{ root = $folder.Trim(); may = @(@(Get-RelayProperty $Entry 'may' @()) | ForEach-Object { [string]$_ } | Where-Object { $_.Trim() }) }
+}
 
 function Copy-Prompt {
     param([string]$Text, [string]$Name, [bool]$Enabled)
@@ -176,13 +233,25 @@ switch ($PSCmdlet.ParameterSetName) {
     }
     'Control' {
         $name = $Control.ToLowerInvariant()
-        Assert-Agent $name
-        if ($name -eq $roomObject.Coordinator) { throw 'The coordinator is not paused or stopped through the room' }
-        Write-RelayGuardedText $roomObject "agents/$name/control" ("state: {0}`nnote: {1}`n" -f $State, (ConvertTo-RelayHeaderText $Note))
-        "CONTROL ${name}: $State. The agent learns it at its next command; a waiting agent within seconds."
+        $names = @()
+        if ($name -eq 'all') {
+            # Every agent but the coordinator and the retired: a free seat too, so that whoever takes it starts held
+            $names = @($all | Where-Object { $_ -ne $roomObject.Coordinator -and -not (Test-Path -LiteralPath (Join-Path (Join-Path (Join-Path $roomObject.Canon 'agents') $_) 'retired')) })
+            if ($names.Count -eq 0) { throw "There is no agent in room $($roomObject.Id) to control" }
+        }
+        else {
+            Assert-Agent $name
+            if ($name -eq $roomObject.Coordinator) { throw 'The coordinator is not paused, held or stopped through the room' }
+            $names = @($name)
+        }
+        foreach ($one in $names) { Write-RelayGuardedText $roomObject "agents/$one/control" ("state: {0}`nnote: {1}`n" -f $State, (ConvertTo-RelayHeaderText $Note)) }
+        $who = $names -join ', '
+        $target = $name
+        "CONTROL ${who}: $State. The agent learns it at its next command; a waiting agent within seconds."
         switch ($State) {
-            'pause' { "NEXT: resume it with -Control $name -State run when the reason is gone." }
-            'stop' { "NEXT: give it a new session with -Replace $name, or retire it with -Retire $name." }
+            'pause' { "NEXT: resume it with -Control $target -State run when the reason is gone." }
+            'hold' { "NEXT: every verb of the agent prints the hold first, its check exits 7 while it lasts, and messages still reach it. Release it with -Control $target -State run." }
+            'stop' { "NEXT: give it a new session with -Replace $target, or retire it with -Retire $target." }
             default { 'NEXT: carry on; it goes on with its work at its next command.' }
         }
     }
@@ -197,26 +266,71 @@ switch ($PSCmdlet.ParameterSetName) {
         'NEXT: tell both of them in a note what the line is for.'
     }
     'Assign' {
-        $name = $Assign.ToLowerInvariant()
-        Assert-Agent $name
-        if ($name -eq $roomObject.Coordinator) { throw 'The coordinator has no assignment to change' }
-        $agentDir = Join-Path (Join-Path $roomObject.Path 'agents') $name
-        if (Test-Path -LiteralPath (Join-Path (Join-Path (Join-Path $roomObject.Canon 'agents') $name) 'retired')) { throw "The agent '$name' is retired" }
-        if (-not (Test-Path -LiteralPath $AnswersFile)) { throw "No answers file: $AnswersFile" }
-        $card = Read-RelayKeyValue (Join-Path $agentDir 'card')
-        if ($card.Count -eq 0) { throw "The agent '$name' has not introduced itself yet: an assignment follows the introduction, it does not come before it" }
-        $spec = Merge-RelaySeatSpec -Spec (Read-RelaySeatSpec $roomObject $name) -Answers (ConvertFrom-RelayJson (Read-RelayText $AnswersFile))
-        # An agent that came in through the join prompt: its machine is known from its introduction, which the agent
-        # wrote; its control characters go before the name is kept anywhere
-        if (([string]$spec['machine']).StartsWith('(', [System.StringComparison]::Ordinal)) { $spec['machine'] = ConvertTo-RelayHeaderText (Get-RelayValue $card 'computer' ([string]$spec['machine'])) }
-        $current = Get-RelayCanonicalGeneration $roomObject $name
-        $null = Add-RelayAgentSeat -Room $roomObject -Name $name -Spec $spec -Generation $current -Reassign
-        ConvertTo-RelayPrintedLine "ASSIGNED ${name}: $($spec['role']) ($($spec['work'])) on $($spec['machine']), machine $($spec['machine_care'])"
-        # Whether this agent's model suits that kind of work, and who in the room would suit it better. The model
-        # and effort come from the agents' introductions: room text.
-        $fit = Get-RelayFitNote -Room (Resolve-RelayRoom $roomObject.Id) -Name $name -Work ([string]$spec['work'])
-        if ($fit) { ConvertTo-RelayPrintedLine $fit }
-        "NEXT: send $name its task now (write your draft, then run your command with: task $name). Its tool shows it the new assignment together with that message."
+        # Every name is checked before anything is read or written: a typo in the second must not leave the
+        # first changed. A list typed as one word (emma,jack) is split here.
+        $names = New-Object System.Collections.Generic.List[string]
+        foreach ($given in @($Assign)) {
+            foreach ($piece in (([string]$given) -split '[,; ]+')) {
+                $name = $piece.Trim().ToLowerInvariant()
+                if (-not $name) { continue }
+                if ($name -notmatch '^[a-z][a-z0-9]{1,15}$') { throw "'$piece' is no agent name" }
+                if (-not $names.Contains($name)) { $names.Add($name) }
+            }
+        }
+        if ($names.Count -eq 0) { throw 'Give at least one agent name with -Assign' }
+        $cards = [ordered]@{}
+        foreach ($name in $names) {
+            Assert-Agent $name
+            if ($name -eq $roomObject.Coordinator) { throw 'The coordinator has no assignment to change' }
+            if (Test-Path -LiteralPath (Join-Path (Join-Path (Join-Path $roomObject.Canon 'agents') $name) 'retired')) { throw "The agent '$name' is retired" }
+            $card = Read-RelayKeyValue (Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $name) 'card')
+            if ($card.Count -eq 0) { throw "The agent '$name' has not introduced itself yet: an assignment follows the introduction, it does not come before it" }
+            $cards[$name] = $card
+        }
+        # The assignment: the file's fields first, then every field given as a parameter over them
+        $fields = [ordered]@{}
+        if ($AnswersFile) {
+            if (-not (Test-Path -LiteralPath $AnswersFile)) { throw "No answers file: $AnswersFile" }
+            $fromFile = ConvertFrom-RelayJson (Read-RelayText $AnswersFile)
+            if ($null -ne $fromFile) { foreach ($property in $fromFile.PSObject.Properties) { $fields[$property.Name] = $property.Value } }
+        }
+        $byParameter = [ordered]@{
+            Role = 'role'; Work = 'work'; Task = 'task'; DoneWhen = 'done_when'; MachineCare = 'machine_care'; MachineNotes = 'machine_notes'
+            Expertise = 'expertise'; Standards = 'standards'; DocTools = 'doc_tools'; NonGoals = 'non_goals'; Roots = 'roots'
+            May = 'may'; ProposeOk = 'propose_ok'; AskFirst = 'ask_first'; Never = 'never'
+        }
+        foreach ($parameter in $byParameter.Keys) {
+            if (-not $PSBoundParameters.ContainsKey($parameter)) { continue }
+            $value = $PSBoundParameters[$parameter]
+            if ($parameter -eq 'Roots') { $value = @(@($value) | ForEach-Object { ConvertTo-AssignRoot $_ }) }
+            elseif ($value -is [array]) { $value = @(@($value) | ForEach-Object { [string]$_ }) }
+            $fields[$byParameter[$parameter]] = $value
+        }
+        if ($fields.Count -eq 0) { throw 'Give the assignment: its fields as parameters (-Role, -Work, -Task, -DoneWhen, -Roots, -Never, ...), or -AnswersFile with a JSON file' }
+        $answers = [pscustomobject]$fields
+        $prepared = New-Object System.Collections.Generic.List[object]
+        foreach ($name in $names) {
+            $card = $cards[$name]
+            $spec = Merge-RelaySeatSpec -Spec (Read-RelaySeatSpec $roomObject $name) -Answers $answers
+            # An agent that came in through the join prompt: its machine is known from its introduction, which the agent
+            # wrote; its control characters go before the name is kept anywhere
+            if (([string]$spec['machine']).StartsWith('(', [System.StringComparison]::Ordinal)) { $spec['machine'] = ConvertTo-RelayHeaderText (Get-RelayValue $card 'computer' ([string]$spec['machine'])) }
+            $prepared.Add([pscustomobject]@{ Name = $name; Spec = $spec })
+        }
+        foreach ($entry in $prepared) {
+            $name = $entry.Name
+            $spec = $entry.Spec
+            $current = Get-RelayCanonicalGeneration $roomObject $name
+            $null = Add-RelayAgentSeat -Room $roomObject -Name $name -Spec $spec -Generation $current -Reassign
+            ConvertTo-RelayPrintedLine "ASSIGNED ${name}: $($spec['role']) ($($spec['work'])) on $($spec['machine']), machine $($spec['machine_care'])"
+            # Whether this agent's model suits that kind of work, and who in the room would suit it better. The model
+            # and effort come from the agents' introductions: room text.
+            $fit = Get-RelayFitNote -Room (Resolve-RelayRoom $roomObject.Id) -Name $name -Work ([string]$spec['work'])
+            if ($fit) { ConvertTo-RelayPrintedLine $fit }
+        }
+        $assigned = $names -join ', '
+        $firstName = $names[0]
+        "NEXT: send $assigned the task now (write your draft, then run your command with: task $firstName). The tool shows each of them the new assignment together with that message."
     }
     'Prompt' {
         if (-not $JoinPrompt) { throw 'Give -JoinPrompt' }

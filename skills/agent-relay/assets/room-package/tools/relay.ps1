@@ -16,7 +16,8 @@
 .NOTES
     Exit codes: 0 done, or something for you (a wait that timed out too: nothing arrived, run it again);
     1 usage or error; 2 room unreachable; 3 nothing new (check only); 4 another wait already runs for you;
-    5 stop (room closed, or you were stopped, replaced or retired); 6 parked, wait for the owner.
+    5 stop (room closed, or you were stopped, replaced or retired); 6 parked, wait for the owner; 7 on hold
+    (check only: start nothing new until the coordinator lifts it).
 
     No param block on purpose: arguments are plain words, and the tool reads them itself. ASCII only.
 #>
@@ -30,7 +31,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.3.0'
+$script:ToolVersion = '3.4.0'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -1561,6 +1562,74 @@ function Show-ParkedNote {
     else { Say "NOTE: $shown is parked and reads nothing until its own user tells it to continue. Tell the coordinator if this cannot wait." }
 }
 
+function Test-Hold {
+    # Whether the coordinator has put this agent on hold (control state hold)
+    return ((Get-Value (Read-KeyValue (Join-Path $script:MyDir 'control')) 'state' 'run') -eq 'hold')
+}
+
+function Get-HoldNote {
+    # Why, in the coordinator's words, or a plain line
+    $note = ConvertTo-PrintableText (Get-Value (Read-KeyValue (Join-Path $script:MyDir 'control')) 'note' '')
+    if (-not $note.Trim()) { $note = 'the coordinator has put you on hold' }
+    return $note.Trim()
+}
+
+function Show-Hold {
+    # Printed first by every verb while a hold lasts, so that a script or an agent sees it before it starts
+    # anything: a hold that was a plain note once reached an agent after its run had started
+    if (-not (Test-Hold)) { return }
+    Say "=== HOLD: $(Get-HoldNote) ==="
+    Say '    start nothing new (no run, no change) until the coordinator lifts the hold; messages still reach you; check exits 7 while it lasts'
+}
+
+function Test-WordMatch {
+    # Two words match when they begin the same way for at least four letters and all but the last two of the
+    # shorter one: push and pushed, rename and renaming, table and tables. Short words match only whole.
+    param([string]$One, [string]$Other)
+    if ($One.Length -lt 4 -or $Other.Length -lt 4) { return ($One -ceq $Other) }
+    $shorter = [Math]::Min($One.Length, $Other.Length)
+    $common = 0
+    while ($common -lt $shorter -and $One[$common] -ceq $Other[$common]) { $common++ }
+    return ($common -ge 4 -and $common -ge ($shorter - 2))
+}
+
+function Get-TextWord {
+    # The words of a text, lower case, letters and digits only
+    param([string]$Text)
+    return @(($Text.ToLowerInvariant() -split '[^a-z0-9]+') | Where-Object { $_ })
+}
+
+function Get-AssignmentConflict {
+    # The lines of the receiver's "Never" and "Not part of this task" that a task's text runs into: a line
+    # counts when two of its telling words (one, when it has only one) are in the text. A warning for the
+    # coordinator, read from the receiver's ASSIGNMENT.md in the room; nothing is decided by it.
+    param([string]$To, [string]$Text)
+    $found = New-Object System.Collections.Generic.List[object]
+    $assignment = Read-Text (Join-Path (Get-AgentDir $To) 'ASSIGNMENT.md')
+    if (-not $assignment.Trim()) { return @($found.ToArray()) }
+    # Words every assignment and every task hold, which tell nothing
+    $plain = @('this', 'that', 'with', 'from', 'your', 'into', 'onto', 'what', 'when', 'then', 'than', 'them', 'they', 'there', 'their', 'have', 'will', 'would', 'could', 'should', 'which', 'while', 'where', 'every', 'each', 'only', 'also', 'more', 'most', 'some', 'such', 'other', 'another', 'outside', 'inside', 'room', 'agent', 'agents', 'file', 'files', 'folder', 'folders', 'anything', 'nothing', 'something', 'task', 'tasks', 'message', 'messages', 'send', 'sends', 'read', 'reads', 'write', 'writes', 'change', 'changes', 'assignment', 'except', 'unless', 'draft', 'attach', 'without', 'after', 'before', 'does', 'done', 'under', 'over', 'these', 'those', 'here', 'about', 'part', 'never', 'first', 'whatever', 'says', 'said', 'line', 'list', 'lists', 'make', 'makes', 'take', 'takes', 'tell', 'tells', 'work', 'working', 'report', 'result', 'results', 'coordinator', 'owner', 'machine', 'need', 'needs', 'want', 'wants', 'must', 'being', 'were', 'been', 'because', 'through', 'again', 'same', 'thing', 'things', 'come', 'comes', 'back')
+    $textWords = @(Get-TextWord $Text | Where-Object { $plain -notcontains $_ } | Select-Object -Unique)
+    if ($textWords.Count -eq 0) { return @($found.ToArray()) }
+    $section = ''
+    foreach ($line in ($assignment -split "`n")) {
+        if ($line.StartsWith('## ', [System.StringComparison]::Ordinal)) { $section = $line.Substring(3).Trim(); continue }
+        if ($section -cne 'Never' -and $section -cne 'Not part of this task') { continue }
+        if ($line -cnotmatch '^\s*[-*]\s+(\S.*)$') { continue }
+        $bullet = $Matches[1].Trim()
+        $telling = @(Get-TextWord $bullet | Where-Object { $_.Length -ge 4 -and $plain -notcontains $_ } | Select-Object -Unique)
+        if ($telling.Count -eq 0) { continue }
+        $hits = New-Object System.Collections.Generic.List[string]
+        foreach ($word in $telling) {
+            foreach ($candidate in $textWords) { if (Test-WordMatch $word $candidate) { $hits.Add($word); break } }
+        }
+        $needed = 2
+        if ($telling.Count -eq 1) { $needed = 1 }
+        if ($hits.Count -ge $needed) { $found.Add([pscustomobject]@{ Section = $section; Bullet = $bullet; Words = @($hits.ToArray()) }) }
+    }
+    return @($found.ToArray())
+}
+
 function Get-ActionHint {
     # One line per message: what the receiver does with it
     param($Message)
@@ -2680,12 +2749,24 @@ function Invoke-WaitControl {
     if ($verdict -ne 'mine') { return $look }
     # A change that cannot be noted is not said either: it would be said again in every round. Nothing is known in
     # this round then.
+    $previous = Get-Value (Get-State) 'control_seen' 'run'
     if (-not (Save-StateValue 'control_seen' $look.Control -PassThru)) { $look.Unknown = $true; return $look }
     Add-Journal 'control' $look.Control
     if ($look.Control -eq 'pause') {
         Write-Status 'paused' ''
         Say '=== you are paused ==='
         Say "NEXT: stop where you are and start nothing new. Then run: $(Get-Call) wait   (it returns when you are resumed)"
+    }
+    elseif ($look.Control -eq 'hold') {
+        # A hold is softer than a pause: messages still come, but nothing new is started until it is lifted
+        Write-Status 'held' (Get-HoldNote)
+        Say "=== you are on hold: $(Get-HoldNote) ==="
+        Say "NEXT: start nothing new (no run, no change) until the hold is lifted; finish only what stopping would leave broken. Messages still reach you. Then run: $(Get-Call) wait$(Get-WaitMode)   (it returns when the hold is lifted or something arrives; a check exits 7 while the hold lasts)"
+    }
+    elseif ($previous -eq 'hold') {
+        Write-Status 'working' 'hold lifted'
+        Say '=== the hold is lifted ==='
+        Say "NEXT: go on with your work. When you have nothing to do, run: $(Get-Call) wait$(Get-WaitMode)"
     }
     else {
         Write-Status 'working' 'resumed'
@@ -3052,7 +3133,7 @@ function Invoke-Reply {
 function Invoke-Send {
     # ask, note, task, propose: one draft, one message
     param([string]$Verb, [string[]]$Tokens)
-    $parsed = Get-Flag $Tokens @('allow-secret')
+    $parsed = Get-Flag $Tokens @('allow-secret', 'anyway')
     $call = Get-Call
     $rest = @($parsed.Rest)
     $minutes = 0
@@ -3086,6 +3167,22 @@ function Invoke-Send {
         }
     }
     $draft = Read-Draft
+    # A task that asks for what the receiver's assignment forbids is not sent: the agent would stop and ask,
+    # every time, and the round is lost. The coordinator re-assigns first, or sends it anyway.
+    if ($Verb -eq 'task' -and -not $parsed.Flags.ContainsKey('anyway')) {
+        $conflicts = New-Object System.Collections.Generic.List[string]
+        foreach ($target in $targets) {
+            foreach ($conflict in @(Get-AssignmentConflict -To $target -Text ($draft.Subject + "`n" + $draft.Body))) {
+                $conflicts.Add("  $(Get-DisplayName $target), $($conflict.Section): $($conflict.Bullet)   (the task says: $($conflict.Words -join ', '))")
+            }
+        }
+        if ($conflicts.Count -gt 0) {
+            Say 'NOT SENT: this task may run into the receiver''s assignment, which says'
+            foreach ($conflictLine in $conflicts) { Say (ConvertTo-PrintableText $conflictLine) }
+            Say "NEXT: if the task needs it, change the assignment first (scripts\Add-RelayAgent.ps1 -Assign $($targets -join ',') with the wider -May, -ProposeOk or -Never), then send the task again. If it does not, send it as it is: $call task $($targets[0]) anyway   (your draft is still there)"
+            return 1
+        }
+    }
     # The memory hint counts its entries as seen: an ask stopped by an empty draft must not use it up
     if ($Verb -eq 'ask' -and -not $script:IsCoordinator) { Show-NewMemory }
     $type = 'note'
@@ -3371,6 +3468,8 @@ if ($verb -ne 'start') {
 }
 
 try {
+    # A hold comes first, whatever the verb: whoever reads the output sees it before anything else
+    Show-Hold
     switch ($verb) {
         'start' { $exitCode = Invoke-Start $tokens }
         'wait' {
@@ -3383,7 +3482,12 @@ try {
             }
             $exitCode = Invoke-Wait -MaxMinutes $minutes
         }
-        'check' { $exitCode = Invoke-Wait -MaxMinutes 0 -Once }
+        'check' {
+            $exitCode = Invoke-Wait -MaxMinutes 0 -Once
+            # While a hold lasts, check says so with its exit code, whether or not something was delivered: a
+            # script that runs check before it starts a run can test the code
+            if (($exitCode -eq 0 -or $exitCode -eq 3) -and (Test-Hold)) { $exitCode = 7 }
+        }
         'show' { $exitCode = Invoke-Show $tokens }
         'reply' { $exitCode = Invoke-Reply $tokens }
         'report' { $exitCode = Invoke-Report $tokens }

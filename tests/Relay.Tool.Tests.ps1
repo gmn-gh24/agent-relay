@@ -151,6 +151,38 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
     }
 
     Context 'Sending and receiving' {
+        It 'refuses a task whose words run into the receiver''s never or non-goals lines, until the coordinator says anyway' {
+            # The default never list: "Push, publish, deploy or send anything outside this room."
+            $blocked = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Publish the package`n`nPush the branch and publish the package to the feed."
+            $blocked.ExitCode | Should -Be 1
+            $blocked.Output | Should -Match '(?m)^NOT SENT: this task may run into the receiver''s assignment, which says$'
+            $blocked.Output | Should -Match '(?m)^  Emma, Never: Push, publish, deploy or send anything outside this room\.   \(the task says: push, publish\)$'
+            $blocked.Output | Should -Match 'NEXT: if the task needs it, change the assignment first \(scripts\\Add-RelayAgent\.ps1 -Assign emma'
+            $blocked.Output | Should -Match ' task emma anyway'
+            # The draft stays, and nothing reached the agent
+            Test-Path -LiteralPath (Join-Path $room 'agents\olivia\draft.md') | Should -BeTrue
+            @(Get-RelayTestInbox -Room $room -Agent 'emma').Count | Should -Be 0
+            # A non-goal in the room's assignment (the test plays the room file; this PC writes it through -Assign)
+            $assignment = Join-Path $room 'agents\emma\ASSIGNMENT.md'
+            $text = [System.IO.File]::ReadAllText($assignment)
+            $text = $text -replace '\(nothing listed: when in doubt whether something belongs to the task, it does not\)', '- Renaming the database tables.'
+            [System.IO.File]::WriteAllText($assignment, $text)
+            $goal = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Rename tables`n`nRename the database tables to the new scheme."
+            $goal.ExitCode | Should -Be 1
+            $goal.Output | Should -Match '(?m)^  Emma, Not part of this task: Renaming the database tables\.   \(the task says: renaming, database, tables\)$'
+            # One telling word alone is not a hit: the subject may be mentioned
+            $mention = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "List the tables`n`nList the tables and their row counts."
+            $mention.ExitCode | Should -Be 0
+            $mention.Output | Should -Match 'SENT olivia-emma-0001 \(task\)'
+            # The coordinator decides: anyway sends it as it is
+            $anyway = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma', 'anyway') -Text "Publish the package`n`nPush the branch and publish the package to the feed."
+            $anyway.ExitCode | Should -Be 0
+            $anyway.Output | Should -Match 'SENT olivia-emma-0002 \(task\)'
+            $anyway.Output | Should -Not -Match 'NOT SENT'
+            # A note is never checked
+            (Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Push`n`nSomebody will push and publish later.").ExitCode | Should -Be 0
+        }
+
         It 'delivers a task once and keeps it open until it is reported on' {
             $sent = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Count the files`n`nCount the files in the work folder."
             $sent.ExitCode | Should -Be 0
@@ -651,6 +683,43 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
     }
 
     Context 'Pause, stop, replace, close' {
+        It 'prints a hold first on every verb, ends check with 7 while it lasts, delivers meanwhile, and says when it is lifted' {
+            $control = Join-Path $room 'agents\emma\control'
+            [System.IO.File]::WriteAllText($control, "state: hold`nnote: the kit is being restaged`n")
+            $who = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('who')
+            $who.ExitCode | Should -Be 0
+            @($who.Output -split "`n")[0] | Should -BeExactly '=== HOLD: the kit is being restaged ==='
+            $who.Output | Should -Match 'start nothing new \(no run, no change\) until the coordinator lifts the hold; messages still reach you; check exits 7 while it lasts'
+            # wait says it once (a who does not count as having seen it)
+            $told = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')
+            $told.ExitCode | Should -Be 0
+            $told.Output | Should -Match '(?m)^=== you are on hold: the kit is being restaged ===$'
+            $told.Output | Should -Match 'NEXT: start nothing new'
+            (Get-Content -LiteralPath (Join-Path $room 'agents\emma\status') -Raw) | Should -Match 'state: held'
+            # check: 7 with nothing new, and 7 with a delivery, which still comes; the banner first, the announcement not again
+            $empty = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+            $empty.ExitCode | Should -Be 7
+            @($empty.Output -split "`n")[0] | Should -BeExactly '=== HOLD: the kit is being restaged ==='
+            $empty.Output | Should -Not -Match 'you are on hold'
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Still comes`n`nA hold holds no message."
+            $delivered = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+            $delivered.ExitCode | Should -Be 7
+            $delivered.Output | Should -Match 'A hold holds no message\.'
+            # a wait that times out meanwhile: the banner first, nothing else about the hold
+            $quiet = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '2') -Environment @{ RELAY_MINUTE_SECONDS = '1' }
+            $quiet.ExitCode | Should -Be 0
+            @($quiet.Output -split "`n")[0] | Should -BeExactly '=== HOLD: the kit is being restaged ==='
+            $quiet.Output | Should -Match 'nothing arrived in 2 minutes'
+            $quiet.Output | Should -Not -Match 'you are on hold'
+            # Released: wait says so once, and check is back to 3
+            [System.IO.File]::WriteAllText($control, "state: run`nnote: `n")
+            $lifted = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')
+            $lifted.ExitCode | Should -Be 0
+            $lifted.Output | Should -Match '(?m)^=== the hold is lifted ===$'
+            $lifted.Output | Should -Not -Match 'HOLD:'
+            (Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')).ExitCode | Should -Be 3
+        }
+
         It 'holds messages while paused and delivers them after the resume' {
             $control = Join-Path $room 'agents\emma\control'
             [System.IO.File]::WriteAllText($control, "state: pause`nnote: owner is looking`n")

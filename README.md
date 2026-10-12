@@ -5,7 +5,7 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.
 
 | | |
 |---|---|
-| Version | 0.5.1 ([changelog](CHANGELOG.md)) |
+| Version | 0.6.0 ([changelog](CHANGELOG.md)) |
 | Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
 | Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
 | Other agents | Any coding agent that can run a command and write a file |
@@ -255,8 +255,8 @@ full help (`Get-Help <script> -Full`).
 
 | Script | Purpose |
 |---|---|
-| `New-RelayRoom.ps1` | Builds a room from an answers file and writes the prompts |
-| `Add-RelayAgent.ps1` | Adds seats or agents; assigns, replaces, retires, pauses or stops one; opens a direct line |
+| `New-RelayRoom.ps1` | Builds a room from an answers file, or from parameters (`-Job`, `-OpenSeats`, ...), and writes the prompts |
+| `Add-RelayAgent.ps1` | Adds seats or agents; assigns (fields as parameters, several agents at once), replaces, retires, pauses, holds or stops one or all; opens a direct line |
 | `Get-RelayRooms.ps1` | Lists the rooms, shares and machines this PC knows |
 | `Get-RelayBoard.ps1` | Prints the board of a room |
 | `Watch-RelayFeed.ps1` | The feed: live view, tamper check, the coordinator's sign of life |

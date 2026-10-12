@@ -1416,7 +1416,9 @@ function Get-RelayAgentState {
         $seat = Read-RelayKeyValue (Join-Path $canonDir 'seat')
         $card = Read-RelayKeyValue (Join-Path $dir 'card')
         $status = Read-RelayKeyValue (Join-Path $dir 'status')
-        $control = Get-RelayValue (Read-RelayKeyValue (Join-Path $canonDir 'control')) 'state' 'run'
+        $controlMap = Read-RelayKeyValue (Join-Path $canonDir 'control')
+        $control = Get-RelayValue $controlMap 'state' 'run'
+        $controlNote = Get-RelayValue $controlMap 'note' ''
         $state = Get-RelayValue $status 'state' 'not started'
         $alive = Get-RelayFileTimeUtc (Join-Path $dir 'alive')
         $silent = -1
@@ -1436,7 +1438,7 @@ function Get-RelayAgentState {
         elseif ($state -eq 'parked') { $attention = 'parked: owner must nudge' }
         elseif ($state -eq 'not started' -and $isOpen) { $attention = 'took a seat but has not introduced itself: owner must look at that session' }
         elseif ($state -eq 'not started') { $attention = 'not started: owner must paste the start prompt' }
-        elseif ($control -ne 'run') { $attention = "control: $control" }
+        elseif ($control -ne 'run') { $attention = "control: $control"; if ($control -eq 'hold' -and $controlNote) { $attention += " ($controlNote)" } }
         elseif ($name -ne $Room.Coordinator) {
             # What was sent to it and its own tool has not shown it yet
             $shown = @{}

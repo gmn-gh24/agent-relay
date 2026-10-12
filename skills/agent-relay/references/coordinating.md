@@ -43,8 +43,12 @@ shell. The owner should never have to ask what is in the room.
   Tell the owner; give no work until the owner has decided.
 - Agent from the join prompt: nobody said in advance what it is. Tell the owner who arrived and where. Then
   settle, with the owner or inside your authority: its role, the folders it works in, what it may change, and
-  how its machine may be treated. Write that as an answers file and run
-  `scripts/Add-RelayAgent.ps1 -Room <id> -Assign <name> -AnswersFile <file>`. Send the task after that; the
+  how its machine may be treated. Give it as parameters, several agents in one call when they share it:
+  `scripts/Add-RelayAgent.ps1 -Room <id> -Assign <name>[,<name>] -Role <role> -Work <kind> -Task '<text>'
+  -DoneWhen '<text>' -Roots '<folder>=<pattern>,<pattern>' -Never '<line>' ...` (every field of the
+  assignment has a parameter; `-AnswersFile <file>` still takes a JSON file, and a parameter given with it
+  wins). Do not hand-write the JSON through another shell: a heredoc lost its backslashes and a `$name` once,
+  then failed on an escape, two rounds in a row. Send the task after that; the
   agent's tool shows it the new assignment in front of the task.
 - Elevation cuts both ways. An agent that runs elevated can do more damage with the same mistake: give it
   the tasks that need its rights and keep the rest with the others. Have its elevated steps reviewed before
@@ -165,7 +169,12 @@ pointing at it.
 
 When "done when" cannot be reached without a change that the assignment lists under "never", the task cannot
 carry the approval: the agent will ask its owner, every time, and it is right to. Re-assign first (`-Assign`
-with the wider `may` or `propose_ok`), then send. Better, foresee it at assignment time: a test job on a
+with the wider `-May` or `-ProposeOk`, or a shorter `-Never`), then send. Your tool reads the receiver's
+assignment before it sends a task: when the task's words run into a line under "Never" or "Not part of this
+task" (two of that line's telling words in the task), it refuses with `NOT SENT`, names the line, and keeps
+your draft. Re-assign and send again; when the line does not apply, send it as it is with `task <name> anyway`.
+It is a word match, not a judgment: it misses what is said in other words and it flags a task that only
+mentions the subject, so read the line it names before you decide. Better, foresee it at assignment time: a test job on a
 disposable machine will need uninstalls, registry writes and files outside the work folder before it ends.
 When the change is one the assignment lists under "ask first", decide it
 before you send: approve that one change in the task itself, or record it as a standing rule first. Three
@@ -345,6 +354,7 @@ you act on it. Thank the agent: it did the right thing by telling you and not ac
 | tried to join and found no free seat | more agents than seats | `-OpenSeats <n>`, then the owner tells that agent to run join again |
 | introduced itself from X, expected Y | wrong machine, or the owner pasted the prompt elsewhere | owner decides before any work |
 | control: pause / stop | you or the owner paused or stopped it | `-Control <name> -State run` to resume |
+| control: hold (why) | you put it on hold: it starts nothing new, and its `check` exits 7 | `-Control <name>|all -State run` when the reason is gone |
 | has not picked up N message(s) for M min | messages lie in its inbox and its tool has not shown them: its session has probably ended while it worked (its state still says `working`) | do not wait for it. Ask the owner to look at that session; `-Replace` it if it is to go on, `-Retire` it and give its parts to others if not. A room sets the limit with `pickup_minutes` in its answers (30) |
 
 Replacing: `scripts/Add-RelayAgent.ps1 -Room <id> -Replace <name>` keeps the name, the assignment and the
@@ -355,6 +365,12 @@ open requests; the old session is told to stop at its next command, and the new 
 
 - `-Control <name> -State pause -Note '<why>'`: the agent finishes nothing new and waits. Messages are held
   until `-State run`.
+- `-Control <name>|all -State hold -Note '<why>'`: a hold, as room state. Every verb of the agent prints
+  `=== HOLD: <why> ===` first, its `check` exits 7 while the hold lasts (so a run script can test it before
+  it starts), its `wait` tells it once and again when the hold is lifted, and messages still reach it. Use it
+  when nothing new may start (a kit is being restaged, a round is being closed) and release with
+  `-State run`. A hold written as a plain note reached an agent after its run had started; this one is read
+  before every command. `all` is every agent but you and the retired, free seats included.
 - `-State stop`: every verb except `bye` tells the agent to stop and leave things as they are.
 - `-Line <a> -To <b>`: two agents may write to each other. Say in a note to both what the line is for. Their
   messages still show on the board and in the transcript.
