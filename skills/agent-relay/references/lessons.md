@@ -647,6 +647,7 @@ day. What cost rounds, and what was changed:
 - **Codex's command time limit is still a guess.** `wait_minutes` 4 worked, but nobody measured when the
   product kills a foreground command. Not changed: the number stays; `agent-kinds.md` says how to measure it
   in one Codex session and where to write the result. A cloud session without Codex cannot do it.
+  (Measured later that day: see "Codex's wait, measured (0.9.1)".)
 
 ## 2026-10-12: the open items of that room, behaviour (0.6.0)
 
@@ -738,3 +739,18 @@ day. What cost rounds, and what was changed:
   agent copied all of them with a wildcard; a count of steps in the task differed from the runner's, and the
   agent stopped to ask. Changed: "The kit" in `multi-builder.md` says to name the files to copy, or to stage a
   folder that holds exactly them, and that a count in a task is the count the runner prints.
+
+## 2026-10-12: Codex's wait, measured (0.9.1)
+
+- **The guess of 4 minutes cost fifteen turns an hour in a quiet room.** A Codex agent cannot be woken by a
+  command that ends, so every wait that ends with nothing is a turn of its model, and since 0.7.0 no agent
+  parks. The owner measured it in one Codex session (codex-cli 0.162.1, Windows): commands of 240, 480 and 960
+  seconds ran to their end; the one of 1920 seconds was stopped by the owner, so the product's limit is above
+  16 minutes and still not known. Changed: `wait_minutes` of `codex` is 15 (the longest that ran, less a
+  minute), in `agent-kinds.json`, its prompt line and `agent-kinds.md`. A room made before keeps the 4 its
+  seats and `tools/kinds` hold; `Update-RelayRoom.ps1` writes `tools/kinds` again, a named seat keeps its
+  number.
+- **The first two measurements measured nothing.** The session was started without `codex --yolo`, and no
+  command started at all (`helper_unknown_error: setup refresh had errors`), the test command and
+  `codex --version` alike. Changed: `agent-kinds.md` says under the measurement that it needs a session started
+  with `codex --yolo`, and what the refusal looks like.

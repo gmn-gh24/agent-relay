@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.9.1 (2026-10-13)
+
+- **A Codex agent waits 15 minutes at a time, not 4.** Every wait of a Codex agent that ends with nothing is a
+  turn of its model, and no agent parks since 0.7.0: 4 minutes was a guess, and fifteen turns an hour in a
+  quiet room. Measured in a Codex session (codex-cli 0.162.1, Windows, started with `codex --yolo`):
+  foreground commands of 240, 480 and 960 seconds ran to their end; the one of 1920 seconds was stopped by
+  the owner, so the product's own limit is above 16 minutes and still not known. `wait_minutes` of `codex` in
+  `agent-kinds.json` is 15, its prompt line says 15, and `agent-kinds.md` has the measurement and how to repeat
+  it. No change to the room package. A new room gets 15. In a running room, an agent that came in through the
+  join prompt waits by the room's `tools/kinds`, which `scripts/Update-RelayRoom.ps1 -Room <id>` writes again;
+  a named seat keeps the number its seat file holds. A seat's own `wait_minutes` in the answers file overrides
+  the kind, as before.
+- **The coordinator's drawn name leaves the letters of the names the owner chose.** `New-RelayRoom.ps1` drew
+  the coordinator's name before it looked at the agents, so a room with an agent named in advance failed now
+  and then with "starts with a letter another agent of this room already has", when the draw had taken that
+  letter. The draw now keeps those letters free, as the draw for the other seats already did. Found by the
+  gate, where one test failed about one run in ten for that reason.
+- `agent-kinds.md`: the `gpt-5.5` retirement is a date label, "last day in Codex: 2026-10-14", not a tensed
+  claim, so the line is right on both sides of that day (0.8.1, dated the day before, called it gone). From the
+  reviews of that pull request and of this one.
+
 ## 0.9.0 (2026-10-13)
 
 Two open lessons closed (room package unchanged, 3.5.0).

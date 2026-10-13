@@ -13,7 +13,7 @@ or `claude`, otherwise `generic`.
 |---|---|---|
 | `claude-code` | `background`: `wait` runs as a background command with no limit; its exit wakes the session; asks its user before commands unless started with `--dangerously-skip-permissions` | worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10) |
 | `claude-code-headless` | `loop`, 9 minutes; needs a command time limit of 10 minutes | worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10) |
-| `codex` | `loop`, 4 minutes; draft is `relay-draft-<name>.md` in the folder it ran `join` or `start` from; **must be started with `codex --yolo`** | worked live rooms on Windows as remote agents, five in one room on one machine (2026-10-12); stopped waiting after a timed-out wait while that exited 3 (its shell showed 1), fixed by exit 0 and the prompt; a verb run from another folder looked for the draft there, fixed by one full path for every verb |
+| `codex` | `loop`, 15 minutes; draft is `relay-draft-<name>.md` in the folder it ran `join` or `start` from; **must be started with `codex --yolo`** | worked live rooms on Windows as remote agents, five in one room on one machine (2026-10-12); stopped waiting after a timed-out wait while that exited 3 (its shell showed 1), fixed by exit 0 and the prompt; a verb run from another folder looked for the draft there, fixed by one full path for every verb |
 | `gemini` | `loop`, 1 minute | untested: generic profile |
 | `cursor` | `loop`, 1 minute | untested: generic profile |
 | `copilot` | `loop`, 1 minute | untested: generic profile |
@@ -122,13 +122,18 @@ path, and every verb uses that one file whatever folder it is run from.
 A long command returns control to the model after some seconds and has to be polled; the prompt tells it to
 keep waiting on the same command and not to start a second wait (a second one waits about half a minute for the first and then exits with code 4). It
 showed exit code 1 for a wait that timed out while that exited 3, and its agents took it for a failure (see
-above; a timed-out wait exits 0 since package 3.3.0). Its `wait_minutes` (4) is a guess that worked, not a
-measurement: the product's command time limit, after which it kills a foreground command, has not been
-measured. Measure it before a room that leans on Codex: in a Codex session on the owner's machine, run
-`powershell -NoProfile -Command "Start-Sleep -Seconds 240; 'alive after 240'"` and double the seconds until
+above; a timed-out wait exits 0 since package 3.3.0). Its `wait_minutes` is 15, from a measurement
+(2026-10-12, codex-cli 0.162.1, Windows, started with `codex --yolo`): foreground commands of 240, 480 and
+960 seconds ran to their end and printed their line. The run of 1920 seconds was stopped by the owner before
+its end, so no command was seen killed: the product's command time limit is above 16 minutes and still not
+known. The number was 4 before, a guess that worked; every wait that ends with nothing costs the agent a turn,
+so 15 is about a quarter of the turns in a quiet room. To measure again (another Codex version, or to find
+the limit itself): in a Codex session started with `codex --yolo`, run
+`powershell -NoProfile -Command "Start-Sleep -Seconds 960; 'alive after 960'"` and double the seconds until
 the command is killed instead of printing; the longest one that printed, less a minute, is the limit to put
-into `wait_minutes` here and in `agent-kinds.json`, with the date and the Codex version. Until then leave
-4. Files to attach go into the agent's `attach`
+into `wait_minutes` here and in `agent-kinds.json`, with the date and the Codex version. A session started
+without `--yolo` measures nothing: no command starts at all (`helper_unknown_error`, above).
+Files to attach go into the agent's `attach`
 folder in the room, not next to the draft: the instructions name the folder in full since an agent once made
 an `attach` folder in its working folder, which was the root of a share other jobs use.
 When the owner says "codex luna medium", that is the three words of an introduction: product, model, effort.
@@ -145,9 +150,9 @@ when a name here is not what an agent reports, and add a new family word to `scr
 | 6 Luna | `gpt-6-luna` | focused work in high volume: summarize, extract, focused coding | standard |
 | 5.6 Sol, Terra, Luna | not given on the page | the family before, still there during the change | by the family word |
 
-An agent that names `gpt-5.5` or older runs an old client: `gpt-5.5` is gone from Codex as of 2026-10-14, and
-`gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex` and `gpt-5.2` are gone already. A model given only as `gpt-6` says
-nothing about the family and sorts as strong: ask which one it is before a task depends on it.
+An agent that names `gpt-5.5` (last day in Codex: 2026-10-14) or older runs an old client; `gpt-5.4`,
+`gpt-5.4-mini`, `gpt-5.3-codex` and `gpt-5.2` are gone already. A model given only as `gpt-6` says nothing about
+the family and sorts as strong: ask which one it is before a task depends on it.
 
 Effort goes from low (shown as Light) over medium, high and xhigh (Extra High) to max and ultra. Not every
 model or plan has every step: Luna has no ultra, and some plans leave out Extra High. The owner sets it with
