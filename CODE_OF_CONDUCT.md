@@ -27,7 +27,7 @@ Not accepted:
 
 ## Scope
 
-This applies to issues, pull requests, discussions, comments, commit messages and every other space run under
+This applies to issues, pull requests, comments, commit messages and every other space run under
 this repository, and to anyone who speaks for the project in public.
 
 ## Enforcement
