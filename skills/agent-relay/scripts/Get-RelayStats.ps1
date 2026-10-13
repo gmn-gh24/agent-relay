@@ -28,15 +28,29 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 
-$roomObject = Resolve-RelayRoom $Room
-$stats = Get-RelayStatistic $roomObject
+# The close saves the numbers on this PC before the folder may be removed: a room whose folder is gone is read from
+# that copy (this PC's own file, never one from the room)
+$stats = $null
+try {
+    $roomObject = Resolve-RelayRoom $Room
+    $stats = Get-RelayStatistic $roomObject
+}
+catch {
+    $saved = Join-Path (Join-Path (Join-Path (Get-RelayLocalRoot) 'rooms') $Room) 'stats.json'
+    if ((Test-RelayRoomId $Room) -and $_.Exception.Message -match 'its folder is not reachable' -and (Test-Path -LiteralPath $saved -PathType Leaf)) {
+        $stats = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($saved))
+    }
+    else { throw }
+}
 if ($AsJson) { return (ConvertTo-Json -InputObject $stats -Depth 6) }
+# Numbers read back from the saved file are objects, those just counted are tables: one list of pairs for both
+$byTypePairs = if ($stats.byType -is [System.Collections.IDictionary]) { @($stats.byType.Keys | ForEach-Object { "$_ $($stats.byType[$_])" }) } else { @($stats.byType.PSObject.Properties | ForEach-Object { "$($_.Name) $($_.Value)" }) }
 
 # Every line printed for reading passes one place: no control character from a room file, no blank at the end
 & {
     "=== statistics of room $($stats.room) (package $($stats.package)) ==="
     "job: $($stats.job)"
-    "messages: $($stats.messages) in $($stats.minutesFromFirstToLast) minutes  (" + ((@($stats.byType.Keys | ForEach-Object { "$_ $($stats.byType[$_])" })) -join ', ') + ')'
+    "messages: $($stats.messages) in $($stats.minutesFromFirstToLast) minutes  (" + ($byTypePairs -join ', ') + ')'
     "requests: $($stats.requests), answered $($stats.answered), never answered $($stats.unanswered)"
     "reply time: median $($stats.replyMedianMinutes) min, longest $($stats.replyMaxMinutes) min"
     foreach ($responder in @($stats.byResponder)) { "  $($responder.agent): $($responder.answered) answered, median $($responder.medianMinutes) min, longest $($responder.maxMinutes) min" }

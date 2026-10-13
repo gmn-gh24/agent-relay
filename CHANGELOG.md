@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.0 (2026-10-13)
+
+Two open lessons closed (room package unchanged, 3.5.0).
+
+- **`Get-RelayStats.ps1` reads the numbers of a room whose folder is gone.** The close workflow removes the
+  folder before the retro, and the script then refused the room; it now reads the `stats.json` that the close
+  saved on this PC (text and `-AsJson`), and refuses as before when that file is missing. A test removes the
+  folder and reads the statistics back.
+- **The startup interview asks which accounts a job's runs need.** A job that installs a service, runs as
+  SYSTEM or checks something as a standard user needs two seats on that machine, one elevated and one not,
+  planned when the room is made, and no detour from the elevated agent in their place.
+- `lessons.md` marks both as changed and the "still open" list of an earlier room as closed.
+
 ## 0.8.1 (2026-10-13)
 
 Stale and misplaced text in the references, from a second review (room package unchanged, 3.5.0).
