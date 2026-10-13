@@ -22,12 +22,12 @@
   "codex": {
     "label": "Codex CLI",
     "wake": "loop",
-    "wait_minutes": 4,
+    "wait_minutes": 15,
     "shell": { "windows": "powershell" },
     "draft": "relay-draft-{name}.md",
-    "prompt_extra": "The wait command runs for up to 4 minutes. Start it, then keep waiting on that same running command until it exits; do not start a second one. When it says nothing arrived, run it again at once: a wait that ends with nothing is normal, not an error, and it is never a reason to stop. You never stop waiting on your own; only your user, or a message from the room that tells you to, ends it. If the command above is refused or cannot start, change nothing, stop, and tell your user to start you again with codex --yolo.",
+    "prompt_extra": "The wait command runs for up to 15 minutes. Start it, then keep waiting on that same running command until it exits; do not start a second one. When it says nothing arrived, run it again at once: a wait that ends with nothing is normal, not an error, and it is never a reason to stop. You never stop waiting on your own; only your user, or a message from the room that tells you to, ends it. If the command above is refused or cannot start, change nothing, stop, and tell your user to start you again with codex --yolo.",
     "coordinator_note": "NOTE: start Codex with codex --yolo: without it Codex keeps asking its user and its sandbox blocks the room's commands",
-    "status": "worked live rooms on Windows as remote agents, up to five in one room on one machine (2026-10-12): must be started with codex --yolo; took a wait that timed out (then exit 3, shown by its shell as 1) for a failure and stopped waiting, so a timed-out wait exits 0 and says it is normal; its draft lies in the folder it ran join or start from, and a verb run from another folder once looked for it there (2026-10-12): every verb now uses the one full path its start printed"
+    "status": "worked live rooms on Windows as remote agents, up to five in one room on one machine (2026-10-12): must be started with codex --yolo; took a wait that timed out (then exit 3, shown by its shell as 1) for a failure and stopped waiting, so a timed-out wait exits 0 and says it is normal; its draft lies in the folder it ran join or start from, and a verb run from another folder once looked for it there (2026-10-12): every verb now uses the one full path its start printed; a foreground command of 16 minutes ran to its end in codex-cli 0.162.1 on Windows (2026-10-12), a longer one was not run to its end, so the wait is 15 minutes"
   },
   "gemini": {
     "label": "Gemini CLI",

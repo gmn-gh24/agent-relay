@@ -1433,7 +1433,7 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $card = Get-Content -LiteralPath (Join-Path $room "agents\$($openSeats[0])\card") -Raw
         $card | Should -Match '(?m)^kind: codex$'
         $card | Should -Match '(?m)^wake: loop$'
-        $codex.Output | Should -Match 'returns within 4 minutes'
+        $codex.Output | Should -Match 'returns within 15 minutes'
         $codex.Output | Should -Match 'keep waiting on that same running command'
         $codex.Output | Should -Match 'when it says nothing arrived, run it again'
         # A draft kept in the working folder carries the agent's name: two agents may share that folder
@@ -1450,7 +1450,7 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         # The same answers hold for every later command of that agent, not only for its start
         $again = Invoke-RelayTool -Room $room -Agent $openSeats[0] -Engine $engine -Words @('start')
         $again.ExitCode | Should -Be 0
-        $again.Output | Should -Match 'returns within 4 minutes'
+        $again.Output | Should -Match 'returns within 15 minutes'
         $again.Output | Should -Match "your draft file: \S*relay-draft-$($openSeats[0])\.md"
     }
 

@@ -133,6 +133,15 @@ uses to force races; renaming one makes the gate fail on purpose.
   A push to `main` whose `plugin.json` version has no tag yet gets the tag `v<version>` and a GitHub Release with
   that version's CHANGELOG section (`.github/workflows/release.yml`); no tag is made by hand, and a version
   without its CHANGELOG section fails that run.
+- **Every change reaches `main` through a pull request (owner decision).** In this repository "commit and
+  push" means: a branch, a commit, a push of the branch and a pull request; never a commit on `main` pushed
+  to `main`, also for a change of one line or of documentation only. The rule for solo repositories in the
+  owner's own instructions (commit on `main`, push `main`) does not hold here. Copilot reviews a pull request
+  and nothing else: wait for its review, read it (`gh api repos/<owner>/<repo>/pulls/<n>/reviews` and
+  `.../pulls/<n>/comments`; the summary can recommend changes with no finding on a line), fix or answer what it
+  says, and merge after that, not before. Before the branch is made, and again before the merge, fetch and
+  check that `main` has not moved: another session may have released in between, and the version is the next
+  free one.
 
 ## Time zone
 
