@@ -212,12 +212,14 @@ foreach ($agentAnswer in $agentAnswers) {
 $workFiles = @(Get-RelayProperty $answers 'work_files' @() | ForEach-Object { [string]$_ })
 foreach ($sourcePath in $workFiles) { if (-not (Test-Path -LiteralPath $sourcePath)) { throw "A work file to stage does not exist: $sourcePath" } }
 
-# Names: the coordinator first, then the agents in the order given
+# Names: the coordinator first, then the agents in the order given. A name drawn for the coordinator leaves
+# the letters of the names the owner chose for the agents: drawn first, it would take one now and then, and the
+# agent's own name would be refused
 $taken = New-Object System.Collections.Generic.List[string]
-$coordinatorName = Select-RelayName -Machine ([Environment]::MachineName) -Role 'coordinator' -Taken @() -Wanted ([string](Get-RelayProperty $coordinatorAnswer 'name' '')) -Transient
+$wanted = @($specs | ForEach-Object { [string]$_['wanted_name'] })
+$coordinatorName = Select-RelayName -Machine ([Environment]::MachineName) -Role 'coordinator' -Taken @() -Wanted ([string](Get-RelayProperty $coordinatorAnswer 'name' '')) -Transient -Reserved $wanted
 $taken.Add($coordinatorName)
 $names = New-Object System.Collections.Generic.List[string]
-$wanted = @($specs | ForEach-Object { [string]$_['wanted_name'] })
 foreach ($spec in $specs) {
     $name = Select-RelayName -Machine $spec['machine'] -Role $spec['role'] -Taken $taken.ToArray() -Wanted $spec['wanted_name'] -Reserved $wanted
     $taken.Add($name)

@@ -706,6 +706,35 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
         @($made | Where-Object { $_ -eq $line }).Count | Should -Be 1
     }
 
+    It 'draws no name for the coordinator that starts with the letter of a name the owner chose' {
+        # The draw prefers a name that no remembered seat owns. With every pool name but those on C and D owned by
+        # a seat of another machine, the draw that looked at nothing took one on C or D every time, and the room
+        # was refused for 'cora' or 'dana'
+        $registry = Join-Path (Get-RelayLocalRoot) 'names.json'
+        $before = $null
+        if ([System.IO.File]::Exists($registry)) { $before = [System.IO.File]::ReadAllText($registry) }
+        try {
+            $pool = @((Get-Content -LiteralPath (Join-Path $scripts 'relay-names.json') -Raw | ConvertFrom-Json).names | ForEach-Object { ([string]$_).ToLowerInvariant() })
+            @($pool | Where-Object { $_ -match '^[cd]' }).Count | Should -BeGreaterThan 0
+            $owned = [ordered]@{}
+            $number = 0
+            foreach ($name in @($pool | Where-Object { $_ -notmatch '^[cd]' })) { $number++; $owned["letters-pc-$number|builder"] = $name }
+            $null = New-Item -ItemType Directory -Path (Get-RelayLocalRoot) -Force
+            [System.IO.File]::WriteAllText($registry, (ConvertTo-Json $owned))
+            $answers = Join-Path $root 'letters-room.json'
+            [System.IO.File]::WriteAllText($answers, (ConvertTo-Json -Depth 6 @{ job = 'Letters room'; room_id = "lt-$case"; rooms_root = (Join-Path $root 'ltrooms'); agents = @([ordered]@{ name = 'cora'; role = 'builder' }, [ordered]@{ name = 'dana'; role = 'writer' }) }))
+            { & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $answers -NoClipboard } | Should -Not -Throw
+            $seats = @(Get-RelayRoster (Resolve-RelayRoom "lt-$case"))
+            $seats | Should -Contain 'cora'
+            $seats | Should -Contain 'dana'
+            @($seats | Where-Object { $_ -notin 'cora', 'dana' -and $_ -match '^[cd]' }).Count | Should -Be 0
+        }
+        finally {
+            if ($null -eq $before) { if ([System.IO.File]::Exists($registry)) { [System.IO.File]::Delete($registry) } }
+            else { [System.IO.File]::WriteAllText($registry, $before) }
+        }
+    }
+
     It 'says in the help of Update-RelayRoom.ps1 what it writes again' {
         $help = Get-Help (Join-Path $scripts 'Update-RelayRoom.ps1') -Full | Out-String
         $help | Should -Match 'START-HERE\.md'

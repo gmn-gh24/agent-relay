@@ -207,7 +207,7 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         foreach ($prompt in $share, $codex) { $prompt | Should -Not -Match 'virtual machine|throwaway|\brisk|dangerously' }
         $seat = Read-RelayKeyValue (Join-Path $created.Path 'agents\jack\seat')
         $seat['wake'] | Should -Be 'loop'
-        $seat['wait_minutes'] | Should -Be '4'
+        $seat['wait_minutes'] | Should -Be '15'
         # A draft kept in the working folder carries the agent's name: two agents may share that folder
         $seat['draft'] | Should -Be 'relay-draft-jack.md'
         $jackStart = Get-Content -LiteralPath (Join-Path $created.Path 'agents\jack\START-HERE.md') -Raw
@@ -644,7 +644,7 @@ Describe 'Add-RelayAgent' -Tag 'Scripts' {
         ([System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\g2\relay.cmd'))) | Should -Match 'set "RELAY_GEN=2"'
         $seat = Read-RelayKeyValue (Join-Path $room 'agents\emma\seat')
         $seat['kind'] | Should -Be 'codex'
-        $seat['wait_minutes'] | Should -Be '4'
+        $seat['wait_minutes'] | Should -Be '15'
         $prompt = Get-Content -LiteralPath (Join-Path $room 'PROMPT-emma.txt') -Raw
         $prompt | Should -Match 'agents/emma/g2/relay\.ps1'' start <product> <model> <effort>'
         Test-Path -LiteralPath (Join-Path $room 'agents\emma\g2\relay.ps1') | Should -BeTrue
@@ -1624,7 +1624,7 @@ Describe 'Open seats' -Tag 'Scripts' {
 
         $kinds = Read-RelayKeyValue (Join-Path $room 'tools\kinds')
         $kinds['claude-code.wake'] | Should -Be 'background'
-        $kinds['codex.wait_minutes'] | Should -Be '4'
+        $kinds['codex.wait_minutes'] | Should -Be '15'
         $kinds['codex.draft'] | Should -Be 'relay-draft-{name}.md'
         $kinds['codex.hint'] | Should -Match 'start you again with codex --yolo'
         $kinds['generic.wake'] | Should -Be 'loop'
