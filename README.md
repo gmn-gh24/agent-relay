@@ -390,6 +390,8 @@ Given once, when the room is built. The skill asks only for what has no sensible
 | `pickup_minutes` | An agent that leaves a message unread this long is marked | 30 |
 | `task_minutes` | How long a task should take when the coordinator names no number with it | 15 |
 
+</details>
+
 ### Where state lives
 
 | What | Where |
