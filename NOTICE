@@ -1,0 +1,11 @@
+agent-relay
+Copyright (c) 2026 gmn-gh24
+
+This product is licensed under the MIT License; see the LICENSE file.
+
+agent-relay is an independent project. It is not made, endorsed or supported by Anthropic, OpenAI, Google, GitHub
+or Microsoft. Claude, Claude Code, Codex, Gemini, Copilot, PowerShell, GitHub and Windows are names of their
+owners and are used here only to say which products agent-relay works with. See TRADEMARKS.md.
+
+agent-relay contains no third-party source code. Tools used to develop and test it (Pester, PSScriptAnalyzer)
+are not distributed with it and keep their own licenses.
