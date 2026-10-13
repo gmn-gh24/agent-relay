@@ -145,7 +145,7 @@ when a name here is not what an agent reports, and add a new family word to `scr
 | 6 Luna | `gpt-6-luna` | focused work in high volume: summarize, extract, focused coding | standard |
 | 5.6 Sol, Terra, Luna | not given on the page | the family before, still there during the change | by the family word |
 
-An agent that names `gpt-5.5` or older runs an old client: `gpt-5.5` leaves Codex on 2026-10-14, and
+An agent that names `gpt-5.5` or older runs an old client: `gpt-5.5` is gone from Codex as of 2026-10-14, and
 `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex` and `gpt-5.2` are gone already. A model given only as `gpt-6` says
 nothing about the family and sorts as strong: ask which one it is before a task depends on it.
 

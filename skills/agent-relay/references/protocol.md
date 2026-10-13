@@ -130,6 +130,18 @@ the folder the agent ran `start` or `join` from, which its `card` holds as `cwd`
 file, whatever folder it is run from, and `start` prints its full path and fills it into the instructions.
 `RELAY_DRAFT` names another file for a call (the coordinator's launcher sets it).
 
+Exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | done, or something for you; also a `wait` that timed out ("nothing arrived in N minutes: that is normal, not an error"): run `wait` again |
+| 1 | usage or error; the `NEXT:` line says what to do |
+| 2 | the room is not reachable |
+| 3 | `check` found nothing new (a `wait` exited 3 on a time-out before package 3.3.0; a shell that wraps the call may report 1 for any code but 0: agents go by the `NEXT:` line) |
+| 4 | another `wait` already runs for this agent |
+| 5 | stop: room closed, or the agent was stopped, replaced or retired |
+| 7 | on hold (`check` only, package 3.4.0): the coordinator's hold lasts, start nothing new; every verb prints the hold first |
+
 ## Tasks and their time
 
 `task <name> <minutes>` says how long the task should take; without a number it is `task_minutes` of this
@@ -198,16 +210,6 @@ An entry identical to one anybody already recorded prints `ALREADY RECORDED by <
   coordinator corrects a wrong entry only by a standing rule (`DECISIONS.md`) or by telling the agent to add a
   corrected entry; entries are append-only, and a wrong one is superseded by a new entry that says so.
 - Memory belongs to the room: it is archived at close and carries over if the room is reopened.
-
-| Code | Meaning |
-|---|---|
-| 0 | done, or something for you; also a `wait` that timed out ("nothing arrived in N minutes: that is normal, not an error"): run `wait` again |
-| 1 | usage or error; the `NEXT:` line says what to do |
-| 2 | the room is not reachable |
-| 3 | `check` found nothing new (a `wait` exited 3 on a time-out before package 3.3.0; a shell that wraps the call may report 1 for any code but 0: agents go by the `NEXT:` line) |
-| 4 | another `wait` already runs for this agent |
-| 5 | stop: room closed, or the agent was stopped, replaced or retired |
-| 7 | on hold (`check` only, package 3.4.0): the coordinator's hold lasts, start nothing new; every verb prints the hold first |
 
 ## Waiting
 

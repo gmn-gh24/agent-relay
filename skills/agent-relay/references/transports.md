@@ -28,8 +28,8 @@ ssh target: `user@name` becomes `user@address`.
 What was measured and what follows from it:
 
 - With writer and reader on the same PC, a Windows reader got a change event for a new file on the share in
-  tens of milliseconds, against seconds with polling alone. Across two machines this has not been measured
-  yet; the 2026-10-09 job saw wakes of 10 to 20 s there with polling alone. `relay.ps1` uses events plus a
+  tens of milliseconds, against seconds with polling alone. Across two machines a wake took about a second
+  (lessons.md, "A cross-machine wake takes about a second"); polling alone gave 10 to 20 s there. `relay.ps1` uses events plus a
   rescan, so a lost event costs seconds, not a message.
 - Creating a file exclusively works on SMB. The loser of a race gets "already exists" or, now and then,
   "access denied"; the tools treat both as "taken, try the next".

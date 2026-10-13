@@ -1,8 +1,8 @@
 # Lessons
 
 Dated, in general terms, each with what was changed because of it. No machine, share, address or user names
-and no task content: this file is committed. Newest at the bottom. Read it before designing a job; add to it
-after every room (`self-improvement.md`).
+and no task content: this file is committed. Newest at the bottom. Search it by keyword before designing a job (never read it
+whole); add to it after every room (`self-improvement.md`).
 
 ## 2026-10-09: the hand-built channel (three agents, three machines, one share)
 
@@ -632,7 +632,7 @@ day. What cost rounds, and what was changed:
 - **A kit that lacked what the suites read cost a round each time.** Reference masters, profiles and the
   sibling scripts a drift guard compares were not in the kit; the agents reported failures that were missing
   files, and a runner written by hand set strict mode into the test scope and lost its cmdlets under Windows
-  PowerShell started from PowerShell 7. Changed: `coordinating.md` has a checklist "The kit" under "Tasks":
+  PowerShell started from PowerShell 7. Changed: a checklist "The kit" (now in `multi-builder.md`):
   everything the suites read, per-round folders with only that round's changes and a diff against the round
   before, and a tested runner template (`-PassThru` with `Run.Exit` false, no `Set-StrictMode`, `PSModulePath`
   rebuilt from the registry under Windows PowerShell 5.1, output to a file in the results folder).
@@ -735,5 +735,5 @@ day. What cost rounds, and what was changed:
   such mark on the board: it has no wait while it works, by its nature.
 - **A kit that said five and held seven.** The task said to copy five files from a folder of seven, and the
   agent copied all of them with a wildcard; a count of steps in the task differed from the runner's, and the
-  agent stopped to ask. Changed: "The kit" in `coordinating.md` says to name the files to copy, or to stage a
+  agent stopped to ask. Changed: "The kit" in `multi-builder.md` says to name the files to copy, or to stage a
   folder that holds exactly them, and that a count in a task is the count the runner prints.
