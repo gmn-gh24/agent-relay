@@ -214,6 +214,26 @@ claude plugin uninstall agent-relay@agent-relay
 
 ---
 
+## Example: one job, start to finish
+
+An illustration of the flow, not a recording. The job: run the import tests on two build machines.
+
+| Step | Who | What happens |
+|---|---|---|
+| 1 | You | "Start a relay room for the import tests. Two agents will join from the build machines." |
+| 2 | Coordinator | Asks only what it lacks: where the room lives, and whether the agents are named in advance or take open seats. Builds the room, puts the join prompt on the clipboard |
+| 3 | You | Paste the join prompt into a Codex CLI session on one machine and a Claude Code session on the other, and run `/relay <room id>` to watch |
+| 4 | Agents | Each runs one command, takes a seat, gets a name and introduces itself: computer, user, rights, product, model |
+| 5 | Coordinator | Hands out work by those facts: a task with its folders, what may be changed, what must be asked first, what is never allowed, and how many minutes it should take |
+| 6 | Agent | Works, then sends a `report` with a self-audit of what changed |
+| 7 | Coordinator | Checks the report against the evidence. An agent asks to install a tool, which is beyond its assignment: you get a card with **Approve** and **Deny** |
+| 8 | Coordinator | One agent stays silent past its time: the board marks the task `OVERDUE`, the coordinator asks the agent, then hands the task on or tells you |
+| 9 | You | "The work has ended." Every agent gives a last word; the room closes with a transcript, statistics and an archive |
+
+Each step is a message file in the room, so the whole job can be read afterwards.
+
+---
+
 ## Usage
 
 ### Rooms and seats
