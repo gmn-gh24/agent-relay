@@ -22,6 +22,11 @@ Two things are never defaulted from memory and never taken from an earlier job:
   when the owner says so, for that machine and for this job. If the owner has not said, the answer is "in use".
 - **Your own authority** in this room.
 
+**Which accounts the runs need.** Ask it when the job installs a service, runs as SYSTEM or checks something as a
+standard user: such a job needs two seats on that machine, one elevated and one not, planned now (`open_seats`,
+or two named agents). Do not offer a detour from the elevated agent in its place (a tool that starts a process
+with lower rights, a prompt the owner must answer): the room exists so that such work needs nobody's hands.
+
 The local notes (`scripts/Add-RelayLocalMemory.ps1 -Find`) may seed suggestions you offer the owner, but they
 are never silent defaults: say where a suggestion comes from and let the owner confirm it.
 

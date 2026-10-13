@@ -1318,6 +1318,21 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         Test-Path -LiteralPath (Join-Path $root 'local\archive\flow.zip') | Should -BeTrue
     }
 
+    It 'reads the statistics of a closed room from the copy the close saved on this PC once the room folder is removed' {
+        $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Room 'flow' -Force
+        $before = (& (Join-Path $scripts 'Get-RelayStats.ps1') -Room 'flow') -join "`n"
+        $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -Confirm:$false
+        Test-Path -LiteralPath $room | Should -BeFalse
+        $after = (& (Join-Path $scripts 'Get-RelayStats.ps1') -Room 'flow') -join "`n"
+        $after | Should -Match 'requests: 4, answered 2, never answered 2'
+        $after | Should -Match 'messages: \d+ in .*\('
+        (ConvertFrom-Json -InputObject ((& (Join-Path $scripts 'Get-RelayStats.ps1') -Room 'flow' -AsJson) -join "`n")).room | Should -Be 'flow'
+        # Without the saved copy there is nothing to read, and the refusal stays what it was
+        Remove-Item -LiteralPath (Join-Path $object.Local 'stats.json') -Force
+        { & (Join-Path $scripts 'Get-RelayStats.ps1') -Room 'flow' } | Should -Throw '*folder is not reachable*'
+        $before | Should -Match 'requests: 4'
+    }
+
     It 'does not remove a room that is still open or has no archive, also when the room folder holds a CLOSED that somebody put there' {
         { & (Join-Path $scripts 'Close-RelayRoom.ps1') -Remove 'flow' -Confirm:$false } | Should -Throw '*not closed*'
         [System.IO.File]::WriteAllText((Join-Path $room 'CLOSED'), "closed_utc: 2026-10-10T00:00:00Z`nby: olivia`n")
