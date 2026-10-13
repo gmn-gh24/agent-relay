@@ -133,6 +133,10 @@ uses to force races; renaming one makes the gate fail on purpose.
   A push to `main` whose `plugin.json` version has no tag yet gets the tag `v<version>` and a GitHub Release with
   that version's CHANGELOG section (`.github/workflows/release.yml`); no tag is made by hand, and a version
   without its CHANGELOG section fails that run.
+- **No session links in commits, pull requests or comments (owner decision).** Do not add a `Claude-Session:` trailer
+  or any `claude.ai/code/session_...` link to a commit message, pull request description or comment, and remove one
+  that a tool added before the commit or push. Cloud sessions add it by default: strip it each time
+  (`git log --format=%B | grep claude.ai/code/session` must print nothing).
 - **Every change reaches `main` through a pull request (owner decision).** In this repository "commit and
   push" means: a branch, a commit, a push of the branch and a pull request; never a commit on `main` pushed
   to `main`, also for a change of one line or of documentation only. The rule for solo repositories in the
