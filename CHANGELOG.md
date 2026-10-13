@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.0 (2026-10-12)
+
+A tighter skill, a sharper trigger and a license (room package unchanged, 3.5.0). From a review of the plugin
+with the plugin-dev agents.
+
+- **The skill description** is shorter, names the relay room, covers reopening, and says what it is not for:
+  subagents of the session, plain ssh or local work with no second agent.
+- **Five new evals:** two must not load the skill (an ssh test run, parallel teammates of the session), two
+  must (adding an agent to a room, reopening a closed room), and one checks the `OVERDUE` handling (ask first,
+  then reassign or tell the owner, never claim it done).
+- **No duplicated rules.** The rules at the top of `SKILL.md` and workflow 2 are one line each and point at
+  the heading of `coordinating.md` that holds the detail; about 500 words fewer on every load. Workflow 7 says
+  it applies only in the plugin's git working copy.
+- **`coordinating.md` is split.** "One job, several builders" and "The kit" moved to `references/multi-builder.md`,
+  "Room memory" to `references/room-memory.md`; each has its own line in the reference table. Two anecdotes
+  that belong in `lessons.md` were cut from the rules, and "Three things a task says" no longer miscounts.
+- **MIT license** (`LICENSE`, `license` in `plugin.json`, README). `CLAUDE.md` tells the protocol number (3)
+  from the package version.
+
 ## 0.7.0 (2026-10-12)
 
 No silent agents, and a coordinator that is woken when one goes quiet (room package 3.5.0; running rooms:
