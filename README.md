@@ -15,18 +15,10 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.<
 <img alt="PowerShell 5.1 and 7" src="https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE">
 </p>
 
-<p>
-<a href="#why"><strong>Why</strong></a> |
-<a href="#how-it-works"><strong>How it works</strong></a> |
-<a href="#installation"><strong>Install</strong></a> |
-<a href="#quick-start"><strong>Quick start</strong></a> |
-<a href="#usage"><strong>Usage</strong></a> |
-<a href="#reference"><strong>Reference</strong></a> |
-<a href="#security-model"><strong>Security</strong></a> |
-<a href="#troubleshooting"><strong>Troubleshooting</strong></a> |
-<a href="#development"><strong>Development</strong></a> |
-<a href="#status-and-limitations"><strong>Status</strong></a>
-</p>
+**[Why](#why)** | **[How it works](#how-it-works)** | **[Install](#installation)** | **[Quick start](#quick-start)** |
+**[Usage](#usage)** | **[Reference](#reference)** | **[Security](#security-model)** | **[FAQ](#faq)** |
+**[Troubleshooting](#troubleshooting)** | **[Development](#development)** | **[Status](#status-and-limitations)** |
+**[Roadmap](#roadmap)**
 
 </div>
 
@@ -47,6 +39,15 @@ that can run a command and write a file. In use for real work: see
 
 **In 60 seconds:** install the plugin, ask for a room, paste one prompt into each agent. See
 [Quick start](#quick-start).
+
+```
+claude plugin marketplace add gmn-gh24/agent-relay
+claude plugin install agent-relay@agent-relay
+```
+
+> [!WARNING]
+> agent-relay is **not a sandbox**. An agent runs with the rights of the account it was started under. Give
+> each agent an account with the rights its task needs and no more. See [Security model](#security-model).
 
 ---
 
@@ -449,6 +450,71 @@ More traps, with what the tools do about each, are in
 
 ---
 
+## FAQ
+
+<details>
+<summary><strong>Do the other agents need this plugin?</strong></summary>
+
+No. They need one prompt to paste and one command to run. The room tool, `relay.ps1`, is inside the room folder.
+Only the coordinator, your Claude Code session, has the plugin.
+</details>
+
+<details>
+<summary><strong>How is this different from Claude Code's own agent teams and session messaging?</strong></summary>
+
+Those connect Claude Code sessions. agent-relay uses a shared folder, so agents of different products on
+different machines can work under one coordinator, each with a written assignment, approval tiers, owner cards and
+a record. While a room is bound, the plugin refuses Claude Code's session-to-session tools by default, because the
+room is the coordinator's only channel to an agent (`/relay outside on` lifts that).
+</details>
+
+<details>
+<summary><strong>Is it a sandbox?</strong></summary>
+
+No. It keeps agents in scope by instruction, evidence and review. An agent can do on its machine whatever its
+account can. See [Security model](#security-model).
+</details>
+
+<details>
+<summary><strong>Does it send my data anywhere?</strong></summary>
+
+The scripts and the room tool make no network calls and have no telemetry. A room is a folder; on a file share, the
+share's own network traffic applies. What an agent reads and writes is handled by its own product. See
+[`SECURITY.md`](SECURITY.md).
+</details>
+
+<details>
+<summary><strong>Can the coordinator be something other than Claude Code on Windows?</strong></summary>
+
+Not today. The coordinator is a Claude Code session on Windows with PowerShell 7 or Windows PowerShell 5.1. The
+other agents can be any coding agent that can run a command and write a file.
+</details>
+
+<details>
+<summary><strong>Does it work with agents on Linux or macOS?</strong></summary>
+
+Not tried yet. The room tool is PowerShell, and there is no `sh` tool. See
+[Status and limitations](#status-and-limitations).
+</details>
+
+<details>
+<summary><strong>What if an agent goes silent?</strong></summary>
+
+A task says how long it should take. When its agent has sent nothing for that long, the board marks the task
+`OVERDUE`, the coordinator's wait ends, and the coordinator asks the agent, then gives the task to another one or
+tells you.
+</details>
+
+<details>
+<summary><strong>Where is the record, and can I reopen a room?</strong></summary>
+
+Every message is a file. Closing a room writes a transcript, statistics and an archive, which stay on the
+coordinator's PC. `Reopen-RelayRoom.ps1` brings a closed room back on that PC. See
+[Memory, close and reopen](#memory-close-and-reopen).
+</details>
+
+---
+
 ## Development
 
 ### Repository layout
@@ -557,12 +623,28 @@ Known limits:
 
 ---
 
+## Roadmap
+
+What is planned, and what was looked at and dropped, is in [ROADMAP.md](ROADMAP.md). Changes by release are in
+[CHANGELOG.md](CHANGELOG.md).
+
+---
+
 ## Contributing
 
 Issues and pull requests are welcome at <https://github.com/gmn-gh24/agent-relay>. Please run the test gate
 before you open a pull request, add a test for what you change, and write a line for the changelog. See
 [CONTRIBUTING.md](CONTRIBUTING.md), the [Code of Conduct](CODE_OF_CONDUCT.md) and the
 [security policy](SECURITY.md). What is planned: [ROADMAP.md](ROADMAP.md). Names and trademarks: [TRADEMARKS.md](TRADEMARKS.md) and [NOTICE](NOTICE).
+
+---
+
+## Support
+
+- **A question or a bug:** [open an issue](https://github.com/gmn-gh24/agent-relay/issues) with the PowerShell
+  edition, the agent product and the exact error line.
+- **A security problem:** report it privately, see [SECURITY.md](SECURITY.md).
+- **Behavior in the project's spaces:** see the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ---
 
