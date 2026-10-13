@@ -110,6 +110,6 @@ A checksum manifest (`MANIFEST.sha256`) for what a room is built from: `assets/r
 - A web view: the pane and the feed in a terminal do this.
 - Waking an agent through its session's inbox socket: works for Claude Code only, where a background wait already
   wakes the agent.
-- Compaction commands from the coordinator: telling a remote agent to compact when the subject changes. A message
-  from the coordinator does not make a remote agent compact.
+- Compaction commands from the coordinator: telling a remote agent to compact. A message from the coordinator does
+  not make a remote agent compact.
 - `sh` and `ssh`: postponed by the owner, with no plan; see "Status and limitations" in [README.md](README.md).
