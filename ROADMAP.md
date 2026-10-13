@@ -108,7 +108,7 @@ A checksum manifest (`MANIFEST.sha256`) for what a room is built from: `assets/r
   context), as an instruction in a message. To evaluate, not yet to build, and only if and when two things hold
   for an agent's kind: its product accepts a command that comes from the coordinator, and it has a compact
   command or something like it (the name differs outside Claude Code). Until both hold for a kind, nothing is
-  sent to agents of that kind.
+  sent to agents of that kind. Claude Code is the first kind where it was seen to work.
   - *When.* (1) At a task boundary: a report was accepted and the next assignment is on another subject, another
     part of the code or another work kind. (2) After a long run on one thing: many messages or hours on one
     assignment, several rejected reports in a row, or signs of lost context (a question the assignment already
@@ -118,13 +118,15 @@ A checksum manifest (`MANIFEST.sha256`) for what a room is built from: `assets/r
     assignment, the number of assignments since the agent joined. It cannot see an agent's token count or how
     full its context is. An optional context figure in the agent's heartbeat or report would be an agent's own
     claim: good for a hint, never for a decision of the coordinator's PC (see the trust boundary).
-  - *The precondition.* Today compaction is in most products a command the person at the seat types (`/compact`
-    in Claude Code, a like command elsewhere), not something the model can run on itself, and a message from the
-    coordinator is text the agent reads, not a command its product runs. So this item waits for the products.
-    Record per kind in `scripts/agent-kinds.json` whether the kind takes a command from outside its session and
-    what its compact command is called; the coordinator sends the hint only to a kind that has both, and the
-    wording names that kind's own command. A kind without them is left alone: no line for its user to type, and
-    no forced new session as a substitute.
+  - *The precondition.* Seen to work once for `claude-code`: in a real room (2026-10-13) the owner asked the
+    coordinator to tell a remote Claude Code agent (Haiku) to compact, the coordinator sent it as a message, and
+    the agent appears to have compacted. Still to confirm there: how the agent did it, that it came back to the
+    room by itself (`start`, then `wait`) and kept its open assignment, and that it holds for the other models
+    and for a headless seat. For the other kinds it is not known: compaction may be a command only the person at
+    the seat can type, and the command has another name. Record per kind in `scripts/agent-kinds.json` whether
+    an agent of that kind can compact on the coordinator's word and what its command is called; the coordinator
+    sends the hint only to a kind where it is confirmed, and the wording names that kind's own command. A kind
+    without it is left alone: no line for its user to type, and no forced new session as a substitute.
   - *What must survive.* Before it compacts, the agent writes down what the room does not hold: the state of
     work in progress, decisions it made, files it touched, what it was about to do. A handover note in its
     report or a note to itself in the room covers this, and the instruction asks for it first. After the
