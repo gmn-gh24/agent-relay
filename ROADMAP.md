@@ -94,6 +94,13 @@ A checksum manifest (`MANIFEST.sha256`) for what a room is built from: `assets/r
   Not needed while the project has one maintainer and an MIT license with no outside work; decide if contributions
   grow. It would apply to new commits only.
 
+- **Enforced file ownership.** Today "one owner per file" (`references/multi-builder.md`) is a plan rule plus the
+  self-audit; nothing stops an agent from editing a file it does not own. The coordinator already records each
+  agent's files in the plan, so the guard could flag or refuse an edit outside them. A per-file writer lock was
+  suggested for the shared folder; the room folder needs none (each agent writes its own message files), and a lock
+  on project files would be advisory like the plan rule. Revisit if a real room shows a collision the self-audit
+  missed; it overlaps the dropped "file reservations" item below.
+
 ## Looked at and dropped
 
 - Task dependencies that unblock by themselves: the plan already has `depends`, a `blocked` status and a cycle
