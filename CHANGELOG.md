@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.1 (2026-10-13)
+
+Stale and misplaced text in the references, from a second review (room package unchanged, 3.5.0).
+
+- `lessons.md`: the header says to search it, as SKILL.md does; the two entries that sent a reader to "The kit"
+  in `coordinating.md` now name `multi-builder.md`.
+- `transports.md`: the cross-machine wake is the measured one second, not "not measured yet".
+- `agent-kinds.md`: the `gpt-5.5` retirement is stated as a fact from 2026-10-14, not as a future event.
+- `protocol.md`: the exit-code table sits under "Verbs and exit codes", not under "Room memory".
+- `room-memory.md`: a duplicate is not written (it was called refused). `coordinating.md`: extra blank lines
+  from the split are gone.
+
 ## 0.8.0 (2026-10-12)
 
 A tighter skill, a sharper trigger and a license (room package unchanged, 3.5.0). From a review of the plugin

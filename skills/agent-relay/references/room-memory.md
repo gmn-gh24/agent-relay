@@ -3,7 +3,7 @@
 Read this when the board's `memory:` line shows new entries, and when you curate memory at close.
 
 Agents record durable findings with `remember [tag ...]` (the text comes from a draft file; one finding per
-entry; text that looks like a secret and duplicates are refused) and read all agents' memory with
+entry; text that looks like a secret is refused, and a duplicate is not written) and read all agents' memory with
 `find [word|tag:x ...]`. Their tools show `room memory: N entries, M new` at start, with a delivery and
 with an answer to `ask`. The board shows `memory: N entries from K agents`.
 
