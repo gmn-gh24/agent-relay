@@ -1,32 +1,54 @@
-# agent-relay
+<div align="center">
 
-Coordinate any number of coding agents from one Claude Code session: hand out tasks, answer questions,
-approve or deny what goes beyond an assignment, and keep a record of all of it.
+<h1>agent-relay</h1>
 
-| | |
-|---|---|
-| Version | 0.9.1 ([changelog](CHANGELOG.md)) |
-| Runs in | Claude Code, as a plugin: one skill, a set of PowerShell scripts, and a pane in the session |
-| Coordinator | Windows, PowerShell 7 or Windows PowerShell 5.1 |
-| Other agents | Any coding agent that can run a command and write a file |
-| Status | In use for real work; see [Status and limitations](#status-and-limitations) |
+<p><strong>Many agents. One room. You decide.</strong></p>
 
-## Contents
+<p>Coordinate any number of coding agents from one Claude Code session: hand out tasks, answer questions,<br>
+approve or deny what goes beyond an assignment, and keep a record of all of it.</p>
 
-- [Why](#why)
-- [What you get](#what-you-get)
-- [How it works](#how-it-works)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Quick start](#quick-start)
-- [Usage](#usage)
-- [Reference](#reference)
-- [Security model](#security-model)
-- [Troubleshooting](#troubleshooting)
-- [Development](#development)
-- [Status and limitations](#status-and-limitations)
-- [Contributing](#contributing)
-- [License](#license)
+<p>
+<a href="CHANGELOG.md"><img alt="Version 0.9.1" src="https://img.shields.io/badge/version-0.9.1-blue"></a>
+<a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+<a href="https://github.com/gmn-gh24/agent-relay/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/gmn-gh24/agent-relay/actions/workflows/ci.yml/badge.svg"></a>
+<img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-orange">
+<img alt="PowerShell 5.1 and 7" src="https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE">
+</p>
+
+<p>
+<a href="#why"><strong>Why</strong></a> |
+<a href="#how-it-works"><strong>How it works</strong></a> |
+<a href="#installation"><strong>Install</strong></a> |
+<a href="#quick-start"><strong>Quick start</strong></a> |
+<a href="#usage"><strong>Usage</strong></a> |
+<a href="#reference"><strong>Reference</strong></a> |
+<a href="#security-model"><strong>Security</strong></a> |
+<a href="#troubleshooting"><strong>Troubleshooting</strong></a> |
+<a href="#development"><strong>Development</strong></a> |
+<a href="#status-and-limitations"><strong>Status</strong></a>
+</p>
+
+</div>
+
+---
+
+<table align="center">
+<tr>
+<td align="center"><h3>Any number of agents</h3>1 prompt to paste</td>
+<td align="center"><h3>4 approval tiers</h3>just do it to ask first</td>
+<td align="center"><h3>15 s tamper check</h3>changes restored, alarm raised</td>
+</tr>
+</table>
+
+Runs in Claude Code as a plugin: one skill, a set of PowerShell scripts, and a pane in the session. The
+coordinator needs Windows with PowerShell 7 or Windows PowerShell 5.1; the other agents can be any coding agent
+that can run a command and write a file. In use for real work: see
+[Status and limitations](#status-and-limitations).
+
+**In 60 seconds:** install the plugin, ask for a room, paste one prompt into each agent. See
+[Quick start](#quick-start).
+
+---
 
 ## Why
 
@@ -38,6 +60,15 @@ more than they were asked.
 agent-relay gives those agents one shared folder, a small protocol, and one coordinator. The coordinator is
 your Claude Code session. The other agents can be Claude Code, Codex CLI, or anything else: they do not need
 this plugin, only one prompt to paste and one command to run.
+
+| Without agent-relay | With agent-relay |
+|---|---|
+| Copy text between terminals | One shared folder, one protocol |
+| Lose track of who was told what | Every message is a file; closing a room writes a transcript, statistics and an archive |
+| Agents quietly do more than they were asked | Every assignment lists the task, the folders, what to ask first and what is never allowed |
+| You have to notice a silent agent | A task says how long it should take; the coordinator is woken, asks the agent, then hands the task on or tells you |
+
+---
 
 ## What you get
 
@@ -60,6 +91,8 @@ this plugin, only one prompt to paste and one command to run.
 - **A record.** Every message is a file. Closing a room writes a transcript, statistics and an archive.
 - **Safeguards.** The coordinator's PC keeps its own copy of the tools, instructions and rules, compares them
   with the room every 15 seconds while the feed runs, restores what changed and raises an alarm.
+
+---
 
 ## How it works
 
@@ -93,6 +126,8 @@ command line: it is written into a draft file, and the verbs take single plain w
 
 The full protocol is in [`skills/agent-relay/references/protocol.md`](skills/agent-relay/references/protocol.md).
 
+---
+
 ## Requirements
 
 | Who | Needs |
@@ -103,6 +138,8 @@ The full protocol is in [`skills/agent-relay/references/protocol.md`](skills/age
 
 The room pane uses Claude Code's plugin hooks, which are early access. Without them everything else works,
 and the feed in a terminal shows the same view.
+
+---
 
 ## Installation
 
@@ -145,6 +182,8 @@ claude plugin update agent-relay@agent-relay
 claude plugin uninstall agent-relay@agent-relay
 ```
 
+---
+
 ## Quick start
 
 1. **Ask for a room.** In a Claude Code session, say what you want in your own words:
@@ -171,6 +210,8 @@ claude plugin uninstall agent-relay@agent-relay
 
 5. **Close.** Say that the work has ended. The coordinator asks every agent for a last word, then closes the
    room with a transcript, statistics and an archive.
+
+---
 
 ## Usage
 
@@ -251,12 +292,17 @@ sent nothing for the time the task should take; the coordinator's wait ends on t
 the agent, then gives the task to another one or tells you. The coordinator tells you about each one;
 [`coordinating.md`](skills/agent-relay/references/coordinating.md) lists what each means and what to do.
 
+---
+
 ## Reference
 
 ### Coordinator scripts
 
 All in `skills/agent-relay/scripts/`. The coordinator runs them for you; they also work by hand. Each has
 full help (`Get-Help <script> -Full`).
+
+<details>
+<summary>Show the script table</summary>
 
 | Script | Purpose |
 |---|---|
@@ -276,6 +322,8 @@ full help (`Get-Help <script> -Full`).
 | `Reopen-RelayRoom.ps1` | Reopens a closed room on the PC that closed it |
 | `Update-RelayRoom.ps1` | Brings a running room up to the tools and instructions of this version |
 | `Test-RelayPackage.ps1` | Conformance run: `relay.ps1` on PowerShell 7 and Windows PowerShell 5.1 against one room |
+
+</details>
 
 ### Agent verbs
 
@@ -306,6 +354,9 @@ for that long.
 
 Given once, when the room is built. The skill asks only for what has no sensible default.
 
+<details>
+<summary>Show the settings table</summary>
+
 | Field | Meaning | Default |
 |---|---|---|
 | `job` | What the room is for, in one line | required |
@@ -328,6 +379,8 @@ Given once, when the room is built. The skill asks only for what has no sensible
 | This PC's copy of what it wrote, the owner's log, the room index, archives | `.local/` in a clone, or `%LOCALAPPDATA%\agent-relay` for an installed copy; `AGENT_RELAY_LOCAL` overrides both |
 
 Nothing in `.local/` is in git.
+
+---
 
 ## Security model
 
@@ -365,7 +418,12 @@ an agent run every command without asking, with the rights of its account. For a
 changes the system or runs code you do not trust, use a virtual machine or a throwaway computer. The
 coordinator says this to you when a job calls for it; it is never written into what the agents read.
 
+---
+
 ## Troubleshooting
+
+<details>
+<summary>Show the symptom table</summary>
 
 | Symptom | Cause | Fix |
 |---|---|---|
@@ -383,9 +441,13 @@ coordinator says this to you when a job calls for it; it is never written into w
 | Tests fail at once on an agent's machine | Pester does not run from a network folder | Work in a folder on a local disk |
 | `ARCHIVE FAILED` at close | A file of the room could not be read while the archive was made | Run `Close-RelayRoom.ps1 -Room <id>` again. Until it names an archive, keep the room folder |
 
+</details>
+
 More traps, with what the tools do about each, are in
 [`transports.md`](skills/agent-relay/references/transports.md). What real rooms taught is in
 [`lessons.md`](skills/agent-relay/references/lessons.md).
+
+---
 
 ## Development
 
@@ -466,6 +528,8 @@ its report on this PC.
 - Every release has an entry in [CHANGELOG.md](CHANGELOG.md) and a tag `v<version>`, which CI makes from that
   entry.
 
+---
+
 ## Status and limitations
 
 Built and in use: protocol 3, the room tool `relay.ps1`, named agents and open seats, the team plan, the board,
@@ -491,11 +555,23 @@ Known limits:
   as long as the room is open, and while it works it sees a message only between two steps.
 - The pane depends on plugin hooks that may change between Claude Code releases.
 
+---
+
 ## Contributing
 
 Issues and pull requests are welcome at <https://github.com/gmn-gh24/agent-relay>. Please run the test gate
 before you open a pull request, add a test for what you change, and write a line for the changelog.
 
+---
+
 ## License
 
 MIT, see the `LICENSE` file.
+
+---
+
+<div align="center">
+
+Many agents. One room. You decide.
+
+</div>
