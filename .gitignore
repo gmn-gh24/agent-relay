@@ -14,3 +14,7 @@ evals/results/
 node_modules/
 *.log
 testResults*.xml
+
+# Private working notes: research on alternatives and open items from reviews. Kept on this machine only.
+IDEAS.md
+IMPROVEMENTS.md
