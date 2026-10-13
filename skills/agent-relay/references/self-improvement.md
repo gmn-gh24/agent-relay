@@ -32,7 +32,7 @@ that none was found.
 ## Promotions from room memory
 
 At close the coordinator curates the room's memory and the owner approves what is promoted
-(`references/coordinating.md`, "Room memory"). An item approved for project lessons becomes a lesson like any
+(`references/room-memory.md`). An item approved for project lessons becomes a lesson like any
 other: rewritten in the coordinator's own words, dated, with the same anonymisation (no machine, share,
 address, user or task content), and it names what changed or says plainly that nothing could. An item approved
 for local notes goes in with `scripts/Add-RelayLocalMemory.ps1` and is never committed. Nothing is promoted

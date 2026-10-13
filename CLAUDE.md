@@ -60,7 +60,8 @@ claude plugin eval . --no-publish   # the skill's cases in evals/; each run is a
 
 ## Architecture
 
-Three parts that share a protocol (currently 3, `skills/agent-relay/assets/room-package/VERSION`):
+Three parts that share a protocol (protocol 3, see `PROTOCOL.md`; `skills/agent-relay/assets/room-package/VERSION`
+is the package version, a different number):
 
 1. **Coordinator side** - `skills/agent-relay/SKILL.md` + `references/*.md` + `scripts/*.ps1`. The SKILL is the
    coordinator's operating manual (seven workflows); the scripts do the work and all import
