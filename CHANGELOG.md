@@ -17,8 +17,9 @@
   and then with "starts with a letter another agent of this room already has", when the draw had taken that
   letter. The draw now keeps those letters free, as the draw for the other seats already did. Found by the
   gate, where one test failed about one run in ten for that reason.
-- `agent-kinds.md`: the `gpt-5.5` retirement is given with its date and no tense, so the line is right on both
-  sides of 2026-10-14 (0.8.1, dated the day before, called it gone). From the review of that pull request.
+- `agent-kinds.md`: the `gpt-5.5` retirement is a date label, "last day in Codex: 2026-10-14", not a tensed
+  claim, so the line is right on both sides of that day (0.8.1, dated the day before, called it gone). From the
+  reviews of that pull request and of this one.
 
 ## 0.9.0 (2026-10-13)
 
