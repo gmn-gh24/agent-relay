@@ -510,7 +510,7 @@ last hour showed:
   and one that is not, planned when the room is made. The coordinator offered a detour from the elevated agent
   instead (a tool that starts a process with lower rights, or a UAC prompt for the owner). That is wrong for
   the same reason as before: the room is there so that such work needs nobody's hands. Ask the owner for a
-  second agent. Not changed yet: the startup interview does not ask which accounts a job's runs need.
+  second agent. Changed (0.9.0): the startup interview asks which accounts a job's runs need.
 
 ## 2026-10-11: a room with one elevated agent for one system setting (a live room, as its coordinator reported it)
 
@@ -533,7 +533,7 @@ last hour showed:
 - **The statistics script refused the room once its folder was deleted.** The close workflow removes the
   folder before the retro, and the retro starts with that script. The numbers were still there, in the file
   the close saved on this PC. Changed: the self-improvement reference names that file for a room whose folder
-  is gone. Not changed yet: the script does not fall back to it by itself.
+  is gone. Changed (0.9.0): the script reads that file by itself when the folder is gone.
 
 ## 2026-10-11: a review of the design (no room)
 
@@ -616,7 +616,8 @@ day. What cost rounds, and what was changed:
 - **The coordinator expected its draft to survive a send.** A second verb ran on a draft the first had consumed
   and sent nothing. Changed: the skill's rule on drafts says that line 1 is the subject and the send consumes
   the draft.
-- Still open after this room (each with its own entry when done): the assignment JSON that the coordinator
+- Open after this room (closed in the two entries below, 0.5.1 and 0.6.0, except the Codex time limit, which
+  `agent-kinds.md` tracks): the assignment JSON that the coordinator
   hand-writes (a heredoc lost backslashes and a variable, then a JSON escape error: two failed rounds), the
   `remember` limits that an agent found only when the verb failed, a hold that was a plain note and reached
   an agent after its run had started, a kit that lacked what the suites read, the product's command time

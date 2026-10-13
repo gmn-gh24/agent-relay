@@ -14,8 +14,8 @@ working copy it falls back to local memory (`scripts/Add-RelayLocalMemory.ps1`).
 
 1. `scripts/Get-RelayStats.ps1 -Room <id>`: reply times, requests never answered, questions asked twice,
    changes outside assigned paths, alarms, time lost to dead waits and to agents that went silent on a task,
-   and each agent's `bye` with what slowed it down. For a room whose folder was deleted at close the script refuses: read
-   `stats.json` next to the room's launcher on this PC, which the close saved.
+   and each agent's `bye` with what slowed it down. For a room whose folder was deleted at close the script reads
+   `stats.json` on this PC, which the close saved.
 2. Read the transcript where a number looks bad. Look for: a prompt or instruction an agent misread; a
    `NEXT:` line that did not say enough; a question the assignment should have answered; an approval that had
    to go to the owner and could have been a rule; a wait that cost turns; an introduction that surprised.
