@@ -562,7 +562,7 @@ Known limits:
 Issues and pull requests are welcome at <https://github.com/gmn-gh24/agent-relay>. Please run the test gate
 before you open a pull request, add a test for what you change, and write a line for the changelog. See
 [CONTRIBUTING.md](CONTRIBUTING.md), the [Code of Conduct](CODE_OF_CONDUCT.md) and the
-[security policy](SECURITY.md). Names and trademarks: [TRADEMARKS.md](TRADEMARKS.md) and [NOTICE](NOTICE).
+[security policy](SECURITY.md). What is planned: [ROADMAP.md](ROADMAP.md). Names and trademarks: [TRADEMARKS.md](TRADEMARKS.md) and [NOTICE](NOTICE).
 
 ---
 
