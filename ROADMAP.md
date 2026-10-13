@@ -101,6 +101,43 @@ A checksum manifest (`MANIFEST.sha256`) for what a room is built from: `assets/r
   on project files would be advisory like the plan rule. Revisit if a real room shows a collision the self-audit
   missed; it overlaps the dropped "file reservations" item below.
 
+- **Compaction hints from the coordinator.** A remote agent that stays in a room for hours carries the whole of
+  its earlier tasks in its context: it gets slower and dearer per turn, drifts back to an old subject, and at some
+  point its product compacts by itself, often in the middle of a task. The coordinator knows the good moments and
+  the agent does not, so the coordinator could tell the agent when to compact (or to start over with a clean
+  context), as an instruction in a message. To evaluate, not yet to build, and only if and when two things hold
+  for an agent's kind: its product accepts a command that comes from the coordinator, and it has a compact
+  command or something like it (the name differs outside Claude Code). Until both hold for a kind, nothing is
+  sent to agents of that kind.
+  - *When.* (1) At a task boundary: a report was accepted and the next assignment is on another subject, another
+    part of the code or another work kind. (2) After a long run on one thing: many messages or hours on one
+    assignment, several rejected reports in a row, or signs of lost context (a question the assignment already
+    answers, a repeated mistake). (3) Before a large assignment, so it starts with room. Never in the middle of a
+    task, while a request of the agent waits for an answer, or while the agent holds uncommitted work.
+  - *What the coordinator can see.* Only what the room shows: messages and reports per agent, time on the
+    assignment, the number of assignments since the agent joined. It cannot see an agent's token count or how
+    full its context is. An optional context figure in the agent's heartbeat or report would be an agent's own
+    claim: good for a hint, never for a decision of the coordinator's PC (see the trust boundary).
+  - *The precondition.* Today compaction is in most products a command the person at the seat types (`/compact`
+    in Claude Code, a like command elsewhere), not something the model can run on itself, and a message from the
+    coordinator is text the agent reads, not a command its product runs. So this item waits for the products.
+    Record per kind in `scripts/agent-kinds.json` whether the kind takes a command from outside its session and
+    what its compact command is called; the coordinator sends the hint only to a kind that has both, and the
+    wording names that kind's own command. A kind without them is left alone: no line for its user to type, and
+    no forced new session as a substitute.
+  - *What must survive.* Before it compacts, the agent writes down what the room does not hold: the state of
+    work in progress, decisions it made, files it touched, what it was about to do. A handover note in its
+    report or a note to itself in the room covers this, and the instruction asks for it first. After the
+    compaction the agent runs `start` and `wait` and reads its note.
+  - *Form.* Either wording in `references/coordinating.md` and the assignment template (the coordinator adds a
+    line by judgment, no tool change), or a marker of its own on an assignment or a note that `relay.ps1` prints
+    as a `NEXT:` line (a room package version bump). Start with the wording; add the marker only if real rooms
+    show the wording is ignored.
+  - *To settle.* The thresholds and whether they are room settings; whether the owner is asked first or only
+    told; how the coordinator learns that the compaction happened (a new introduction, a line in the next
+    report) and what it does when it did not; and whether a compaction at the wrong time costs more than it
+    saves, since the agent reads its files again afterwards. Measure on one long real room before deciding.
+
 ## Looked at and dropped
 
 - Task dependencies that unblock by themselves: the plan already has `depends`, a `blocked` status and a cycle
