@@ -15,10 +15,8 @@ approve or deny what goes beyond an assignment, and keep a record of all of it.<
 <img alt="PowerShell 5.1 and 7" src="https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE">
 </p>
 
-**[Why](#why)** | **[How it works](#how-it-works)** | **[Install](#installation)** | **[Quick start](#quick-start)** |
-**[Usage](#usage)** | **[Reference](#reference)** | **[Security](#security-model)** | **[FAQ](#faq)** |
-**[Troubleshooting](#troubleshooting)** | **[Development](#development)** | **[Status](#status-and-limitations)** |
-**[Roadmap](#roadmap)**
+**[Why](#why)** | **[How it works](#how-it-works)** | **[Install](#installation)** | **[Quick start](#quick-start)** | **[Usage](#usage)** | **[Reference](#reference)**<br>
+**[Security](#security-model)** | **[FAQ](#faq)** | **[Troubleshooting](#troubleshooting)** | **[Development](#development)** | **[Status](#status-and-limitations)** | **[Roadmap](#roadmap)**
 
 </div>
 
