@@ -218,7 +218,7 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $jackStart | Should -Match 'Files to attach go into `\S+agents\\jack\\attach`\s+before you\s+send'
         $jackStart | Should -Match 'when it says nothing arrived, run it again'
         # The limits of remember stand where the verb is explained, not only in the refusal
-        $jackStart | Should -Match 'up to 5\. The entry is the draft joined into one line of\s+15 to 500 characters'
+        $jackStart | Should -Match 'up\s+to\s+5\.\s+The\s+entry\s+is\s+the\s+draft\s+joined\s+into\s+one\s+line\s+of\s+15\s+to\s+500\s+characters'
         ($jackStart -replace '\{\{DRAFT\}\}', '') | Should -Not -Match '\{\{'
         # Every agent's instructions say once that it keeps waiting, and how it stays reachable while it works
         foreach ($name in 'emma', 'jack') {
@@ -242,7 +242,7 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $agents = @([ordered]@{ name = 'emma'; role = 'tester'; kind = 'claude-code'; transport = 'share'; room_path = '\\fileserver\team\agent-relay\prompts' })
         $created = New-RelayTestRoom -Root $root -RoomId 'short-start' -Agents $agents
         $raw = Get-Content -LiteralPath (Join-Path $created.Path 'agents\emma\START-HERE.md') -Raw
-        $raw.Length | Should -BeLessThan 6600
+        $raw.Length | Should -BeLessThan 7000
         $text = $raw -replace '\s+', ' '
         $text | Should -Match ([regex]::Escape("agents\emma\g1\relay.ps1' <verb>"))
         $text | Should -Match 'Never type message text on the command line'

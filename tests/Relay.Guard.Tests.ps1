@@ -674,7 +674,7 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
     }
 
     It 'says in START-HERE that sending uses the draft file up' {
-        (Get-Content -LiteralPath (Join-Path $room 'agents\emma\START-HERE.md') -Raw) | Should -Match 'Sending uses the file up: write a new one\s+for every message\.'
+        (Get-Content -LiteralPath (Join-Path $room 'agents\emma\START-HERE.md') -Raw) | Should -Match 'Sending\s+uses\s+the\s+file\s+up:\s+write\s+a\s+new\s+one\s+for\s+every\s+message\.'
     }
 
     It 'prints how the owner starts the product for a seat of kind codex or claude-code when an agent is added or replaced, and nothing for a kind without a note' {
