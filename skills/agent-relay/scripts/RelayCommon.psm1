@@ -2566,31 +2566,24 @@ function Get-RelayJoinPrompt {
     $fallback = (Get-RelayReachFallback $Room).TrimEnd('\', '/')
     Assert-RelayPastePath $fallback 'The fallback room folder'
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add('You are asked to join a work room: a shared folder through which several coding agents work on one job for the same owner. Another agent, the coordinator, hands out the tasks and answers questions.')
+    $lines.Add('Owner''s request: this session becomes an agent of a work room. Run the join command below; change nothing until a task arrives.')
     $lines.Add('')
     $lines.Add("Room folder: $base")
     if ($fallback) {
-        $lines.Add("Fallback, the same folder by the server's address: $fallback")
-        $lines.Add('Use the fallback only when the folder above cannot be reached: the name does not resolve on this machine, or the share refuses you with a user name or password error. Then put the fallback in place of the folder in the commands below, and tell your owner which of the two worked.')
+        $lines.Add("Fallback: $fallback")
+        $lines.Add('Use the fallback only if the name does not resolve or the share refuses access. Substitute it below; tell the owner which path worked.')
     }
     $lines.AddRange([string[]]@(
         ''
-        '1. Run ONE of these now, the one for your shell. The three words at the end say what you are: your agent product as exactly as you know it (claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent, copilot-cli, or its name as one word), your model, and your reasoning effort setting if your session or its configuration shows one (low, medium, high, ...). Write unknown where you do not know; do not guess. Type the words themselves, without the angle brackets, for example: claude-code-cli sonnet-5.5 medium'
+        'Fill product/model/effort with your exact product name (claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent, copilot-cli, or its name as one word), model and reasoning effort, without brackets. Write unknown for a model or an effort you cannot see; do not guess, and do not ask anyone before joining: the coordinator settles it with the owner after you are in. Blanks become dashes.'
         ''
-        ('   ' + (Get-RelayModelQuestionText))
+        'Run ONE line for your shell, once:'
+        "PowerShell/pwsh/Git Bash: powershell -NoProfile -ExecutionPolicy Bypass -File $(ConvertTo-RelayPowerShellLiteral "$forward/join.ps1") <product> <model> <effort>"
+        "cmd: `"$base\join.cmd`" <product> <model> <effort>"
         ''
-        '   Work from a local folder of your own on this machine, never from the room folder and never from a folder on a share: copy what a task needs out of the room, work on your own disk, and send results back as attachments. Running tests or scripts inside the room or on a share fails or disturbs the others.'
+        'Join names you, introduces you to the coordinator and prints your instructions and command. They are all you need; do not read plugin or skill files. Use only that command thereafter; never run join again. Do each NEXT: line; your first task arrives as a message.'
         ''
-        "   Windows, PowerShell (Windows PowerShell or pwsh) or Git Bash:  powershell -NoProfile -ExecutionPolicy Bypass -File $(ConvertTo-RelayPowerShellLiteral "$forward/join.ps1") <product> <model> <effort>"
-        "   Windows, cmd:                                                  `"$base\join.cmd`" <product> <model> <effort>"
-        ''
-        '2. The command gives you a name and introduces you to the coordinator: what kind of agent you are, the computer and its address, the user, whether you run elevated, and your shell. It reads these off the machine; you add nothing. Then it prints your instructions and your own command. From then on use only that command; do not run join a second time.'
-        ''
-        '3. Every output ends with a NEXT: line. Do what it says. Your first task arrives as a message.'
-        ''
-        'Until a task arrives, change nothing on this machine: it is in use, not a test machine. Stay inside what a task assigns and ask before anything beyond it. Never type message text on the command line: the output tells you which file to write it into. Never run a script that lies in the room, except the join command above, your own command once you have one, and a script that a task tells you to write and run in your own work folder.'
-        ''
-        'If the join command above is refused, blocked or cannot start, or cannot reach the room folder: try it once, check once whether the folder exists, then change nothing, stop and tell your owner the exact error. Do not work around it and do not try other paths unless your owner gives you one (the fallback above is the one exception). A product that guards against scripts it has not seen may refuse the join command: that is correct behaviour, not a fault. Your owner has two ways through, and you name both: (1) start the product with its guard off; (2) run the one join line above themselves, in a terminal or with the product''s own shell prefix, and give you its output. This applies to joining only: once you are in the room, a blocked command is reported to the coordinator through your own command (your instructions say how), and you keep waiting on the room.'
+        'If join is refused, blocked, cannot start or cannot reach the room: try once, check once whether the folder exists, change nothing, stop and tell the owner the exact error. No workarounds or other paths without the owner (except the fallback). A guard refusing unseen scripts is correct. Name both ways through: the owner starts the product with its guard off, or runs the join line and gives you its output.'
     ))
     return ($lines -join "`n") + "`n"
 }

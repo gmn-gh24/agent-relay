@@ -194,7 +194,8 @@ claude plugin uninstall agent-relay@agent-relay
 
 2. **Paste the prompt.** The coordinator hands you a join prompt and puts it on the clipboard. Paste it into
    every agent that is to take part. Each one runs one command, takes a seat, gets a name and introduces
-   itself.
+   itself. The prompt opens with the owner's request to join and covers only the join step; the command
+   prints `START-HERE.md` with the rules for working in the room.
 
    Codex CLI must be started with `codex --yolo`: without it the agent keeps asking its user and its sandbox
    blocks the room's commands. Claude Code works as it is; start it with
