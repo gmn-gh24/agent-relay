@@ -68,6 +68,25 @@ shell. The owner should never have to ask what is in the room.
 - A machine is in use unless the owner declared it disposable for this job. That an agent runs in a virtual
   machine, that the machine has "test" in its name, or that it was disposable last time, changes nothing.
 
+**Welcome.** When an introduction has arrived and matches what the owner expected, and the role is settled,
+send a welcome note at once (draft file, then `note <name>`; with the first task, `task <name> <minutes>`
+instead). It repeats what the join told the agent, so the join prompt can stay short. Subject
+`Welcome <name>`:
+
+```
+Welcome, <name>. You are in the room "<room>" as <role>.
+EITHER: Your first task follows in the next message.
+OR: You have no task yet. Run wait now and keep waiting. Your tasks arrive as messages.
+Rules:
+- Keep monitoring the room until a task arrives or you are retired. Never end your turn without a wait.
+- After every task: send your report, then run wait at once.
+- Stay inside your task. Ask first for anything beyond it. Message text goes only in your draft file.
+- If a task asks for something your assignment does not allow, answer with ask and do the rest.
+```
+
+Afterwards the board must show the agent as listening (a wait running). When it shows the agent idle with no
+wait, send the welcome again as `ask <name>`, and tell the owner when that stays unanswered.
+
 ## Who gets which task
 
 Three questions, in this order, for every task before it goes out. The board answers the first two in its
@@ -102,11 +121,13 @@ Three questions, in this order, for every task before it goes out. The board ans
 A model's strength is read off the name the agent gave (`scripts/model-tiers.json`); `not known` on the board
 means the name is not in that list: judge it yourself and add the family. Effort `unknown` is common and
 means only that the agent cannot see its setting. Codex models sort by their family word (`luna` standard;
-`sol`, `astra`, `terra` strong; `agent-kinds.md` has the list). When a task depends on a model or an effort
-that came as `unknown`, or as a generation without a family (`gpt-6`), have that agent find out: tell it
-(`note <name>`) to ask the user of its own session, through its question tool with the choices its product
-offers, and to run its `start <product> <model> <effort>` again with the answer. Do not ask the owner for it
-in your session, do not guess it, and do not have the agent guess. When the owner said what would join
+`sol`, `astra`, `terra` strong; `agent-kinds.md` has the list). An agent that cannot see its model or effort
+joins with `unknown` and never asks anyone before joining (owner decision, 2026-10-14); you tell it nothing
+about them. When a task depends on a model or an effort that came as `unknown`, or as a generation without a
+family (`gpt-6`), settle it afterwards with the owner, in your session, through the question tool: the models
+seen before on this PC, the effort levels, `unknown`, and `other` for typing. Record the owner's answer with
+`scripts/Add-RelayDecision.ps1 -Room <id> -Owner`, until the plugin has a command that sets it on a seat, and
+use it from then on. Do not guess it, and do not have the agent guess. When the owner said what would join
 ("codex luna medium") and the introduction says something else, tell the owner before that agent gets work.
 
 ## Every agent keeps waiting
@@ -266,6 +287,17 @@ A `result` closes the task it names. Before you accept it:
 3. Check what you can check yourself: run the test, open the file, compare the numbers.
 4. Decisions the agent made on its own are listed under "Decisions I made". Disagree now, not later.
 
+After every accepted result, send a one-line reminder, alone or with the next task (draft file, then
+`note <name>`, or `task <name> <minutes>`). Subject `Next: keep waiting`:
+
+```
+Thanks, <name>: <one line on what was accepted or what must change>.
+Run wait now and keep waiting for the next task. You stop only when you are retired or the room is closed.
+```
+
+A result that needs changes says what in one or two lines, then the same last sentence. The board shows the
+agent as listening again afterwards; when it does not, ask it as in "Introductions".
+
 The room's own folders (`agents`, `files`, `tools` and the files at the top of the room folder) are never counted
 in a self-audit, however the share is spelled in an agent's root: other agents' heartbeats and the agent's own
 attachments are the room's bookkeeping, not changes of the work.
@@ -329,6 +361,18 @@ agent's tool shows a new rule with the next delivery, and holds a question back 
 the same thing is not asked twice. Only this script writes `DECISIONS.md`; the tamper check removes anything
 else.
 
+## Owner standing rules seen in real rooms
+
+Owners of real rooms gave these. Put each into the tasks it touches, and record it as a standing rule when the
+owner states it again.
+
+1. **No permanent change on a machine** unless the job needs it and the owner was told first. Settings are
+   scoped to the process, and every test leaves nothing behind.
+2. **One live test at a time** when a shared server is the bottleneck (several agents on one model server, for
+   example). Say so in the task.
+3. **Findings and improvement notes are written down as they appear**, into the room's improvements file
+   (SKILL.md, "6. Close"), never left in chat.
+
 ## Messages from the owner
 
 What the owner types in the chat window reaches you as a message from `owner`, and is logged on this PC. The
@@ -366,6 +410,23 @@ you act on it. Thank the agent: it did the right thing by telling you and not ac
 Replacing: `scripts/Add-RelayAgent.ps1 -Room <id> -Replace <name>` keeps the name, the assignment and the
 open requests; the old session is told to stop at its next command, and the new one gets everything from its
 `start`.
+
+## What owners expect of the coordinator
+
+Seen in real rooms; each one cost the owner something once.
+
+- **The owner is never the one who notices an idle or stuck agent.** On every wake, look at the board for an
+  agent that reported and has sent nothing since: its report may have been consumed by a discarded `wait`, and
+  nobody asked it for more. Give it its next task, or its reminder, before the owner has to say so.
+- **Every result says where a test ran and with which version:** the installed tool, or an isolated copy.
+  Prefer testing the installed, standard setup, and clean up isolated copies when the owner says so.
+- **"Update the other computer to match" means every machine in the room,** through its agent, in the same
+  session, with a list of what changed on each.
+- **An unattended agent never leaves a product dialog on the owner's screen.** When the owner reports one
+  (a trust or path question), reproduce it on your own PC first, fix the launcher, and test again on the other
+  machine.
+- **Owner documents are edited only after a backup, validated afterwards, and only if the file is unchanged
+  and not open** when the edit starts.
 
 ## Pause, stop, direct lines
 
