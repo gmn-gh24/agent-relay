@@ -407,10 +407,11 @@ last hour showed:
   lease, and the next wait on that machine frees it at once by the process id. From the outside the silent stop
   looks exactly like what the owner saw.
 - **Changed:** a second `wait` waits up to 35 seconds for the lease (the life of a lease plus a margin) and takes
-  over when the holder ends; exit 4 now comes only from a holder that stays alive, and names its process. A wait
-  that ends with no answer says that nothing listens and tells the agent to wait again. The journal records each
-  wait's process and how it ended, so the next such case can be read off the room. The NEXT line after a report
-  still says to run `wait`: a second wait is harmless now.
+  over when the holder ends; a holder that stays alive used to end the second wait with exit 4 and a named
+  process (later, item 13: that path exits 0 with a calm line). A wait that ends with no answer says that nothing
+  listens and tells the agent to wait again. The journal records each wait's process and how it ended, so the
+  next such case can be read off the room. The NEXT line after a report still says to run `wait`: a second wait
+  is harmless now.
 - **Not changed yet:** the board cannot tell a dead coordinator wait while the feed keeps the coordinator's
   heartbeat alive. Kept for the review of how the coordinator recovers its wait.
 
@@ -447,9 +448,10 @@ last hour showed:
   changed a file and that the coordinator names its own. Not changed: the baseline is not taken again when the
   coordinator changes a root; the coordinator has no way to tell the tool yet.
 - **A second wait that exits 4 still read as a failure, a second time.** Four times for the agent, once for the
-  coordinator, harmless each time. Changed: START-HERE says in one sentence that this outcome is no failure and
-  that the first wait still listens. Not changed: the exit code stays 4, since `check` and the hosts' loop
-  wrappers read it.
+  coordinator, harmless each time. Changed then: START-HERE said in one sentence that this outcome is no failure
+  and that the first wait still listens, with the exit code still 4. Later (item 13): the second wait exits 0
+  with "A wait is already listening for <name>; nothing to do." so hosts no longer show a failed command; exit
+  4 remains only when a lease is lost while a wait already held it.
 - **A delivered message did not wake an agent whose session sat idle.** The first task was delivered and the
   agent's wait had ended, the board said "working, woken by 1 message", and nothing followed until the owner
   spoke to that session; the owner asked whether the message was lost. Changed: the coordinating reference has
@@ -681,7 +683,8 @@ day. What cost rounds, and what was changed:
   folder itself.
 - **The wait whose "another wait is already running" was mine.** A second `wait` started while the first still
   held the lease exited at once with code 4 and a text that says the running one listens; the host showed the
-  exit as a failure. Not changed: the text and the exit code are right, and the host's colour is the host's.
+  exit as a failure. Later changed (item 13): that path exits 0 with "A wait is already listening for <name>;
+  nothing to do." so the host no longer paints it as a failure.
 - **What slowed the agents down, in their own words.** One lost ten minutes to a wrapper under test that waited
   for its own shell (a project lesson of the owner's repo, not of the relay); one found a vendor switch by trial
   because nothing documented it. Not changed here: both are the job's, not the room's.

@@ -903,20 +903,31 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $record | Should -Match "(?m)^\S+\tolivia-jack-0001\tclosed\tretired$"
         }
 
-        It 'ends a second wait with 4 while the first one stays alive, and frees the lease of a killed one at once' {
+        It 'ends a second wait of the same agent with 0 and a calm line while the first stays alive, and frees the lease of a killed one at once' {
             $first = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')
             Start-Sleep -Seconds 3
             # A second wait waits for the lease as long as a lease lives (35 s); three seconds here
             $second = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5') -Environment @{ RELAY_LEASE_PATIENCE_SECONDS = '3' } -TimeoutSeconds 30
-            $second.ExitCode | Should -Be 4
-            $second.Output | Should -Match ('another wait is already running for emma \(its lease was refreshed \d+ s ago by process ' + $first.Process.Id + ' on ')
-            $second.Output | Should -Match 'If it ends without printing anything, run: '
+            $second.ExitCode | Should -Be 0
+            $second.Output | Should -Match '(?m)^A wait is already listening for emma; nothing to do\.$'
             $first.Process.HasExited | Should -BeFalse
             $first.Process.Kill()
             $null = $first.Process.WaitForExit(5000)
             $third = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '2') -Environment @{ RELAY_MINUTE_SECONDS = '1' } -TimeoutSeconds 40
             $third.ExitCode | Should -Be 0
             $third.Output | Should -Match 'nothing arrived in 2 minutes'
+        }
+
+        It 'lets a wait of another agent start while one agent already holds its lease' {
+            $emma = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')
+            Start-Sleep -Seconds 2
+            $jack = Invoke-RelayTool -Room $room -Agent 'jack' -Engine $engine -Words @('wait', '2') -Environment @{ RELAY_MINUTE_SECONDS = '1' } -TimeoutSeconds 40
+            $jack.ExitCode | Should -Be 0
+            $jack.Output | Should -Match 'nothing arrived in 2 minutes'
+            $jack.Output | Should -Not -Match 'A wait is already listening'
+            $emma.Process.HasExited | Should -BeFalse
+            $emma.Process.Kill()
+            $null = $emma.Process.WaitForExit(5000)
         }
 
         It 'says that its wait was stopped, and how to listen again, when its host stops it gracefully' {

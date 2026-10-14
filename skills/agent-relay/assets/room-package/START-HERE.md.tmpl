@@ -32,8 +32,8 @@ Every output ends with a `NEXT:` line. Do what it says. The verbs you need:
 foreground, run `check` after every step of the work. The `NEXT:` line of the delivery says which of the two is
 yours. Without it no message reaches you while you work, and only your own user could tell you that somebody
 is asking.
-A `wait` that ends with "another wait is already running" (exit code 4) has not failed: your first wait still
-listens, and there is nothing to do.
+A `wait` that ends with "A wait is already listening for <name>; nothing to do." (exit code 0) has not failed:
+your first wait still listens, and there is nothing to do.
 
 **A task says how long it should take** (`expected: N minutes`, printed with it). If you are not done by then,
 send a `note` that says where you stand; do not go silent. The coordinator is told when you have sent nothing

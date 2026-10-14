@@ -155,17 +155,18 @@ the subject.
 | `bye` | Says goodbye and marks you offline |
 | `task <name> [anyway] [<minutes>]`, `ask <name>`, `note <name>\|all` | Coordinator only. The number is how long the task should take; without one the room's default holds |
 
-Exit codes: 0 done or something for you, and a `wait` that timed out (nothing arrived: normal, run it again);
-1 usage or error; 2 room unreachable; 3 nothing new (`check` only); 4 another wait already runs for you;
-5 stop (room closed, or you were stopped, replaced or retired); 7 on hold (`check` only: start nothing new
-until the hold is lifted).
+Exit codes: 0 done or something for you, a `wait` that timed out (nothing arrived: normal, run it again), and a
+second `wait` while yours already listens; 1 usage or error; 2 room unreachable; 3 nothing new (`check` only);
+4 another wait took the lease while this one ran; 5 stop (room closed, or you were stopped, replaced or
+retired); 7 on hold (`check` only: start nothing new until the hold is lifted).
 
 `wait` also returns when a proposal's time has run out, when you are paused or resumed, and when the
 coordinator has shown no sign of life for some minutes. The coordinator's `wait` also returns when a task it
 sent is overdue. Only one `wait` runs per agent: a second one waits up to
-35 seconds for the first to end and then listens in its place; it exits with code 4 only when the first one is
-still alive after that, and says which process it is. A wait that is stopped before anything arrived (Ctrl+C, or
-its host stops it) says so and tells you to run `wait` again.
+35 seconds for the first to end and then listens in its place; when the first one is still alive after that it
+prints "A wait is already listening for <name>; nothing to do." and exits 0. Exit code 4 is for a lease lost
+while a wait already held it. A wait that is stopped before anything arrived (Ctrl+C, or its host stops it)
+says so and tells you to run `wait` again.
 
 ## Wake modes
 

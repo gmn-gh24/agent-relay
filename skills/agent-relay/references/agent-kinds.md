@@ -120,7 +120,7 @@ and does nothing, which is the right thing for it to do. On Windows it runs comm
 agents may share that folder. That folder is the one it ran `join` or `start` from: its tool prints the full
 path, and every verb uses that one file whatever folder it is run from.
 A long command returns control to the model after some seconds and has to be polled; the prompt tells it to
-keep waiting on the same command and not to start a second wait (a second one waits about half a minute for the first and then exits with code 4). It
+keep waiting on the same command and not to start a second wait (a second one waits about half a minute for the first and then exits 0 with a calm line). It
 showed exit code 1 for a wait that timed out while that exited 3, and its agents took it for a failure (see
 above; a timed-out wait exits 0 since package 3.3.0). Its `wait_minutes` is 15, from a measurement
 (2026-10-12, codex-cli 0.162.1, Windows, started with `codex --yolo`): foreground commands of 240, 480 and
@@ -167,7 +167,7 @@ off before a minute, lower `wait_minutes` for its seat (answers field) or switch
 |---|---|---|
 | "this tool does not know who you are" | the tool was called directly, not through the wrapper | use the command printed by `start` |
 | "you have not introduced yourself" | a verb before `start` | run `start` |
-| wait exits with code 4 after about half a minute | a second wait while the first is alive (the output names its process) | keep the first one; do not start another |
+| wait prints "A wait is already listening" and exits 0 | a second wait while the first is alive | keep the first one; do not start another |
 | the agent types message text after the verb | habit | the tool refuses anything but single words and says where the draft goes |
 | `join` or `start` refuses the agent's three words | a character that is no letter, digit, dot or dash (a slash, a bracket) | the error names the word and prints the command with an example; a name of several words needs no change, its blanks become dashes |
 | the agent says its draft is missing although it wrote one | it wrote the draft into another folder than the one the tool printed | the path printed by `start` is the draft, for every verb; the error names it in full |
