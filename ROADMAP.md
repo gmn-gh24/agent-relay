@@ -123,9 +123,11 @@ Each is minutes of work with a test or a text change. Not done in 0.10.0; the ow
 ### Bugs
 
 - **Q34 (remainder).** 0.10.0 makes the tool move to the temporary folder when its working folder is gone, but
-  the case was not reproduced: on Linux and on a local disk it passes without the fix. Reproduce on Windows with
-  a shell standing in a folder on a share that another machine removes, find the verb that failed, and make the
-  test fail first.
+  the case was not reproduced: on Linux, on a local disk and on Windows (both engines) it passes without the fix.
+  On Windows a shell standing in a folder on a share (also through the loopback admin share) keeps the folder from
+  being removed or renamed, and with the shell's location deleted in-process `check` and `help` ran on the old
+  tool too. Reproduce with a shell standing in a folder on a share that another machine removes, find the verb
+  that failed, and make the test fail first.
 - **Q35. The `task` word-match refusal** (`NOT SENT`, "two of that line's telling words") fired on most tasks
   of that room, so `anyway` was needed almost every time. Narrow the match, or the default "Never" lines of a
   tester assignment. Evidence: the room's transcript in the archive. Start with a test on real task texts.
