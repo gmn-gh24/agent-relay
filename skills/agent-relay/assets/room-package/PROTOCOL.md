@@ -63,9 +63,22 @@ effort, everything between them the model). Letters, digits, dot and dash are al
 A draft file that your product keeps in your working folder lies in the folder you ran `join` or `start` from.
 The tool prints its full path, and every verb uses that one file, whatever folder you run the verb from.
 
-You join once. From then on you use the command `start` printed for you. A second `join` from the same
-computer, user, working folder and product is refused and tells you how to carry on as the agent you already
-are; `join new ...` is for a second session that really is another agent.
+You join once. From then on you use the command `start` printed for you. A matching session key returns its
+existing seat automatically; otherwise the same computer, user, working folder and product gets a
+joined-before warning unless both native session IDs are known and differ. `join new ...` (also
+`join <product> <model> <effort> new`) always takes a fresh seat, skipping both returning-session checks.
+
+The claim stores only two hashes: `session` combines the product's session variable, when present, with the
+nearest agent process's PID and start time for automatic return; `session_env` fingerprints the variable
+alone for the joined-before warning. A restarted host with the same native session ID gets that warning and
+uses its own `start`, while a child agent has a distinct process identity even when it inherits the variable;
+without an agent ancestor, identity falls back to the environment alone.
+The key must come out the same for `join` and every later command of that session, so join wrappers leave
+`RELAY_SESSION` unchanged instead of clearing it only in the joining child process.
+
+`start` refuses a different session while the seat has a held wait lease or a heartbeat younger than two
+minutes, before changing its card or introduction. The same session, a dead seat, or a new generation made
+with `Add-RelayAgent -Replace <name>` can start.
 
 A seat taken with `join` starts with no task and no assigned paths. The coordinator reads your introduction,
 then gives you an assignment and a task. A new assignment is shown to you once, in front of the messages that

@@ -1708,6 +1708,130 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         Get-RelayTestJoinedName $other | Should -Be $openSeats[1]
     }
 
+    It 'session identity: a child joins through the wrapper without taking its parents seat' {
+        $parentEnvironment = @{ RELAY_SESSION = 'parent-session'; CLAUDE_CODE_SESSION_ID = 'parent-claude-session' }
+        $parent = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -AgentHost claude -Words @('join', 'claude-code-cli', 'm', 'e') -Environment $parentEnvironment
+        $parent.ExitCode | Should -Be 0 -Because $parent.Output
+        $parentName = Get-RelayTestJoinedName $parent
+        $childEnvironment = @{ RELAY_SESSION = 'parent-session'; CLAUDE_CODE_SESSION_ID = 'parent-claude-session'; RELAY_NAME = $parentName; RELAY_GEN = '1' }
+        $child = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -AgentHost codex -ChildAgentHost -JoinWrapper -Words @('codex-cli', 'm', 'e') -Environment $childEnvironment
+        $child.ExitCode | Should -Be 0 -Because $child.Output
+        Get-RelayTestJoinedName $child | Should -Be $openSeats[1]
+        $log = Get-Content -LiteralPath (Join-Path $room 'join.log') -Raw
+        $log | Should -Match "joined $($openSeats[1]) "
+        $log | Should -Not -Match "back $parentName "
+        (Get-Content -LiteralPath (Join-Path $room "agents\$parentName\card") -Raw) | Should -Match '(?m)^product: claude-code-cli$'
+    }
+
+    It 'session identity: wrapper join and later start retain the same explicit key' {
+        $inherited = @{ RELAY_SESSION = 'inherited-relay'; CLAUDE_CODE_SESSION_ID = 'inherited-claude' }
+        $joined = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -JoinWrapper -Words @('codex-cli', 'm', 'e') -Environment $inherited
+        $joined.ExitCode | Should -Be 0
+        $name = Get-RelayTestJoinedName $joined
+        $claim = Get-Content -LiteralPath (Join-Path $room "agents\$name\claim") -Raw
+        $started = Invoke-RelayTool -Room $room -Agent $name -Engine $engine -Words @('start', 'codex-cli', 'm', 'e') -Environment $inherited
+        $started.ExitCode | Should -Be 0 -Because $started.Output
+        (Get-Content -LiteralPath (Join-Path $room "agents\$name\claim") -Raw) | Should -Be $claim
+        $back = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -JoinWrapper -Words @('codex-cli', 'm', 'e') -Environment $inherited
+        $back.ExitCode | Should -Be 0
+        Get-RelayTestJoinedName $back | Should -Be $name
+        $back.Output | Should -Match '^BACK:'
+    }
+
+    It 'session identity: real agent processes separate inherited native IDs and recognize a restarted host' {
+        $inherited = @{ RELAY_SESSION = 'inherited-session'; CLAUDE_CODE_SESSION_ID = 'inherited-claude' }
+        $parent = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -AgentHost claude -Words @('join', 'claude-code-cli', 'm', 'e') -Environment $inherited
+        $parent.ExitCode | Should -Be 0 -Because $parent.Output
+        Get-RelayTestJoinedName $parent | Should -Be $openSeats[0]
+        $child = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -AgentHost codex -ChildAgentHost -Words @('join', 'codex-cli', 'm', 'e') -Environment $inherited
+        $child.ExitCode | Should -Be 0 -Because $child.Output
+        Get-RelayTestJoinedName $child | Should -Be $openSeats[1]
+        $restart = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -AgentHost claude -Words @('join', 'claude-code-cli', 'm', 'e') -Environment $inherited
+        $restart.ExitCode | Should -Be 1
+        $restart.Output | Should -Match 'joined this room before'
+        $claims = @($openSeats[0..1] | ForEach-Object { Get-Content -LiteralPath (Join-Path $room "agents\$_\claim") -Raw })
+        $full = @($claims | ForEach-Object { [regex]::Match($_, '(?m)^session: (\w+)').Groups[1].Value })
+        $native = @($claims | ForEach-Object { [regex]::Match($_, '(?m)^session_env: (\w+)').Groups[1].Value })
+        $full[0] | Should -Not -Be $full[1]
+        $native[0] | Should -Be $native[1]
+        $claims -join '' | Should -Not -Match 'inherited-session|inherited-claude'
+    }
+
+    It 'session identity: join new ignores inherited keys (<Position>)' -ForEach @(@{ Position = 'before' }, @{ Position = 'after' }) {
+        $parentEnvironment = @{ RELAY_SESSION = 'parent-session'; CLAUDE_CODE_SESSION_ID = 'parent-claude-session' }
+        $parent = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'claude-code-cli', 'm', 'e') -Environment $parentEnvironment
+        $parent.ExitCode | Should -Be 0 -Because $parent.Output
+        $words = @('join', 'new', 'codex-cli', 'm', 'e')
+        if ($Position -eq 'after') { $words = @('join', 'codex-cli', 'm', 'e', 'new') }
+        $child = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words $words -Environment $parentEnvironment
+        $child.ExitCode | Should -Be 0 -Because $child.Output
+        Get-RelayTestJoinedName $child | Should -Be $openSeats[1]
+        $claim = Get-Content -LiteralPath (Join-Path $room "agents\$($openSeats[1])\claim") -Raw
+        $claim | Should -Match '(?m)^session: [0-9a-f]{24}$'
+        (Get-Content -LiteralPath (Join-Path $room 'join.log') -Raw) | Should -Not -Match "back $($openSeats[0]) "
+    }
+
+    It 'session identity: start refuses another session for a live seat (<LiveBy>) and accepts its own key' -ForEach @(@{ LiveBy = 'heartbeat' }, @{ LiveBy = 'wait lease' }) {
+        $parentEnvironment = @{ RELAY_SESSION = 'parent-session'; CLAUDE_CODE_SESSION_ID = 'parent-claude-session' }
+        $parent = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'claude-code-cli', 'm', 'e') -Environment $parentEnvironment
+        $parent.ExitCode | Should -Be 0 -Because $parent.Output
+        $name = Get-RelayTestJoinedName $parent
+        $agentFolder = Join-Path $room "agents\$name"
+        if ($LiveBy -eq 'wait lease') {
+            [System.IO.File]::SetLastWriteTimeUtc((Join-Path $agentFolder 'alive'), [DateTime]::UtcNow.AddMinutes(-10))
+            [System.IO.File]::WriteAllText((Join-Path $agentFolder 'wait.lease'), "token: live-parent`ngen: 1`nhost: $([Environment]::MachineName)`npid: $PID`n")
+        }
+        $card = Get-Content -LiteralPath (Join-Path $agentFolder 'card') -Raw
+        $aliveTime = [System.IO.File]::GetLastWriteTimeUtc((Join-Path $agentFolder 'alive'))
+        $helloCount = @(Get-RelayTestInbox -Room $room -Agent 'olivia').Count
+        $child = Invoke-RelayTool -Room $room -Agent $name -Engine $engine -Words @('start', 'codex-cli', 'other-model', 'high') -Environment @{ RELAY_SESSION = 'child-session'; CLAUDE_CODE_SESSION_ID = 'child-claude-session' }
+        $child.ExitCode | Should -Be 1
+        $child.Output | Should -Match 'live.*session|session.*alive'
+        $child.Output | Should -Match 'join.*new'
+        $child.Output | Should -Match 'Replace'
+        $child.Output | Should -Match 'If you are \w+ restarted, wait a minute for the old wait to end and run start again'
+        (Get-Content -LiteralPath (Join-Path $agentFolder 'card') -Raw) | Should -Be $card
+        [System.IO.File]::GetLastWriteTimeUtc((Join-Path $agentFolder 'alive')) | Should -Be $aliveTime
+        @(Get-RelayTestInbox -Room $room -Agent 'olivia').Count | Should -Be $helloCount
+        $same = Invoke-RelayTool -Room $room -Agent $name -Engine $engine -Words @('start', 'claude-code-cli', 'm', 'e') -Environment $parentEnvironment
+        $same.ExitCode | Should -Be 0 -Because $same.Output
+    }
+
+    It 'session identity: a different key starts a dead seat or replacement generation (<Recovery>)' -ForEach @(@{ Recovery = 'dead seat' }, @{ Recovery = 'stale lease' }, @{ Recovery = 'replacement generation' }) {
+        $parent = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'claude-code-cli', 'm', 'e') -Environment @{ RELAY_SESSION = 'old-session' }
+        $parent.ExitCode | Should -Be 0
+        $name = Get-RelayTestJoinedName $parent
+        $agentFolder = Join-Path $room "agents\$name"
+        $generation = 1
+        if ($Recovery -eq 'replacement generation') {
+            & (Join-Path (Get-RelayTestPath scripts) 'Add-RelayAgent.ps1') -Room $room -Replace $name -NoClipboard -WaitMinutes 0 -Force -Reason 'test session replacement' | Out-Null
+            $generation = 2
+        }
+        else {
+            [System.IO.File]::SetLastWriteTimeUtc((Join-Path $agentFolder 'alive'), [DateTime]::UtcNow.AddMinutes(-10))
+            if ($Recovery -eq 'stale lease') {
+                $lease = Join-Path $agentFolder 'wait.lease'
+                [System.IO.File]::WriteAllText($lease, "token: abandoned`ngen: 1`nhost: $([Environment]::MachineName)`npid: $PID`n")
+                [System.IO.File]::SetLastWriteTimeUtc($lease, [DateTime]::UtcNow.AddMinutes(-10))
+            }
+        }
+        $new = Invoke-RelayTool -Room $room -Agent $name -Engine $engine -Generation $generation -Words @('start', 'codex-cli', 'm', 'e') -Environment @{ RELAY_SESSION = 'replacement-session' }
+        $new.ExitCode | Should -Be 0 -Because $new.Output
+        (Get-Content -LiteralPath (Join-Path $agentFolder 'card') -Raw) | Should -Match '(?m)^product: codex-cli$'
+    }
+
+    It 'session identity: an empty recorded key does not authorize a different session on a live seat' {
+        $parent = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'claude-code-cli', 'm', 'e')
+        $parent.ExitCode | Should -Be 0
+        $name = Get-RelayTestJoinedName $parent
+        $claimPath = Join-Path $room "agents\$name\claim"
+        $claim = Get-Content -LiteralPath $claimPath -Raw
+        [System.IO.File]::WriteAllText($claimPath, ($claim -replace '(?m)^session: [^\r\n]*', 'session: '))
+        $other = Invoke-RelayTool -Room $room -Agent $name -Engine $engine -Words @('start', 'codex-cli', 'm', 'e') -Environment @{ RELAY_SESSION = 'another-session' }
+        $other.ExitCode | Should -Be 1
+        $other.Output | Should -Match 'session is still alive and you are not it'
+    }
+
     It 'knows a returning session by the session id its product gives, without asking it to decide' {
         $one = @{ CLAUDE_CODE_SESSION_ID = 'aaaaaaaa-1111-2222-3333-444444444444' }
         $two = @{ CLAUDE_CODE_SESSION_ID = 'bbbbbbbb-1111-2222-3333-444444444444' }
@@ -1726,9 +1850,6 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         Get-RelayTestJoinedName $back | Should -Be $openSeats[0]
         Test-Path -LiteralPath (Join-Path $room "agents\$($openSeats[1])\claim") | Should -BeFalse
         @(Get-RelayTestInbox -Room $room -Agent 'olivia').Count | Should -Be 1
-        $stillBack = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'new', 'claude-code', 'm', 'e') -Environment $one
-        Get-RelayTestJoinedName $stillBack | Should -Be $openSeats[0]
-
         # Another session of the same product in the same folder: a seat of its own, without the word new
         $other = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'claude-code', 'm', 'e') -Environment $two
         $other.ExitCode | Should -Be 0
@@ -1741,6 +1862,8 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $unknown.Output | Should -Match 'joined this room before'
         $unknown.Output | Should -Match 'decide by what this conversation holds'
         (Get-Content -LiteralPath (Join-Path $room 'join.log') -Raw) | Should -Match "back $($openSeats[0]) \S+ claude-code"
+        $fresh = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'new', 'claude-code', 'm', 'e') -Environment $one
+        Get-RelayTestJoinedName $fresh | Should -Be $openSeats[2]
     }
 
     It 'never gives one seat to two sessions that join at the same moment' {
