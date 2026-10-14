@@ -1056,7 +1056,9 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
     }
 
     It 'shows what a task should take next to it, and OVERDUE when its agent has sent nothing for that long' {
-        $age = { param([string]$Path, [double]$Minutes) [System.IO.File]::SetLastWriteTimeUtc($Path, [DateTime]::UtcNow.AddMinutes(-$Minutes)) }
+        # The board's clock is a probe file's time, which can read a few ms behind UtcNow: age a little past the whole
+        # minute so that the floored count is not one short
+        $age = { param([string]$Path, [double]$Minutes) [System.IO.File]::SetLastWriteTimeUtc($Path, [DateTime]::UtcNow.AddMinutes(-$Minutes - 0.2)) }
         $line = { param([string]$Id) @((Get-RelayBoard (Resolve-RelayRoom 'flow')).open | Where-Object { $_.id -eq $Id })[0] }
         $print = { (& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow') -join "`n" }
         $task = Join-Path $room 'agents\jack\inbox\olivia-0001.md'
