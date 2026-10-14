@@ -1439,7 +1439,7 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         # A draft kept in the working folder carries the agent's name: two agents may share that folder
         $codex.Output | Should -Match "your draft file: \S*relay-draft-$($openSeats[0])\.md"
         # What is attached does not go next to that draft: the tool reads the agent's own folder in the room
-        $codex.Output | Should -Match "copied into this folder\s+before you send: ``\S*agents[\\/]$($openSeats[0])[\\/]attach``"
+        $codex.Output | Should -Match "Files to attach go into ``\S*agents[\\/]$($openSeats[0])[\\/]attach``\s+before you\s+send"
 
         $other = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'some-new-agent', 'm', 'e')
         $card = Get-Content -LiteralPath (Join-Path $room "agents\$($openSeats[1])\card") -Raw
