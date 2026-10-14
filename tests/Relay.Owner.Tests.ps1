@@ -184,7 +184,7 @@ Describe 'Owner scripts, the feed and closing (round 4)' -Tag 'Owner' {
         }
 
         It 'ends the feed when this PC closed the room' {
-            $closed = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $id) -join "`n"
+            $closed = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $id -Force) -join "`n"
             $closed | Should -Match "CLOSED room $id"
             $feed = Invoke-RelayTestScript -Script 'Watch-RelayFeed.ps1' -Arguments @('-Room', $id, '-Json', '-IntervalSeconds', '1', '-MaxSeconds', '30', '-NoHeartbeat') -Environment $local
             $feed.ExitCode | Should -Be 0 -Because $feed.Error
@@ -194,7 +194,7 @@ Describe 'Owner scripts, the feed and closing (round 4)' -Tag 'Owner' {
 
         It 'closes a room whose room folder holds an empty CLOSED, instead of saying it is already closed' {
             Write-OwnerFile (Join-Path $room 'CLOSED') ''
-            $closed = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $id) -join "`n"
+            $closed = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $id -Force) -join "`n"
             $closed | Should -Not -Match 'already closed'
             $closed | Should -Match "CLOSED room $id"
             $closed | Should -Match 'tamper check: CLOSED was extra'
@@ -204,7 +204,7 @@ Describe 'Owner scripts, the feed and closing (round 4)' -Tag 'Owner' {
         }
 
         It 'refuses a card, a rule and an owner message in a room that this PC closed' {
-            $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $id
+            $null = & (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $id -Force
             Write-OwnerFile (Join-Path $outside 'text.md') 'Too late.'
             { & (Join-Path $scripts 'Request-RelayOwner.ps1') -Room $id -DraftFile (Join-Path $outside 'text.md') } | Should -Throw '*is closed*'
             { & (Join-Path $scripts 'Add-RelayDecision.ps1') -Room $id -DraftFile (Join-Path $outside 'text.md') } | Should -Throw '*is closed*'
@@ -253,7 +253,7 @@ Describe 'Owner scripts, the feed and closing (round 4)' -Tag 'Owner' {
             $archiveRoot = Join-Path (Get-RelayLocalRoot) 'archive'
             # A file where the folder of the archives belongs: the zip cannot be made
             Write-OwnerFile $archiveRoot 'in the way'
-            $first = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $id) -join "`n"
+            $first = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $id -Force) -join "`n"
             $first | Should -Match "CLOSED room $id"
             $first | Should -Match 'ARCHIVE FAILED'
             Test-Path -LiteralPath (Join-Path $object.Canon 'CLOSED') | Should -BeTrue

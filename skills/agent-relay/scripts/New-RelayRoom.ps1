@@ -26,6 +26,9 @@
           ]
         }
 
+    "project_folder" in the answers names the project folder of the job; it is kept in the room's canonical
+    ROOM, and Add-RelayImprovement.ps1 appends the room's section to its PLUGIN-IMPROVEMENTS.md at the close.
+
     The room folder is named after "room_name": the project, script or task in a few words
     ("toy calculator tests" becomes toy-calculator-tests). Without it the first words of the job are used.
     Today's date is added only when a room of that name already exists.
@@ -261,6 +264,9 @@ try {
     if (@('no', 'false', '0') -contains $tabTitles) { $roomInfo['tab_titles'] = 'no' } else { $roomInfo['tab_titles'] = 'yes' }
     $roomInfo['reach'] = $reachPath
     if ($reachFallback) { $roomInfo['reach_fallback'] = $reachFallback }
+    # Where the improvements of this room are collected at the close (Add-RelayImprovement.ps1 reads it here)
+    $projectFolder = ([string](Get-RelayProperty $answers 'project_folder' '')).Trim()
+    if ($projectFolder) { $roomInfo['project_folder'] = $projectFolder }
     # The feed stamps agents\<coordinator>\integrity after every whole tamper pass; the agents' tools read its age
     $roomInfo['integrity'] = 'stamped'
     # What the room is comes from this PC's canonical copy: it is written first, and the room object is made from it
