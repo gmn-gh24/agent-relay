@@ -160,7 +160,9 @@ reopened.
 workflow 1), `-OpenSeats <n>` adds seats for agents that come in through the join prompt, `-Assign <name>[,<name>]`
 gives agents already in the room a new role, paths and limits (the fields as parameters: `-Role -Work -Task
 -DoneWhen -NonGoals -Roots -May -ProposeOk -AskFirst -Never -MachineCare -MachineNotes -Expertise -Standards
--DocTools`, or `-AnswersFile`; `-Work` is one of development, run, testing, debugging, research, documentation, review, other;
+-DocTools`, or `-AnswersFile`; to change one list and keep the rest, use `-AddMay`, `-RemoveMay`, `-AddRoots`,
+`-RemoveRoots`, `-AddProposeOk`, `-AddAskFirst` or `-RemoveNever` alone; `-Work` is one of development, run,
+testing, debugging, research, documentation, review, other;
 `-MachineCare` is in-use or disposable; a root given as `<folder>=<pattern>` allows those writes, a bare root is
 read-only: do not combine a bare root with `-May` for the same folder), `-Replace <name>` gives a new session the same
 name and assignment and tells the old one to stop, `-Retire <name>` ends a role (both first ask a living agent
