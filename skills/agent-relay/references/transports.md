@@ -17,13 +17,19 @@ rehearsals and for stand-in agents.
 machine state. Never assume a share: other jobs and other people's agents may use the same one. A room
 touches only its own folder under `rooms_root`.
 
-**Other machines get the server's address, never its name.** A machine on another subnet often cannot resolve
-the name this PC uses, so every share path written for another machine (the join prompt, a named agent's
-start prompt and instructions) carries the server's IPv4 address, resolved when the room is built and recorded
-as `reach` in the `ROOM` file. `reach_path` in the answers overrides it, and `room_path` per agent overrides it
-for that agent. This PC keeps using the path the owner gave: it may reach the share by name only (credentials
-are stored per server name), so do not replace the room's own path with the address. The same holds for an
-ssh target: `user@name` becomes `user@address`.
+**Other machines get the server's host name first and its address as a named fallback.** The same share was
+measured on three machines: on one the IP path was refused (SMB "user name or password is incorrect") and the
+host name worked; on another the host name did not resolve and the IP worked; on the third both worked. Which
+is which is not known beforehand, so every share path written for another machine (the join prompt, a named
+agent's start prompt and instructions) carries the host name in the commands and names the address as the
+fallback ("Fallback, the same folder by the server's address: ..."), to be used only when the name cannot be
+reached. The room records them as `reach` and `reach_fallback` in `ROOM`; the fallback is worked out when the
+room is built (the name resolved to an IPv4 address; none when it does not resolve, or when the path was given
+with an address). `reach_path` and `reach_fallback` in the answers override them, and `room_path` per agent
+overrides the first for that agent. `scripts/Update-RelayRoom.ps1 -Room <id> -ServerName <host>
+[-FallbackAddress <ip>]` changes a running room's spelling and writes the prompts and instructions again. The
+tools treat both spellings as one room. Rooms made before 0.10.0 recorded the address as `reach` and have no
+fallback. Ask the owner for the server's name in the interview; this PC keeps using the path the owner gave.
 
 What was measured and what follows from it:
 
@@ -63,8 +69,9 @@ There is no `sh` tool either: the room tool is PowerShell on every machine.
 |---|---|---|
 | Windows PowerShell started below PowerShell 7 through `cmd.exe` inherits a module path it cannot use | built-in cmdlets go missing | `relay.ps1` sets the standard module path before it needs a cmdlet; `relay.cmd` clears the variable |
 | An agent's working folder is on a share and it calls a `.cmd` | `cmd.exe` prints a banner on every command and falls back to the Windows folder | PowerShell and Git Bash callers get the `.ps1` wrapper |
-| A share's server is named by its host name in a prompt | a machine on another subnet cannot resolve it and cannot join | prompts carry the address |
-| This PC reaches the share by name but not by address | a room path rewritten to the address stops working here | only what is written for other machines carries the address |
+| A share's server is named by its host name in a prompt | a machine on another subnet cannot resolve it and cannot join | the prompt names the address as the fallback |
+| A share's server is named by its address in a prompt | a machine whose credentials are stored per server name is refused ("user name or password is incorrect") | the host name comes first |
+| This PC reaches the share by name but not by address | a room path rewritten to the address stops working here | this PC keeps the path the owner gave |
 | Windows PowerShell writes a byte order mark into a child's standard input | the first line of piped text is damaged | the scripts read bytes and strip it |
 | Text on a command line | quoting breaks on `$`, backticks, pipes, quotes | text only ever travels in the draft file |
 | JSON read by PowerShell 7 | text that looks like a time becomes a date | `ConvertFrom-RelayJson` keeps it as text |

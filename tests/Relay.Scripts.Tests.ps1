@@ -1488,7 +1488,7 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         $board.memory.entries | Should -Be 3
         $board.memory.authors | Should -Be 2
         $text = @(& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow')
-        @($text | Where-Object { $_ -ceq 'memory: 3 entries from 2 agents' }).Count | Should -Be 1
+        @($text | Where-Object { $_ -ceq 'memory: 3 entries from 2 agents (written by the agents, UNVERIFIED: the tamper check does not cover it)' }).Count | Should -Be 1
         $json = ConvertFrom-Json -InputObject ((& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow' -AsJson) -join "`n")
         $json.memory.entries | Should -Be 3
         $json.memory.authors | Should -Be 2
@@ -1648,7 +1648,7 @@ Describe 'Open seats' -Tag 'Scripts' {
         # Agents worked inside the room folder and on the share: the prompt says where to work
         $created.JoinPrompt | Should -Match 'Work from a local folder of your own on this machine, never from the room folder and never from a folder on a share'
         # An agent in a sandbox cannot run join at all: the prompt itself says what to do then, and names no product
-        $created.JoinPrompt | Should -Match 'If the join command above is refused, blocked or cannot start, or cannot reach the room folder: check once whether the folder exists, then change nothing, stop and tell your owner the exact error'
+        $created.JoinPrompt | Should -Match 'If the join command above is refused, blocked or cannot start, or cannot reach the room folder: try it once, check once whether the folder exists, then change nothing, stop and tell your owner the exact error'
         # The stop is for joining only: an agent in the room that read it as a standing rule went silent after one
         # blocked command instead of asking the coordinator. The prompt says so, and the instructions say what to do.
         $created.JoinPrompt | Should -Match 'This applies to joining only: once you are in the room, a blocked command is reported to the coordinator'
@@ -1734,7 +1734,7 @@ Describe 'Open seats' -Tag 'Scripts' {
         $room = (New-RelayTestRoom -Root $root -RoomId 'reopen' -Extra @{ open_seats = 1 }).Path
         $open = @(Get-RelayTestOpenSeat $room)
         $null = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'm', 'e')
-        $text = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reopen' -Replace $open[0] -NoClipboard) -join "`n"
+        $text = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reopen' -Replace $open[0] -NoClipboard -Force -Reason 'the test replaces a living session without its bye') -join "`n"
         $text | Should -Match "REPLACED $($open[0]): generation 2"
         (Get-Content -LiteralPath (Join-Path $room "PROMPT-$($open[0]).txt") -Raw) | Should -Match "agents/$($open[0])/g2/relay\.ps1' start <product> <model> <effort>"
         $old = Invoke-RelayTool -Room $room -Agent $open[0] -Engine $engine -Words @('check')

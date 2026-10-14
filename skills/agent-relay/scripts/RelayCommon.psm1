@@ -612,12 +612,21 @@ function Resolve-RelayRemotePath {
 }
 
 function Get-RelayReachPath {
-    # The room folder as other machines reach it: what the ROOM file records, or the room path with the
-    # server's address in place of its name
+    # The room folder as other machines reach it, by the server's NAME first: what the ROOM file records
+    # (reach), or the room path as this PC knows it. Rooms made before 0.10.0 recorded the address here; they
+    # keep it, and have no fallback.
     param([Parameter(Mandatory)]$Room)
     $recorded = Get-RelayValue $Room.Info 'reach' ''
     if ($recorded) { return $recorded }
-    return (Resolve-RelayRemotePath $Room.Path)
+    return $Room.Path
+}
+
+function Get-RelayReachFallback {
+    # The same folder by the server's address, for a machine that cannot resolve the name or that the share
+    # refuses under it: what the ROOM file records (reach_fallback), or ''. It is named in the prompts as the
+    # fallback, never the first choice.
+    param([Parameter(Mandatory)]$Room)
+    return (Get-RelayValue $Room.Info 'reach_fallback' '')
 }
 
 function Get-RelayCanonicalGeneration {
@@ -860,6 +869,66 @@ function Get-RelayTaskClock {
 function Add-RelayAlarm {
     param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Text)
     Add-RelayLine (Join-Path $Room.Local 'alarms.log') ('{0} {1}' -f (Format-RelayUtc), (ConvertTo-RelayHeaderText $Text))
+}
+
+function Get-RelayFeedStatePath {
+    # This PC's record of the feed of a room (Watch-RelayFeed.ps1 writes it, the board and the coordinator's tool
+    # read it). It lies in the room's folder on this PC, never in the room: the room is where anybody can write.
+    param([Parameter(Mandatory)]$Room)
+    return (Join-Path $Room.Local 'feed.state')
+}
+
+function Save-RelayFeedState {
+    # What a running feed says about itself: its process, when it started, the last time it was seen working
+    # (alive) and the last time a whole tamper pass was completed (pass). ended: is set when it ends by itself.
+    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][System.Collections.IDictionary]$State)
+    Write-RelayTextAtomic (Get-RelayFeedStatePath $Room) (ConvertTo-RelayKeyValueText $State)
+}
+
+function Get-RelayFeedStatus {
+    # Whether a feed runs for the room, from this PC's record: running when it was seen working within the last
+    # minute and did not say that it ended. Also how long ago it completed a tamper pass, and whether the tamper
+    # check is switched off. The text is for people; Since is the last sign of the feed, or '' when there never was one.
+    param([Parameter(Mandatory)]$Room, [int]$StaleSeconds = 90)
+    $state = Read-RelayKeyValue (Get-RelayFeedStatePath $Room)
+    $now = [DateTime]::UtcNow
+    $alive = $null
+    $pass = $null
+    $ended = $false
+    $isChecking = $true
+    if ($state.Count -gt 0) {
+        $alive = ConvertFrom-RelayUtc (Get-RelayValue $state 'alive' '')
+        $pass = ConvertFrom-RelayUtc (Get-RelayValue $state 'pass' '')
+        $ended = [bool](Get-RelayValue $state 'ended' '')
+        $isChecking = ((Get-RelayValue $state 'tamper_check' 'on') -ne 'off')
+    }
+    $aliveAge = -1
+    if ($null -ne $alive) { $aliveAge = [int][Math]::Max(0, ($now - $alive).TotalSeconds) }
+    $passAge = -1
+    if ($null -ne $pass) { $passAge = [int][Math]::Max(0, ($now - $pass).TotalSeconds) }
+    $interval = 0
+    $null = [int]::TryParse((Get-RelayValue $state 'interval' '15'), [ref]$interval)
+    if ($interval -lt 2) { $interval = 15 }
+    $isRunning = ($null -ne $alive -and -not $ended -and $aliveAge -le $StaleSeconds)
+    # A pass that did not finish for much longer than the interval means the feed hangs on something
+    $isPassing = ($isChecking -and $passAge -ge 0 -and $passAge -le [Math]::Max(120, 4 * $interval))
+    $since = ''
+    if ($null -ne $alive) { $since = Format-RelayUtc -Time $alive }
+    $text = ''
+    if ($Room.IsClosed) { $text = 'FEED: not needed, the room is closed' }
+    elseif ($isRunning -and -not $isChecking) { $text = 'FEED: running with the TAMPER CHECK SWITCHED OFF (-NoTamperCheck): nothing in the room is compared or put back' }
+    elseif ($isRunning -and -not $isPassing) { $text = "FEED: running, but its last whole integrity pass was $(if ($passAge -ge 0) { "$passAge s ago" } else { 'never' }): it may be stuck" }
+    elseif ($isRunning) { $text = "FEED: running; the tamper check passed $passAge s ago, the heartbeat $aliveAge s ago" }
+    elseif ($null -eq $alive) { $text = "FEED: NOT RUNNING and never started on this PC for this room: nothing checks the room (tools, rules, instructions) and agents see you as STALE. Start it now: bind the chat window (relay_bind), or run Watch-RelayFeed.ps1 -Room $($Room.Id) -Follow in a terminal" }
+    else { $text = "FEED: NOT RUNNING, last seen $since ($([int][Math]::Floor($aliveAge / 60)) min ago): nothing checks the room (tools, rules, instructions) and agents see you as STALE. Start it now: bind the chat window (relay_bind), or run Watch-RelayFeed.ps1 -Room $($Room.Id) -Follow in a terminal" }
+    return [pscustomobject]@{
+        isRunning   = $isRunning
+        isChecking  = ($isRunning -and $isChecking -and $isPassing)
+        since       = $since
+        aliveAge    = $aliveAge
+        passAge     = $passAge
+        text        = $text
+    }
 }
 
 function Format-RelayTamperFinding {
@@ -1659,7 +1728,8 @@ function Get-RelayMemoryEntry {
     # oldest first. Room text, so only claims: the author is the folder the line was found in, and only the folders
     # of agents this PC made a seat for are read. A link on the way (the agent folder or the file) is skipped, never
     # followed; so is a file over 4 MB and a line that is not an entry. Tags and text come without control characters.
-    param([Parameter(Mandatory)]$Room)
+    # -Skipped: a hashtable that gets, per agent, how many lines of its file were not entries.
+    param([Parameter(Mandatory)]$Room, [hashtable]$Skipped = @{})
     $entries = New-Object System.Collections.Generic.List[object]
     $stampPattern = '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
     $agentsFolder = Join-Path $Room.Path 'agents'
@@ -1679,14 +1749,14 @@ function Get-RelayMemoryEntry {
             $first = $line.IndexOf(' | ', [System.StringComparison]::Ordinal)
             $second = -1
             if ($first -ge 0) { $second = $line.IndexOf(' | ', $first + 3, [System.StringComparison]::Ordinal) }
-            if ($second -lt 0) { continue }
+            if ($second -lt 0) { $Skipped[$name] = 1 + [int]$Skipped[$name]; continue }
             $stamp = $line.Substring(0, $first).Trim()
             $time = $null
             if ($stamp -cmatch $stampPattern) { $time = ConvertFrom-RelayUtc $stamp }
-            if ($null -eq $time) { continue }
+            if ($null -eq $time) { $Skipped[$name] = 1 + [int]$Skipped[$name]; continue }
             $tagText = ((ConvertTo-RelayPrintedLine $line.Substring($first + 3, $second - $first - 3)) -replace ' {2,}', ' ').Trim()
             $text = ((ConvertTo-RelayPrintedLine $line.Substring($second + 3)) -replace ' {2,}', ' ').Trim()
-            if (-not $tagText -or -not $text) { continue }
+            if (-not $tagText -or -not $text) { $Skipped[$name] = 1 + [int]$Skipped[$name]; continue }
             $tags = @()
             if ($tagText -cne '-') { $tags = @($tagText -split ',' | ForEach-Object { ConvertTo-RelayAsciiLower $_.Trim() } | Where-Object { $_ }) }
             $order++
@@ -1749,8 +1819,10 @@ function Get-RelayBoard {
     $lastJoin = @(((Read-RelayText (Join-Path $Room.Path 'join.log')) -split "`n") | Where-Object { $_.Trim() } | Select-Object -Last 1)
     if ($lastJoin.Count -gt 0 -and $lastJoin[0] -match '^(\S+) full \S+ (.+)$' -and @($agents | Where-Object { $_.isFree }).Count -eq 0) { $turnedAway = "$($Matches[1]), from $($Matches[2])" }
     # How much the agents have recorded with `remember`: only counts, the entries themselves are room text
-    $memoryEntries = @(Get-RelayMemoryEntry $Room)
-    $memory = [pscustomobject]@{ entries = $memoryEntries.Count; authors = @($memoryEntries | ForEach-Object { $_.Author } | Sort-Object -Unique).Count }
+    $memorySkipped = @{}
+    $memoryEntries = @(Get-RelayMemoryEntry $Room -Skipped $memorySkipped)
+    $skippedRows = @($memorySkipped.Keys | Sort-Object | ForEach-Object { [pscustomobject]@{ agent = [string]$_; lines = [int]$memorySkipped[$_] } })
+    $memory = [pscustomobject]@{ entries = $memoryEntries.Count; authors = @($memoryEntries | ForEach-Object { $_.Author } | Sort-Object -Unique).Count; skipped = $skippedRows }
 
     return [pscustomobject]@{
         room                 = $Room.Id
@@ -1759,6 +1831,7 @@ function Get-RelayBoard {
         coordinator          = $Room.Coordinator
         authority            = (Get-RelayValue $Room.Info 'authority' 'within-task')
         isClosed             = $Room.IsClosed
+        feed                 = (Get-RelayFeedStatus $Room)
         agents               = @($agents)
         plan                 = $plan
         open                 = @($openRows.ToArray())
@@ -2120,8 +2193,10 @@ function ConvertTo-RelaySeatSpec {
     # One agent of an answers file with every default filled in from its agent kind
     param(
         [Parameter(Mandatory)]$Agent, [Parameter(Mandatory)][string]$RoomId, [Parameter(Mandatory)][string]$DevRoomPath,
-        # The room folder as other machines reach it (the server by address); the path on this PC when left out
-        [string]$RemoteRoomPath = ''
+        # The room folder as other machines reach it (the server by name first); the path on this PC when left out
+        [string]$RemoteRoomPath = '',
+        # The same folder by the server's address, named in the seat's prompt as the fallback
+        [string]$FallbackRoomPath = ''
     )
     $kindName = [string](Get-RelayProperty $Agent 'kind' 'generic')
     $kind = Get-RelayAgentKind $kindName
@@ -2149,10 +2224,14 @@ function ConvertTo-RelaySeatSpec {
         $sshRemoteRoom = $remoteRoot.TrimEnd('/') + '/' + $RoomId
         if (-not $roomPath) { $roomPath = $sshRemoteRoom }
     }
+    $fallbackPath = ''
     if (-not $roomPath) {
+        # The server by name first; a machine that cannot resolve it gets the address named as the fallback
         $roomPath = $DevRoomPath
-        # A machine on another subnet may not resolve the server's name: it gets the address
-        if ($transport -eq 'share') { $roomPath = Resolve-RelayRemotePath $DevRoomPath; if ($RemoteRoomPath) { $roomPath = $RemoteRoomPath } }
+        if ($transport -eq 'share') {
+            if ($RemoteRoomPath) { $roomPath = $RemoteRoomPath }
+            $fallbackPath = $FallbackRoomPath
+        }
     }
     $machine = [string](Get-RelayProperty $Agent 'machine' '')
     if (-not $machine) { $machine = [Environment]::MachineName; if ($sshTarget) { $machine = $sshTarget } }
@@ -2187,6 +2266,7 @@ function ConvertTo-RelaySeatSpec {
         draft           = [string](Get-RelayProperty $Agent 'draft' $kind.draft)
         prompt_extra    = [string]$kind.prompt_extra
         room_path       = $roomPath
+        room_path_fallback = $fallbackPath
         ssh_target      = $sshTarget
         ssh_remote_room = $sshRemoteRoom
         task            = [string](Get-RelayProperty $Agent 'task' '(the coordinator sends your first task as a message)')
@@ -2229,7 +2309,17 @@ function Get-RelayStartPrompt {
         $lines.Add('The line works as it is in PowerShell and in Git Bash.')
         $lines.Add('')
     }
-    $lines.Add('It prints who you are, your assignment with its limits, and what to do next. From then on every command you run there ends with a NEXT: line: do what it says. Stay inside your assignment and ask before anything beyond it. Never type message text on the command line: the output tells you which file to write it into.')
+    # The same line by the server's address, for a machine that cannot resolve the name or that the share refuses under it
+    $fallbackPath = ''
+    if ($Spec.Contains('room_path_fallback')) { $fallbackPath = [string]$Spec['room_path_fallback'] }
+    if ($fallbackPath -and -not $Launcher) {
+        $fallbackCall = Get-RelayCallLine -RoomPath $fallbackPath -Name $Name -Generation ([string]$Generation) -Shell $shell
+        $lines.Add("Only if that command cannot reach the room (the host name does not resolve here, or the share refuses you with a user name or password error), run the same command with the server's address instead, and tell your owner which one worked:")
+        $lines.Add('')
+        $lines.Add("$fallbackCall start <product> <model> <effort>")
+        $lines.Add('')
+    }
+    $lines.Add('It prints who you are, your assignment with its limits, and what to do next. From then on every command you run there ends with a NEXT: line: do what it says. Stay inside your assignment and ask before anything beyond it. Never type message text on the command line: the output tells you which file to write it into. Never run a script that lies in the room, except your own command and a script that a task tells you to write and run in your own work folder.')
     if ($Spec['prompt_extra']) { $lines.Add(''); $lines.Add([string]$Spec['prompt_extra']) }
     if ($Generation -gt 1) { $lines.Add(''); $lines.Add("You take over from an earlier session of $display that has ended. The start command prints the requests it left open: continue from there, and do not redo what its messages already report as done.") }
     return ($lines -join "`n") + "`n"
@@ -2469,14 +2559,21 @@ function Write-RelaySeatWrapper {
 function Get-RelayJoinPrompt {
     # What the owner pastes into every agent that should join the room: the same text for all of them
     param([Parameter(Mandatory)]$Room)
-    # Every address in the prompt is the one other machines reach: a share's server by its address, not its name
+    # The room folder by the share server's host name; the address, when there is one, is named as the fallback
     $base = (Get-RelayReachPath $Room).TrimEnd('\', '/')
     Assert-RelayPastePath $base 'The room folder'
     $forward = $base -replace '\\', '/'
-    $lines = @(
-        'You are asked to join a work room: a shared folder through which several coding agents work on one job for the same owner. Another agent, the coordinator, hands out the tasks and answers questions.'
-        ''
-        "Room folder: $base"
+    $fallback = (Get-RelayReachFallback $Room).TrimEnd('\', '/')
+    Assert-RelayPastePath $fallback 'The fallback room folder'
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('You are asked to join a work room: a shared folder through which several coding agents work on one job for the same owner. Another agent, the coordinator, hands out the tasks and answers questions.')
+    $lines.Add('')
+    $lines.Add("Room folder: $base")
+    if ($fallback) {
+        $lines.Add("Fallback, the same folder by the server's address: $fallback")
+        $lines.Add('Use the fallback only when the folder above cannot be reached: the name does not resolve on this machine, or the share refuses you with a user name or password error. Then put the fallback in place of the folder in the commands below, and tell your owner which of the two worked.')
+    }
+    $lines.AddRange([string[]]@(
         ''
         '1. Run ONE of these now, the one for your shell. The three words at the end say what you are: your agent product as exactly as you know it (claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent, copilot-cli, or its name as one word), your model, and your reasoning effort setting if your session or its configuration shows one (low, medium, high, ...). Write unknown where you do not know; do not guess. Type the words themselves, without the angle brackets, for example: claude-code-cli sonnet-5.5 medium'
         ''
@@ -2491,8 +2588,10 @@ function Get-RelayJoinPrompt {
         ''
         '3. Every output ends with a NEXT: line. Do what it says. Your first task arrives as a message.'
         ''
-        'Until a task arrives, change nothing on this machine: it is in use, not a test machine. Stay inside what a task assigns and ask before anything beyond it. Never type message text on the command line: the output tells you which file to write it into. If the join command above is refused, blocked or cannot start, or cannot reach the room folder: check once whether the folder exists, then change nothing, stop and tell your owner the exact error. Do not work around it and do not try other paths unless your owner gives you one. This applies to joining only: once you are in the room, a blocked command is reported to the coordinator through your own command (your instructions say how), and you keep waiting on the room.'
-    )
+        'Until a task arrives, change nothing on this machine: it is in use, not a test machine. Stay inside what a task assigns and ask before anything beyond it. Never type message text on the command line: the output tells you which file to write it into. Never run a script that lies in the room, except the join command above, your own command once you have one, and a script that a task tells you to write and run in your own work folder.'
+        ''
+        'If the join command above is refused, blocked or cannot start, or cannot reach the room folder: try it once, check once whether the folder exists, then change nothing, stop and tell your owner the exact error. Do not work around it and do not try other paths unless your owner gives you one (the fallback above is the one exception). A product that guards against scripts it has not seen may refuse the join command: that is correct behaviour, not a fault. Your owner has two ways through, and you name both: (1) start the product with its guard off; (2) run the one join line above themselves, in a terminal or with the product''s own shell prefix, and give you its output. This applies to joining only: once you are in the room, a blocked command is reported to the coordinator through your own command (your instructions say how), and you keep waiting on the room.'
+    ))
     return ($lines -join "`n") + "`n"
 }
 
@@ -2517,7 +2616,7 @@ function Add-RelayOpenSeat {
     $names = New-Object System.Collections.Generic.List[string]
     for ($added = 0; $added -lt $Count; $added++) {
         $order++
-        $spec = ConvertTo-RelaySeatSpec -Agent ([pscustomobject]@{ role = 'agent'; machine = "(open seat $order)"; kind = 'generic'; transport = $transport }) -RoomId $Room.Id -DevRoomPath $Room.Path -RemoteRoomPath (Get-RelayReachPath $Room)
+        $spec = ConvertTo-RelaySeatSpec -Agent ([pscustomobject]@{ role = 'agent'; machine = "(open seat $order)"; kind = 'generic'; transport = $transport }) -RoomId $Room.Id -DevRoomPath $Room.Path -RemoteRoomPath (Get-RelayReachPath $Room) -FallbackRoomPath (Get-RelayReachFallback $Room)
         $spec['kind'] = 'auto'
         $spec['wake'] = 'auto'
         $spec['open'] = $true
@@ -2561,6 +2660,51 @@ function Merge-RelaySeatSpec {
     if (@('in-use', 'disposable') -notcontains [string]$Spec['machine_care']) { throw "machine_care '$($Spec['machine_care'])' is not one of in-use, disposable" }
     $null = Get-RelayWorkKind ([string]$Spec['work'])
     return $Spec
+}
+
+function Set-RelayReachServer {
+    # Changes how other machines name the share server in this room's prompts: the host name first, the address
+    # as the named fallback. Records reach and reach_fallback in ROOM (canonical copy first) and in the saved
+    # answers of every seat that used the old spelling; the caller then writes the prompts and instructions again
+    # (Update-RelayRoomPackage). Returns the new reach path.
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$ServerName, [string]$FallbackAddress = '')
+    if ($ServerName -cnotmatch '^[A-Za-z0-9._-]{1,253}$') { throw "-ServerName '$ServerName' is not a host name" }
+    $parsed = $null
+    if ($FallbackAddress -and -not [System.Net.IPAddress]::TryParse($FallbackAddress, [ref]$parsed)) { throw "-FallbackAddress '$FallbackAddress' is not an IP address" }
+    $old = Get-RelayReachPath $Room
+    $oldFallback = Get-RelayReachFallback $Room
+    # The part after the server: from the recorded spelling when it is a share path, else from this PC's path
+    $source = $old
+    if ($source -notmatch '^\\\\([^\\]+)(\\.*)$') { $source = [string]$Room.Path }
+    if ($source -notmatch '^\\\\([^\\]+)(\\.*)$') { throw "Room $($Room.Id) is not on a share (\\server\share\...): there is no server name to change" }
+    $tail = [string]$Matches[2]
+    $new = '\\' + $ServerName + $tail
+    if (-not $FallbackAddress) {
+        $resolved = Resolve-RelayHostAddress $ServerName
+        if ([System.Net.IPAddress]::TryParse($resolved, [ref]$parsed)) { $FallbackAddress = $resolved }
+    }
+    $fallback = ''
+    if ($FallbackAddress) { $fallback = '\\' + $FallbackAddress + $tail }
+    Assert-RelayPastePath $new 'The room folder'
+    Assert-RelayPastePath $fallback 'The fallback room folder'
+    if (-not $PSCmdlet.ShouldProcess("$($Room.Id): ROOM and saved answers", "Name the server $ServerName first")) { return $new }
+    $info = [ordered]@{}
+    foreach ($key in $Room.Info.Keys) { $info[$key] = $Room.Info[$key] }
+    $info['reach'] = $new
+    if ($fallback) { $info['reach_fallback'] = $fallback } else { $info.Remove('reach_fallback') }
+    Write-RelayGuardedText $Room 'ROOM' (ConvertTo-RelayKeyValueText $info)
+    foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $Room.Local 'specs') -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+        $name = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+        $spec = $null
+        try { $spec = Read-RelaySeatSpec $Room $name } catch { continue }
+        $current = [string]$spec['room_path']
+        if ($current -cne $old -and ($oldFallback -eq '' -or $current -cne $oldFallback)) { continue }
+        $spec['room_path'] = $new
+        $spec['room_path_fallback'] = $fallback
+        Write-RelayText $file.FullName ((ConvertTo-Json -InputObject $spec -Depth 8) + "`n")
+    }
+    return $new
 }
 
 function Update-RelayRoomPackage {
@@ -2632,10 +2776,12 @@ function Update-RelayRoomPackage {
         }
     }
     $version = (Read-RelayText (Join-Path $package 'VERSION')).Trim()
-    if ((Get-RelayValue $Room.Info 'package' '') -ne $version -and $PSCmdlet.ShouldProcess("$($Room.Id): ROOM", "Record package $version")) {
+    $needsStamp = ((Get-RelayValue $Room.Info 'integrity' '') -ne 'stamped')
+    if (((Get-RelayValue $Room.Info 'package' '') -ne $version -or $needsStamp) -and $PSCmdlet.ShouldProcess("$($Room.Id): ROOM", "Record package $version")) {
         $info = [ordered]@{}
         foreach ($key in $Room.Info.Keys) { $info[$key] = $Room.Info[$key] }
         $info['package'] = $version
+        $info['integrity'] = 'stamped'
         Write-RelayGuardedText $Room 'ROOM' (ConvertTo-RelayKeyValueText $info)
         $changed.Add('ROOM')
     }

@@ -22,6 +22,25 @@ working copy it falls back to local memory (`scripts/Add-RelayLocalMemory.ps1`).
 3. For each finding decide: is it the package (tools, templates, protocol reference), the skill text, a
    reference file, an agent-kind profile, or the scripts? One finding, one cause, one change.
 
+## Triage with the owner
+
+Do not implement every finding. Sort them, then let the owner choose per group.
+
+1. Give every finding a class: **quick fix** (minutes each, safe right after a close: skill or reference text, a
+   template line, a small script change with a test), **roadmap** (needs design or a session of its own),
+   **lesson only** (a line in `references/lessons.md`, no code).
+2. Put them into groups the owner can judge in one go (integrity, paths and prompts, exits, asking the owner,
+   coordinator guidance, bugs, agent kinds), each with its findings, the evidence and what you propose.
+3. Ask the owner through the question tool, one question per group, with the choices **implement now**, **to the
+   roadmap**, **defer or discard** (and the reasons in the description). Never as numbered prose to answer by
+   typing.
+4. Implement only what the owner chose, behind the gate (below). What goes to the roadmap is written into
+   `ROADMAP.md` with enough context to start cold in a later session: what happened, the evidence, the proposed
+   direction and the open questions. What the owner discards is dropped, and the lesson says so.
+5. If an item chosen for "now" turns out to need design, stop on that item, move it to the roadmap with what
+   you found, and say so. One item must not hold the pass.
+6. End with a table of every finding: done, on the roadmap, in lessons, or discarded.
+
 ## Lessons
 
 Add each finding to `references/lessons.md`: date, what happened in general terms, what was changed. No

@@ -293,13 +293,38 @@ compares and restores each guarded file by itself: one that cannot be restored r
 <kind> could not restore: <file>: <reason>`) and stops nothing. The prompts handed out (`PROMPT-*.txt`) are
 guarded files too.
 
+## What the tamper check covers
+
+The feed's tamper pass (every 15 seconds while the feed runs, and always in its first round) covers exactly:
+the guarded files (tools, wrappers, `ROOM`, `PROTOCOL.md`, `DECISIONS.md`, `PLAN`, every agent's `seat`,
+`scope`, `control`, `gen`, `retired`, `lines`, instructions and prompts), strangers where only this PC writes
+(markers, tools, wrappers, prompts), links in the room, and messages under the coordinator's name that its tool
+did not send. A changed file is restored from the canonical copy and the old bytes are kept in `quarantine/`.
+
+It does **not** cover what agents write for themselves: `memory`, `journal`, `status`, `card`, `state`,
+`progress`, inboxes and results, and attachments. These have no canonical copy, so nothing restores them, and
+nothing says when one was altered. Room memory is the one that matters most, because every agent is shown it on
+every wake: a planted or altered entry is an injection path into the whole room. The board therefore labels
+memory UNVERIFIED and counts the lines that are not entries per agent; `Get-RelayMemory.ps1` warns when it
+skipped any; `Repair-RelayMemory.ps1` lists a file by line, removes lines after an evidence copy and writes a
+record. A per-entry integrity scheme for these files is on the roadmap.
+
+The check also stops when the feed stops. Two stamps say whether it runs: `feed.state` in the room's folder on
+this PC (written by the feed every few seconds, with the time of its last whole pass), which the board and the
+coordinator's tool decide by (the board's first line, the NO FEED block, the `wait` that refuses to start), and
+`agents/<coordinator>/integrity` in the room (rewritten after every whole pass), which every agent's tool reads:
+when it is older than the room's `stale_minutes`, or missing in a room whose `ROOM` says `integrity: stamped`,
+the agent is told with `NO INTEGRITY CHECK` and raises the alarm. The room's stamp is only a hint (anybody can
+write it); this PC's record is what the coordinator decides by.
+
 ## Machine state
 
 `Get-RelayRooms.ps1` prints where it is: `.local/` in the plugin's working copy, or
 `%LOCALAPPDATA%\agent-relay` for an installed copy (`AGENT_RELAY_LOCAL` overrides both). It holds
 `rooms.json` (the room index), `names.json` (which named other machine and role has which name, and the
 names handed out lately), `machines.json` (known shares and machines: facts only), and per room `canon/`, `owner/`, `specs/`, `prompts/`, `quarantine/`,
-`alarms.log`, `stats.json`, `sent.log` (what the coordinator's tool sent), `tasks.log` (what it expects of
+`alarms.log`, `feed.state` (the feed's stamp), `exits.log` (how agents left), `evidence/` (copies kept by
+`Repair-RelayMemory.ps1`), `stats.json`, `sent.log` (what the coordinator's tool sent), `tasks.log` (what it expects of
 its tasks and which overdue alerts it gave), the coordinator's launcher (`relay.ps1`, `relay.cmd`) and its
 `draft.md`;
 `archive/` holds one zip per closed room. None of it is in git.

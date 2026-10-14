@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.10.0 (2026-10-14)
+
+An improvement pass after a research room across three machines (room package 3.6.0; running rooms:
+`Update-RelayRoom.ps1 -Room <id>`; agents learn what changed from a note). The first pass of a triage the owner
+approved group by group; the rest is on `ROADMAP.md` and in `references/lessons.md`.
+
+- **A feed that is not running is now shown, and `wait` will not start without one.** In the room, the feed
+  (the tamper check and the coordinator's heartbeat) was off for 83 minutes after a crash and a resume, and nothing
+  said so; on another day the board showed the coordinator stale for 12 hours. The feed now writes `feed.state`
+  on the coordinator's PC and, after every whole tamper pass, `agents/<coordinator>/integrity` in the room. The
+  board's first line says `FEED: running ...` or `NOT RUNNING`; the coordinator's tool prints a NO FEED block on
+  every verb that sends or waits and its `wait` refuses to start; every agent's tool prints `NO INTEGRITY CHECK`
+  when the stamp is older than the room's `stale_minutes` (or never written, in a room whose `ROOM` says
+  `integrity: stamped`). The resume workflow and the loop start with the feed. `protocol.md` says what the check
+  covers and what it does not.
+- **Memory is labelled unverified, and a bad line is flagged.** The board shows `ATTENTION: N malformed line(s)
+  skipped in <agent>'s memory`; `Get-RelayMemory.ps1` warns; new `Repair-RelayMemory.ps1` lists a memory file by
+  line and removes lines after an evidence copy, with a record in the alarm log; `room-memory.md` has the
+  procedure for a planted or altered entry.
+- **The host name comes first in prompts, the address is the named fallback.** The same share was refused by
+  address on one machine and not resolvable by name on another. The join prompt and the start prompts of
+  share agents name `reach` (the host name) and `reach_fallback` (the address). New rooms record both in
+  `ROOM`; `Update-RelayRoom.ps1 -ServerName <host> [-FallbackAddress <ip>]` changes a running room. Rooms made
+  before keep their address and have no fallback.
+- **Join prompt wording.** A guarded product may refuse the join command (a correct default); the agent tries
+  once and names the two ways through (start the product with its guard off, or the owner runs the join line).
+  Every prompt says never to run a script from the room except one's own command and one a task says to write in
+  the agent's own work folder. The skill tells the coordinator to have the owner type a sentence of their own in
+  front of a pasted prompt.
+- **Exit steps on every graceful exit.** `-Retire` and `-Replace` ask a living agent to `remember` and say
+  `bye`, through the coordinator's launcher, and wait (`-WaitMinutes`, 3); a session that is not alive is not
+  waited for and the exit is recorded as lost; `-Force -Reason` goes on regardless. The retired marker and
+  `exits.log` carry the record. The close lists who cannot be reached before the closing note. A seat that
+  starts again after `bye` shows `returned after bye`. `-Reinstate` was not built: asking first removes the need.
+- **Asking the owner.** The skill and `coordinating.md` say every question is asked through the question tool with
+  options; the Improve step triages per group (quick fix now, roadmap, defer or discard); `-Replace` names the
+  prompt to paste and `Add-RelayAgent.ps1 -Clipboard <name>` puts a named one on the clipboard.
+- **Self-audit false positives.** The room's own folders (`agents`, `files`, `tools`, files at the top) are left
+  out of an agent's audit, found by the room folder's name in either spelling of the share.
+- **A verb no longer depends on the working folder.** The tool moves to the temporary folder for a call when
+  the shell's working folder is gone. Not reproduced on a local disk; see `ROADMAP.md`.
+- The skill states the owner's rules for keeping agents busy, proportionate effort and plain-file delivery in one
+  sentence each; the fuller guidance, the other quick fixes (Q21 to Q32, Q35 to Q38) and ten larger items
+  (R1 to R10, with R1 to R3 first) are on `ROADMAP.md`. Thirteen lessons are in `references/lessons.md`.
+- Tests: new `Relay.Integrity.Tests.ps1` (23 tests); five existing tests pin the new texts or give a replaced
+  session its `-Force -Reason`.
+
 ## 0.9.1 (2026-10-13)
 
 - **A Codex agent waits 15 minutes at a time, not 4.** Every wait of a Codex agent that ends with nothing is a

@@ -31,10 +31,21 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.5.0'
+$script:ToolVersion = '3.6.0'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
+# The shell's working folder can be gone (a folder on a share that was removed or renamed while the session stood
+# in it): a verb must not depend on it. Then the tool stands in the temporary folder, or in its own, for this call.
+try {
+    $standingIn = (Get-Location).ProviderPath
+    if (-not [System.IO.Directory]::Exists($standingIn)) { throw 'the working folder is gone' }
+}
+catch {
+    foreach ($candidate in @([System.IO.Path]::GetTempPath(), $PSScriptRoot)) {
+        try { Set-Location -LiteralPath $candidate; [Environment]::CurrentDirectory = $candidate; break } catch { $null = $_ }
+    }
+}
 # The token each lock this call holds was written with, by the lock's path (Enter-FileLock, Exit-FileLock)
 $script:LockTokens = @{}
 
@@ -1422,6 +1433,26 @@ function Test-InScope {
     return $false
 }
 
+function Test-RoomBookkeeping {
+    # True when a path lies in this room's own bookkeeping: under agents\, files\ or tools\ of the room folder, or
+    # a file at its top. Found by the room folder's name, not by the whole path: the same share is reached by its
+    # host name or by its address, and a root assigned in one spelling must not make the other agents' heartbeats
+    # and the agent's own attachments look like changes of the work.
+    param([string]$FullPath)
+    $roomName = Split-Path -Leaf $script:Room
+    if (-not $roomName) { return $false }
+    $text = ($FullPath -replace '/', '\')
+    $marker = '\' + $roomName + '\'
+    $at = $text.LastIndexOf($marker, [System.StringComparison]::OrdinalIgnoreCase)
+    if ($at -lt 0) { return $false }
+    $rest = $text.Substring($at + $marker.Length)
+    $first = $rest
+    $cut = $rest.IndexOf([char]'\')
+    if ($cut -ge 0) { $first = $rest.Substring(0, $cut) }
+    else { return $true }
+    return (@('agents', 'files', 'tools') -contains $first.ToLowerInvariant())
+}
+
 function Get-Audit {
     # What changed under the assigned roots since start, and which of it lies outside the assigned paths.
     # Evidence for the coordinator, not a sandbox.
@@ -1431,6 +1462,7 @@ function Get-Audit {
     # The first entries outside the assigned paths, for the report itself: a bare count leaves both sides guessing
     $outsideShown = New-Object System.Collections.Generic.List[string]
     $skipped = 0
+    $bookkeeping = 0
     $folder = Join-Path $script:MyDir 'baseline'
     $scopes = @(Get-Scope)
     $draftFile = [System.IO.Path]::GetFullPath((Get-DraftPath))
@@ -1539,6 +1571,8 @@ function Get-Audit {
                 $path = $path.Trim('"') -replace '\\', '/'
                 # The draft of the message being sent is the tool's own file, not a change of the agent
                 if ([System.IO.Path]::GetFullPath([System.IO.Path]::Combine($scope.Root, $path)) -eq $draftFile) { continue }
+                # The room's own bookkeeping (other agents' heartbeats, attachments) is not the agent's work
+                if (Test-RoomBookkeeping ([System.IO.Path]::Combine($scope.Root, $path))) { $bookkeeping++; continue }
                 $listed++
                 $changed++
                 if (Test-InScope $path @($scope.May)) { $lines.Add("  ok       $entry") }
@@ -1549,6 +1583,7 @@ function Get-Audit {
                 }
             }
             if ($listed -eq 0) { $lines.Add('  nothing changed') }
+            if ($bookkeeping -gt 0) { $lines.Add("  ($bookkeeping change(s) in the room's own folders agents, files and tools are not counted: they are the room's bookkeeping)"); $bookkeeping = 0 }
         }
         catch {
             $lines.Add("root: $($scope.Root) (the audit of this folder failed: $($_.Exception.Message): NOT COMPARED)")
@@ -1594,6 +1629,62 @@ function Show-Hold {
     if (-not (Test-Hold)) { return }
     Say "=== HOLD: $(Get-HoldNote) ==="
     Say '    start nothing new (no run, no change) until the coordinator lifts the hold; messages still reach you; check exits 7 while it lasts'
+}
+
+function Get-FeedState {
+    # The coordinator's tool only: whether this PC's record says that a feed runs for the room (the feed writes
+    # feed.state next to the launcher; the launcher names it in RELAY_FEED_STATE). Running: seen working within the
+    # last 90 seconds and not ended. Nothing is judged without a launcher that names the record, or in a closed room.
+    $result = [pscustomobject]@{ Judged = $false; Running = $true; Never = $false; MinutesAgo = 0; Since = '' }
+    if (-not $script:IsCoordinator -or -not $env:RELAY_FEED_STATE) { return $result }
+    if (Test-Path -LiteralPath (Join-Path (Join-Path $PSScriptRoot '..') 'CLOSED')) { return $result }
+    $result.Judged = $true
+    $state = Read-KeyValue ([string]$env:RELAY_FEED_STATE)
+    $alive = $null
+    if ($state.Count -gt 0) { $alive = ConvertFrom-RoomTime (Get-Value $state 'alive' '') }
+    if ($null -eq $alive) { $result.Running = $false; $result.Never = $true; return $result }
+    $age = ([DateTime]::UtcNow - $alive).TotalSeconds
+    $result.Since = $alive.ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture)
+    $result.MinutesAgo = [int][Math]::Floor([Math]::Max(0, $age) / 60)
+    $result.Running = ((Get-Value $state 'ended' '') -eq '' -and $age -le 90)
+    return $result
+}
+
+function Show-NoFeed {
+    # The unmissable block: nothing checks the room and agents see the coordinator as stale
+    param($Feed)
+    $since = "was last seen $($Feed.Since) ($($Feed.MinutesAgo) min ago)"
+    if ($Feed.Never) { $since = 'has never run on this PC for this room' }
+    Say '=============================================================='
+    Say "=== NO FEED: NOTHING IS CHECKING THIS ROOM (room $($script:RoomId)) ==="
+    Say "    The feed (the tamper check and your heartbeat) $since."
+    Say '    Nobody puts a changed tool, rule or instruction back, and every agent sees you as STALE.'
+    Say '    Start it BEFORE anything else: bind the chat window (the relay_bind tool), or run Watch-RelayFeed.ps1 -Room'
+    Say "    $($script:RoomId) -Follow in a terminal that stays open. Memory files are never checked, feed or not."
+    Say '=============================================================='
+}
+
+function Show-IntegrityNote {
+    # An agent's tool: the coordinator's feed stamps agents\<coordinator>\integrity after every whole tamper pass.
+    # An old stamp (or none in a room that is stamped) means nobody is checking the tools and instructions this agent
+    # reads. The stamp is a hint (anybody can write it); the coordinator's PC decides by its own record.
+    if ($script:IsCoordinator -or -not $script:Coordinator -or $env:RELAY_NO_INTEGRITY_NOTE) { return }
+    if (Test-Path -LiteralPath (Join-Path $script:Room 'CLOSED')) { return }
+    $stamp = Join-Path (Get-AgentDir $script:Coordinator) 'integrity'
+    $stamped = (Get-Value $roomInfo 'integrity' '') -eq 'stamped'
+    $written = Get-FileTimeUtc $stamp
+    if ($written -eq [DateTime]::MinValue -and -not $stamped) { return }
+    $now = Write-Alive
+    if ($null -eq $now) { return }
+    $text = ''
+    if ($written -eq [DateTime]::MinValue) { $text = 'has never run' }
+    else {
+        $minutes = ($now - $written).TotalSeconds / $script:MinuteSeconds
+        if ($minutes -lt $script:StaleMinutes) { return }
+        $text = "last ran $([int][Math]::Floor($minutes)) minutes ago"
+    }
+    Say "=== NO INTEGRITY CHECK: the coordinator's check of this room's tools, rules and instructions $text ==="
+    Say "    Anything you read here may have been changed and not put back. Tell your user, and tell the coordinator: write a note with $(Get-Call) note"
 }
 
 function Test-WordMatch {
@@ -2318,7 +2409,15 @@ function Invoke-Start {
     Sync-Assignment -Quiet
     Start-TabTitle
     Add-Journal 'start' "generation $($script:MyGen) $product $model $effort"
-    Write-Status 'working' 'started'
+    # An agent that said bye and starts again takes its seat back (the seat is offline, not closed): the board
+    # shows it, so the coordinator is not left believing the agent is gone
+    $beforeStart = Read-KeyValue (Join-Path $script:MyDir 'status')
+    $statusDetail = 'started'
+    if ((Get-Value $beforeStart 'state' '') -eq 'offline' -and (Get-Value $beforeStart 'detail' '') -eq 'said bye') {
+        $statusDetail = 'returned after bye'
+        Add-Journal 'returned-after-bye' "said bye at $(Get-Value $beforeStart 'since_utc' '?')"
+    }
+    Write-Status 'working' $statusDetail
     $startNow = Write-Alive
     Save-StateValue 'idle_timeouts' '0'
 
@@ -2353,6 +2452,7 @@ function Invoke-Start {
     Say "=== you are $($card['display']) ($($script:Me)), generation $($script:MyGen), in room $($script:RoomId) ==="
     Say "you run on $($card['computer']) ($($card['ipv4'])) as $($card['user']), $($card['elevation']); $($card['shell']); $($card['host_app'])"
     Say "your command: $call <verb>      your draft file: $(Get-DraftPath)"
+    if ($statusDetail -eq 'returned after bye') { Say "NOTE: you said bye earlier. This start takes your seat back; the board shows you as 'returned after bye'. If you meant to leave, run bye again." }
     $coordinatorCard = Read-KeyValue (Join-Path (Get-AgentDir $script:Coordinator) 'card')
     if (-not $script:IsCoordinator) {
         if ($coordinatorCard.Count -gt 0) { Say "your coordinator: $(Get-Value $coordinatorCard 'display' $script:Coordinator) on $(Get-Value $coordinatorCard 'computer' '?') ($(Get-Value $coordinatorCard 'product' '?'))" }
@@ -3767,6 +3867,16 @@ if ($verb -ne 'start') {
 try {
     # A hold comes first, whatever the verb: whoever reads the output sees it before anything else
     Show-Hold
+    # The coordinator is told at once when no feed runs; its wait does not start without one
+    if (@('start', 'wait', 'check', 'task', 'note', 'ask', 'reply', 'report', 'propose') -contains $verb) {
+        $feed = Get-FeedState
+        if (-not $feed.Running) {
+            Show-NoFeed $feed
+            if ($verb -eq 'wait') { Say "NEXT: start the feed (see above), then run: $(Get-Call) wait$(Get-WaitMode)"; exit 1 }
+        }
+    }
+    # An agent is told when the coordinator's integrity pass is old
+    try { Show-IntegrityNote } catch { $null = $_ }
     # Then, for an agent that has a task and no wait running: nothing reaches it until it starts one
     try { Show-ReachNote $verb } catch { $null = $_ }
     switch ($verb) {

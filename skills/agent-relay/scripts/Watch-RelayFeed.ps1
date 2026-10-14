@@ -13,6 +13,12 @@
       an alarm is raised. A file that claims to come from the owner but is not in the owner's log raises one too.
     - the coordinator's heartbeat: remote agents see that the coordinator is alive even while it is busy.
 
+    It also keeps two stamps that say it is running. One lies on this PC (feed.state in the room's folder under
+    the machine state): the board and the coordinator's tool read it and print NO FEED when it is stale. The other
+    is agents\<coordinator>\integrity in the room, rewritten after every whole tamper pass: the agents' tools read
+    its age and tell their agent when it is old. The second is only a hint for the agents (anybody can write it);
+    the first is what this PC decides by.
+
     When the room folder cannot be reached (a share that is down, a folder that was moved), the feed says so in
     one alarm, checks and writes nothing in the room, and says so again when the folder is back.
 
@@ -300,6 +306,38 @@ function Test-RoomReachable {
     # not stop the tamper check that puts it back.
     return [System.IO.Directory]::Exists($roomObject.Path)
 }
+function Save-FeedState {
+    # This PC's stamp of the feed (Get-RelayFeedStatus reads it). Not for -Once: a snapshot is no feed.
+    param([switch]$Ended)
+    if ($Once) { return }
+    $own = [ordered]@{
+        pid          = [string]$PID
+        started      = $script:feedStarted
+        alive        = (Format-RelayUtc)
+        pass         = $script:lastPassUtc
+        interval     = [string]$TamperSeconds
+        tamper_check = $(if ($NoTamperCheck) { 'off' } else { 'on' })
+    }
+    if ($Ended) { $own['ended'] = (Format-RelayUtc) }
+    try {
+        # A second feed that ended must not call the first one ended: only the holder of the stamp closes it
+        $held = Read-RelayKeyValue (Get-RelayFeedStatePath $roomObject)
+        if ($Ended -and $held.Count -gt 0 -and (Get-RelayValue $held 'pid' '') -ne [string]$PID) { return }
+        Save-RelayFeedState $roomObject $own
+        $script:lastStateWrite = Get-Date
+    }
+    catch { $null = $_ }
+}
+
+function Write-IntegrityStamp {
+    # After a whole tamper pass: the time of it in the room, for the agents' tools to read the age of. Never
+    # written through a link that an agent put in place of the file or of a folder above it.
+    $stamp = Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $roomObject.Coordinator) 'integrity'
+    try { if (-not (Test-RelayLinkedPath -Root $roomObject.Path -Path $stamp)) { [System.IO.File]::WriteAllText($stamp, ($script:lastPassUtc + "`n")) } } catch { $null = $_ }
+}
+$script:feedStarted = Format-RelayUtc
+$script:lastPassUtc = ''
+$script:lastStateWrite = [DateTime]::MinValue
 $started = Get-Date
 $lastTamper = [DateTime]::MinValue
 $lastHeartbeat = [DateTime]::MinValue
@@ -348,7 +386,12 @@ try {
             if ($isReachable -and -not $NoTamperCheck -and ((Get-Date) - $lastTamper).TotalSeconds -ge $TamperSeconds) {
                 $lastTamper = Get-Date
                 foreach ($finding in @(Test-RelayTamper $roomObject -Repair)) { $script:pendingAlarms.Add((Format-RelayTamperFinding $finding)) }
+                # Only a pass that ran to its end is stamped: one that threw never reaches this line
+                $script:lastPassUtc = Format-RelayUtc
+                Write-IntegrityStamp
+                Save-FeedState
             }
+            elseif (((Get-Date) - $script:lastStateWrite).TotalSeconds -ge 5) { Save-FeedState }
             if (Test-Path -LiteralPath (Join-Path $roomObject.Canon 'CLOSED')) {
                 if ($isFirst -and $isReachable) { $null = Get-NewMessage }
                 foreach ($text in @($script:pendingAlarms.ToArray())) { Write-Feed ([pscustomobject]@{ type = 'alarm'; text = $text }); $null = $script:pendingAlarms.Remove($text) }
@@ -441,6 +484,7 @@ try {
     }
 }
 finally {
+    Save-FeedState -Ended
     if ($null -ne $watcher) {
         Get-EventSubscriber | Where-Object { $_.SourceIdentifier -like "$source.*" } | Unregister-Event
         $watcher.Dispose()

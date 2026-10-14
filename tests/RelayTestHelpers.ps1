@@ -117,7 +117,7 @@ function Start-RelayTool {
     if ($WorkingDirectory) { $startInfo.WorkingDirectory = $WorkingDirectory }
     $variables = $startInfo.EnvironmentVariables
     # Also what would tell the tool which agent session calls: the suite itself may run inside one
-    foreach ($name in 'RELAY_NAME', 'RELAY_GEN', 'RELAY_ROOM_ID', 'RELAY_WRAPPER', 'RELAY_DRAFT', 'RELAY_SENT_LOG', 'RELAY_NO_EVENTS', 'RELAY_POLL_SECONDS', 'RELAY_SETTLE_MS', 'RELAY_MINUTE_SECONDS', 'RELAY_SESSION', 'CLAUDE_CODE_SESSION_ID') {
+    foreach ($name in 'RELAY_NAME', 'RELAY_GEN', 'RELAY_ROOM_ID', 'RELAY_WRAPPER', 'RELAY_DRAFT', 'RELAY_SENT_LOG', 'RELAY_FEED_STATE', 'RELAY_NO_INTEGRITY_NOTE', 'RELAY_NO_EVENTS', 'RELAY_POLL_SECONDS', 'RELAY_SETTLE_MS', 'RELAY_MINUTE_SECONDS', 'RELAY_SESSION', 'CLAUDE_CODE_SESSION_ID') {
         if ($variables.ContainsKey($name)) { $variables.Remove($name) }
     }
     # The coordinator sends through its launcher, which names this PC's record of what it sent: a test's coordinator
@@ -136,6 +136,8 @@ function Start-RelayTool {
     $variables['RELAY_NAME'] = $Agent
     $variables['RELAY_GEN'] = [string]$Generation
     $variables['RELAY_SETTLE_MS'] = '0'
+    # No feed runs in a test room: the agents' note about the old integrity stamp stays out unless a test asks for it
+    $variables['RELAY_NO_INTEGRITY_NOTE'] = '1'
     $variables['RELAY_POLL_SECONDS'] = '1'
     # The suite runs in somebody's terminal: its tab keeps its title unless a test asks for the naming
     $variables['RELAY_NO_TITLE'] = '1'

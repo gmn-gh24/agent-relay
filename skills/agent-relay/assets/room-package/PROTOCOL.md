@@ -266,6 +266,21 @@ not followed further, so a later change to it does not show, and a file git igno
 folders a file counts as changed when its size or its time changed. Your assigned paths (`may:`) are matched
 without regard to case.
 
+## When the integrity check is old
+
+The coordinator's feed checks the room's tools, wrappers and instructions every few seconds and puts a changed
+file back. While it runs it stamps `agents/<coordinator>/integrity`. When that stamp is older than the room's
+stale limit (or was never written), every command of yours starts with `=== NO INTEGRITY CHECK ... ===`: nobody
+is checking what you read. Tell your user and write the coordinator a `note`; go on only with what you can
+verify yourself. Your own files (`memory`, `journal`, inboxes) are never checked, feed or not.
+
+## Leaving
+
+When the coordinator asks you to leave (an exit request, a closing note), do both steps, in this order: `remember`
+your last durable findings, then `bye` with what slowed you down. After a `bye` your seat is offline, not closed:
+a later `start` of the same session takes it back, and the board shows that you returned. A seat the coordinator
+retired is closed for good.
+
 ## Being paused, stopped, replaced
 
 - **Paused:** `wait` tells you. Stop where you are, start nothing new, and run `wait` again; it returns when

@@ -754,3 +754,97 @@ day. What cost rounds, and what was changed:
   command started at all (`helper_unknown_error: setup refresh had errors`), the test command and
   `codex --version` alike. Changed: `agent-kinds.md` says under the measurement that it needs a session started
   with `codex --yolo`, and what the refusal looks like.
+
+## 2026-10-14: a research room across three machines and several agent kinds (0.10.0)
+
+Thirteen lessons from one closed room, approved by the owner in groups: the first six are what the room measured
+and the owner approved from room memory (L1 to L7); the rest are the coordinator's own mistakes (L8 to L13). The
+changes the same room caused in the tools and the skill follow in the next section.
+
+- **L1. A share can be reachable by host name on one machine and only by address on another.** The same share
+  was refused by address on one machine ("user name or password is incorrect"), not resolvable by name on a
+  second, and reachable both ways on a third. Changed: prompts and wrappers give the host name first and name
+  the address as the fallback ("Fallback, the same folder by the server's address"); see the next section.
+- **L2. For a grounded writing task, ask for an exact quote per claim and have the agent check its quotes by
+  script.** A release note written from sources was only as good as its quotes; an agent that must quote cannot
+  invent, and a script that looks each quote up in the source finds the ones it tidied up. Changed: nothing in
+  the tools; the task template on the roadmap asks for a quote per row.
+- **L3. UI testing on a virtual machine: a locked console gives blank screenshots while the automation tree
+  still answers.** The agent reported success with empty images. Changed: say up front that the console must
+  stay unlocked, and have the agent's first step check for a lock and report at once (roadmap, task template).
+- **L4. A UI Automation button press blocks when the button opens a modal dialog.** The call never returns
+  because the dialog waits for the click the call is making. Use a real mouse click for such a button. Nothing
+  to change in the tools.
+- **L5. An agent's tool shell may be PowerShell 7 while the task assumes Windows PowerShell 5.1.** Commands
+  that differ between the two failed in one and not the other. Changed: the task template on the roadmap names
+  the shell the commands assume; the introduction already says which shell the agent has.
+- **L6. Deliver test builds as plain files with a hash manifest, swapped into the installed product; build the
+  installer once.** A full installer per test round cost minutes per round for nothing the round had to prove.
+  Changed: the skill states the rule in one sentence ("Proportionate effort"), and plain files for small sets,
+  `robocopy /E /MT:16 /R:1 /W:1` for folders, a zip only when size or count makes it faster; the fuller delivery
+  ladder is on the roadmap.
+- **L7. Installer verbose logs are UTF-16.** Read as text they look empty or garbled; read them as Unicode.
+  Nothing to change in the tools.
+- **L8. Never stop a running agent on an answer the owner may still revise, and tell every long agent to commit
+  as soon as its build is green.** An agent was stopped on a provisional answer and its uncommitted work was
+  lost with it. Changed: the lesson only; "How an agent leaves" now has every graceful exit ask for
+  `remember` and `bye` first.
+- **L9. Copying files between git worktrees: leave the `.git` pointer file out (`robocopy /XF .git`).** Copied
+  along, it made the next commit land on the other worktree's branch. Nothing to change in the tools.
+- **L10. Before declaring a subagent lost, list the recent commits on all branches.** A subagent that looked
+  silent had committed. Nothing to change in the tools.
+- **L11. A fast light model can return confident, partly invented detail on a verify-row-by-row task.** The
+  result came back in a small fraction of its time budget and read fine; quotes per row and a spot-check found
+  the invented rows. Changed: the lesson only; showing elapsed time against budget on the board is on the
+  roadmap.
+- **L12. The same local model can be usable under one harness and unusable under another.** Under one product's
+  harness it joined by itself and produced correct work; under another the permission check refused the join
+  command and no work followed. Trial the harness, not only the model. Changed: the join prompt now says that a
+  guarded host may refuse the join (a correct default) and names the two ways through.
+- **L13. Look at a UI before calling it reviewed.** A review was written from the code of a window nobody had
+  seen. Get a screenshot beside an existing window before the first review. Nothing to change in the tools.
+
+## 2026-10-14: the same room, what the tools changed (0.10.0)
+
+- **The feed was not running for 83 minutes and nothing showed it.** The coordinator's PC crashed and its
+  session resumed; it restarted `start` and `wait` but not the bind that runs the feed, which is the tamper
+  check and the coordinator's heartbeat. The owner found out by editing an agent's memory file by hand, and
+  that file has no canonical copy, so even a running feed would not have reacted. Earlier the same day the same
+  missing bind made the board show the coordinator stale for 12 hours while it worked, and the owner had a
+  tester shut a machine down on that. Changed: the feed writes two stamps (this PC's `feed.state`, and
+  `agents/<coordinator>/integrity` in the room); the board's first line says whether the feed runs; the
+  coordinator's tool prints a NO FEED block on every sending verb and its `wait` refuses to start without a
+  feed; every agent's tool tells its agent when the integrity stamp is old; the resume workflow starts with the
+  feed, in bold. The tamper check's limits are written down (`protocol.md`, "What the tamper check covers").
+  Not changed: running the check from something that outlives the coordinator's session, and integrity for
+  agent-written files (roadmap).
+- **Memory printed "skipped: 1 malformed lines" and nobody read it.** The count was in the last line of a long
+  listing. Changed: the board flags the lines per agent as an attention item and labels memory UNVERIFIED;
+  `Get-RelayMemory.ps1` warns; `Repair-RelayMemory.ps1` lists a file by line and removes lines after an
+  evidence copy; `room-memory.md` has the procedure for a planted or altered entry.
+- **Retired agents left without a goodbye.** `-Retire` sent no exit request and three agents were retired with
+  no `bye`, so their last findings and what slowed them were lost; after `bye` an agent's own `start` still
+  resumed its seat, which looked like a second life. Asked for the exit steps, agents did them in about 40
+  seconds. Changed: `-Retire` and `-Replace` ask a living agent to `remember` and say `bye` and wait for it; a
+  lost session is not waited for and is recorded as lost; `-Force -Reason` goes on regardless and records why;
+  the close lists who cannot be reached before the closing note; a seat that comes back after `bye` shows
+  `returned after bye` on the board. `-Reinstate` was not built: asking first removes the need.
+- **Four self-audits listed the agents' own deliverables and the room's bookkeeping as outside the assigned
+  paths.** Roots had been assigned in one spelling of the share while the tool ran in the other, and other
+  agents' heartbeat files counted as changes. Changed: the room's own folders (`agents`, `files`, `tools`, and
+  the files at the top) are found by the room folder's name and left out of the count, in either spelling; the
+  report says how many were left out.
+- **A verb failed when the shell's working folder on the share had gone.** Setting a local working folder
+  fixed it. Changed: the tool moves to the temporary folder for the call when its working folder is gone. Not
+  reproduced on Linux or on a local disk, where the guard test passes without the fix too: the case needs a
+  folder on a share that another machine removes. Kept on the roadmap as "reproduce on Windows".
+- **A guarded host refused the join command, and the agent then misquoted the room's instructions.** The command
+  was a script it had never seen, on a share, reading machine identity. The owner ran the join line and it worked. Changed: the join prompt says that a refusal is a correct default, that the agent tries once, and
+  names the two ways through; the skill tells the coordinator to warn the owner and to have a sentence of the
+  owner's own typed in front of a pasted prompt; the prompts say never to run a script from the room except
+  the agent's own command and one a task tells it to write in its own work folder.
+- **The asks of the owner were prose.** Questions went to the owner as numbered prose to answer by typing; one
+  `-Replace` for several agents left the owner not knowing which prompt was on the clipboard. Changed: the
+  skill and `coordinating.md` say every question is asked through the question tool with options, and the
+  Improve step triages per group the same way (`self-improvement.md`); `-Replace` names the prompt to paste and
+  `Add-RelayAgent.ps1 -Clipboard <name>` puts a named one on the clipboard.
