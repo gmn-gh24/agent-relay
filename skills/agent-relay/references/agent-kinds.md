@@ -98,6 +98,7 @@ tab), or start it with the environment variable `CLAUDE_CODE_DISABLE_TERMINAL_TI
 Its command tool shows every exit code but 0 as an error: `robocopy` returns 1 for "files were copied", and
 an agent that copies a kit with it reports a failed copy, or copies again, until it reads the code. A task
 that has it copy files says so (`robocopy` codes below 8 are success), or has it copy with `Copy-Item`.
+2026-10-14: a relay window loads the user's plugins and hooks (a memory plugin wrote files into the temp folder and made a model call at exit): start relay windows with plugins and hooks off where the client allows it. Start-up context is about 25,000 tokens; `--disable-slash-commands --strict-mcp-config --tools Bash,Read,Write,Edit` brings it to about 5,700. It reserves about 33,000 before compacting, so a 65,536 window is the minimum. Effort is not in an environment variable: `~/.claude/settings.json` has `modelSettings.<model>.effortLevel` and a top-level `effortLevel`, and a `--effort` launch flag overrides both and cannot be read from inside.
 
 **Claude Code, headless (`claude -p`).** No background wake: the wait runs in the foreground under the
 command time limit. It needs its shell and file tools allowed and the room folder added (`--allowedTools`,
@@ -138,6 +139,7 @@ folder in the room, not next to the draft: the instructions name the folder in f
 an `attach` folder in its working folder, which was the root of a share other jobs use.
 When the owner says "codex luna medium", that is the three words of an introduction: product, model, effort.
 It is never the name of an agent: names come from the room's pool.
+2026-10-14: cannot be a room agent on an Ollama-served model (web search breaks the Responses stream; no shell tool without model metadata; tool items rejected). Against its normal provider it works. Needs `wire_api = "responses"` for a local provider.
 
 Codex models have names that do not say Codex (OpenAI's Codex models page, read 2026-10-11; check it again
 when a name here is not what an agent reports, and add a new family word to `scripts/model-tiers.json`):
@@ -160,6 +162,21 @@ model or plan has every step: Luna has no ultra, and some plans leave out Extra 
 
 **Everything else.** Starts on the generic profile. Watch the first waits: if the agent's commands are cut
 off before a minute, lower `wait_minutes` for its seat (answers field) or switch it to `manual`.
+
+**Copilot CLI.**
+2026-10-14: an unattended Copilot stops at "Confirm folder trust" when the work folder is not in trustedFolders of its config.json, then at an "Allow path access" question for the room folder; --allow-all does not remove the first. A saved providers.json makes it ignore COPILOT_PROVIDER_* variables and ask for a GitHub sign-in. Working recipe: a private COPILOT_HOME copy without providers.json, the work folder added to trustedFolders, and --add-dir <room folder>. Copilot cannot remember approval of a UNC path ("UNC/network paths cannot be approved"): every room command on a share is a new permission event that only the allow-all flag answers without a human. A 16,384-token window compacts right after the first prompt: give a room agent at least 32,768.
+
+**OpenCode.**
+2026-10-14: version 2.x (package @opencode/cli) gives the model only a JavaScript execute tool and no shell, so it cannot run the join line; version 1.x (package opencode-ai) has a bash tool and can be a room agent. --standalone goes after run; OPENCODE_CONFIG_CONTENT carries the provider. Name both packages: the two names were a trap in a real room.
+
+**aider.**
+2026-10-14: has no shell tool; --load runs only /commands; use /ask. Cannot be a room agent.
+
+**DeepSeek Harness (dsh).**
+2026-10-14: joins through dsh headless --patch <overlay> with DSH_PERMISSION_MODE=danger-full-access and a work folder on the local disk (its sandbox refuses shares and a Dev Drive). A plain dsh headless defaults to a cloud provider and must never be run for a local-model room.
+
+**All products.**
+2026-10-14: stopping an agent window by force skips its launcher's cleanup (temporary settings folders stay): retire the seat first so the agent exits by itself, then close the window. Never ask an agent for a screenshot of another machine (a screen-capture attempt raised a Microsoft Defender alert and produced a blank image); read the window text instead. State a minimum window per product (Copilot 32k, Claude Code 64k, Codex about 30k of its own start-up context).
 
 ## When an agent has trouble
 
