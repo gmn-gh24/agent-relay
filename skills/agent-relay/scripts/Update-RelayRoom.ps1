@@ -18,6 +18,14 @@
 .PARAMETER Room
     Room id or room folder.
 
+.PARAMETER ServerName
+    Change how other machines name the share server: this host name goes first in the join prompt and the start
+    prompts, and the address is named as the fallback. ROOM and the saved answers of the seats that used the old
+    spelling are changed, then everything is written again. The tools already treat both spellings as one room.
+
+.PARAMETER FallbackAddress
+    The server's address for the fallback; resolved from -ServerName when left out.
+
 .EXAMPLE
     .\Update-RelayRoom.ps1 -Room 2026-10-10-docs
 
@@ -30,7 +38,9 @@
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Room
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Room,
+    [string]$ServerName = '',
+    [string]$FallbackAddress = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +49,13 @@ Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
 
 $roomObject = Resolve-RelayRoom $Room
 if ($roomObject.IsClosed) { throw "The room $($roomObject.Id) is closed" }
+if ($ServerName) {
+    $reachPass = @{ WhatIf = [bool]$WhatIfPreference }
+    $newReach = Set-RelayReachServer -Room $roomObject -ServerName $ServerName -FallbackAddress $FallbackAddress @reachPass
+    "REACH: other machines now get $newReach first"
+    if (-not $WhatIfPreference) { $roomObject = Resolve-RelayRoom $Room }
+}
+elseif ($FallbackAddress) { throw '-FallbackAddress goes with -ServerName' }
 # A function of a module does not see this script's -WhatIf and -Confirm: both are handed on
 $passOn = @{ WhatIf = [bool]$WhatIfPreference }
 if ($PSBoundParameters.ContainsKey('Confirm')) { $passOn['Confirm'] = [bool]$PSBoundParameters['Confirm'] }

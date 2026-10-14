@@ -67,7 +67,8 @@
     Files or folders copied into the room's work folder ("work_files").
 
 .PARAMETER ReachPath
-    The room folder as other machines reach it ("reach_path").
+    The room folder as other machines reach it ("reach_path"): the share's server by host name, which is the
+    default. "reach_fallback" is the same folder by the server's address; it is worked out from the name when left out.
 
 .PARAMETER TaskMinutes
     How many minutes a task should take when the coordinator names no number with it ("task_minutes", 15):
@@ -177,10 +178,12 @@ foreach ($entry in @(Get-RelayRoomIndex)) { if ($entry.id -eq $roomId) { throw "
 $localRoom = Join-Path $localRooms $roomId
 if (Test-Path -LiteralPath $localRoom) { throw "This PC already keeps a folder for a room '$roomId' that is not in its room index: $localRoom. It is left from an earlier attempt or from a room that was taken out of the index, and a new room would take over its seats. Remove that folder, or choose another room_id." }
 
-# The room folder as other machines reach it. A share's server is named by its address: an agent on another
-# subnet may not resolve the name this PC uses.
+# The room folder as other machines reach it. A share's server is named by its HOST NAME first: on some machines
+# the address is refused (the share keeps credentials by name) and on others the name does not resolve, and which
+# is which is not known beforehand. The address is the named fallback ("reach_fallback"), written into the prompts
+# as the second choice. A path given with an address already has no name to put first and no fallback.
 $reachPath = ([string](Get-RelayProperty $answers 'reach_path' '')).TrimEnd('\', '/')
-if (-not $reachPath) { $reachPath = Resolve-RelayRemotePath $roomPath }
+if (-not $reachPath) { $reachPath = $roomPath }
 # reach_path names the room folder itself, not the rooms root: a coordinator once passed the rooms root and
 # every join was refused ("join.ps1 does not exist"). A path that ends like the rooms root gets the room id
 # appended; any other folder name is taken as given (a share may show the room under another name).
@@ -191,6 +194,12 @@ if ($reachLeaf -and $rootLeaf -and [string]::Equals($reachLeaf, $rootLeaf, [Stri
     "NOTE: reach_path named the rooms root; the room folder is what other machines must reach, so the room id was appended: $reachPath"
 }
 Assert-RelayPastePath $reachPath 'The path other machines reach the room by (reach_path)'
+$reachFallback = ([string](Get-RelayProperty $answers 'reach_fallback' '')).TrimEnd('\', '/')
+Assert-RelayPastePath $reachFallback 'The fallback path (reach_fallback)'
+if (-not $reachFallback) {
+    $reachFallback = Resolve-RelayRemotePath $reachPath
+    if ([string]::Equals($reachFallback, $reachPath, [StringComparison]::OrdinalIgnoreCase)) { $reachFallback = '' }
+}
 
 # Every answer is checked before anything is built: a typo found halfway would leave half a room
 $coordinatorAnswer = Get-RelayProperty $answers 'coordinator' ([pscustomobject]@{})
@@ -205,7 +214,7 @@ $coordinatorSpec = ConvertTo-RelaySeatSpec -Agent ([pscustomobject]@{
 $specs = New-Object System.Collections.Generic.List[object]
 foreach ($agentAnswer in $agentAnswers) {
     Assert-RelayAgentKind ([string](Get-RelayProperty $agentAnswer 'kind' 'generic'))
-    $spec = ConvertTo-RelaySeatSpec -Agent $agentAnswer -RoomId $roomId -DevRoomPath $roomPath -RemoteRoomPath $reachPath
+    $spec = ConvertTo-RelaySeatSpec -Agent $agentAnswer -RoomId $roomId -DevRoomPath $roomPath -RemoteRoomPath $reachPath -FallbackRoomPath $reachFallback
     $null = Get-RelayWorkKind ([string]$spec['work'])
     $specs.Add($spec)
 }
@@ -251,6 +260,9 @@ try {
     $tabTitles = ([string](Get-RelayProperty $answers 'tab_titles' 'yes')).Trim().ToLowerInvariant()
     if (@('no', 'false', '0') -contains $tabTitles) { $roomInfo['tab_titles'] = 'no' } else { $roomInfo['tab_titles'] = 'yes' }
     $roomInfo['reach'] = $reachPath
+    if ($reachFallback) { $roomInfo['reach_fallback'] = $reachFallback }
+    # The feed stamps agents\<coordinator>\integrity after every whole tamper pass; the agents' tools read its age
+    $roomInfo['integrity'] = 'stamped'
     # What the room is comes from this PC's canonical copy: it is written first, and the room object is made from it
     $room = Get-RelayRoomObject -Id $roomId -Path $roomPath
     Write-RelayGuardedText $room 'ROOM' (ConvertTo-RelayKeyValueText $roomInfo)

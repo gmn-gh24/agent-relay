@@ -15,7 +15,7 @@
     -Replace       A new session takes over an agent's name: the generation goes up by one, new wrappers and a
                    new start prompt are written, and the old session is told to stop the next time it calls the
                    tool. -Kind switches the agent kind for the new session (one that agent-kinds.json knows).
-    -Retire        The agent leaves the room for good. Its messages stay.
+    -Retire        The agent leaves the room for good. Its messages stay. The exit steps come first (see below).
     -Control       Pauses, resumes or stops one agent (-State pause, run or stop, with an optional -Note).
     -Line          Opens a direct line between two agents (-Line emma -To jack), both ways.
     -OpenSeats     Adds that many seats nobody is named for. Any agent given the room's join prompt
@@ -35,6 +35,18 @@
                    Writing the fields on the command line keeps backslashes and dollar signs as they are: a
                    JSON file written through another shell lost both.
 
+    -Clipboard     Puts the saved start prompt of one agent (its newest generation) on the clipboard. After
+                   several -Replace calls in a row only the last prompt is on the clipboard; this puts a named
+                   one there, and the owner pastes one prompt at a time.
+
+    The exit steps (-Retire, and -Replace for a session that is still alive): the agent is asked to run
+    `remember` and then `bye`, through the coordinator's own launcher, and the script waits for the bye (-WaitMinutes,
+    3 by default). An agent that already said bye since its last start, or that never introduced itself, needs no
+    request. An agent whose session is not alive (no sign of life for the room's stale minutes) is not waited for:
+    the request is left in its inbox, and the exit is recorded as "lost". An agent that is alive and does not
+    answer in time keeps its seat and the script says so; -Force -Reason '<why>' goes on regardless and records
+    the reason. The exit is recorded in the retired marker (retire) and in exits.log on this PC (both).
+
     Everything written here goes to the canonical copy on this PC first and to the room second.
 
 .PARAMETER Room
@@ -42,6 +54,15 @@
 
 .PARAMETER NoClipboard
     Do not put the start prompt on the clipboard.
+
+.PARAMETER WaitMinutes
+    How long -Retire and -Replace wait for the bye of an agent that is alive (0 to 60, default 3).
+
+.PARAMETER Force
+    Retire or replace without the bye; needs -Reason, which is recorded.
+
+.PARAMETER Reason
+    Why the exit steps were skipped with -Force.
 
 .EXAMPLE
     .\Add-RelayAgent.ps1 -Room 2026-10-10-docs -Replace emma -Kind codex
@@ -82,6 +103,10 @@ param(
     [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$Never,
     [Parameter(Mandatory, ParameterSetName = 'Replace')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Replace,
     [Parameter(ParameterSetName = 'Replace')][string]$Kind = '',
+    [Parameter(ParameterSetName = 'Replace')][Parameter(ParameterSetName = 'Retire')][ValidateRange(0, 60)][int]$WaitMinutes = 3,
+    [Parameter(ParameterSetName = 'Replace')][Parameter(ParameterSetName = 'Retire')][switch]$Force,
+    [Parameter(ParameterSetName = 'Replace')][Parameter(ParameterSetName = 'Retire')][string]$Reason = '',
+    [Parameter(Mandatory, ParameterSetName = 'Clipboard')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Clipboard,
     [Parameter(Mandatory, ParameterSetName = 'Retire')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Retire,
     # One agent's name, or all: every agent but the coordinator and the retired
     [Parameter(Mandatory, ParameterSetName = 'Control')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Control,
@@ -165,6 +190,66 @@ function Copy-Prompt {
     try { Set-Clipboard -Value $Text.TrimEnd(); "on the clipboard: the start prompt for $Name" } catch { $null = $_ }
 }
 
+function Get-ByeMessage {
+    # The byes an agent sent to the coordinator at or after a time (messages of the room: claims, the sender is the folder)
+    param([string]$Name, $Since)
+    return @(Get-RelayMessage $roomObject | Where-Object { $_.Type -ceq 'bye' -and $_.From -ceq $Name -and $_.To -ceq $roomObject.Coordinator -and ($null -eq $Since -or $_.Time -ge $Since) })
+}
+
+function Invoke-ExitStep {
+    # The graceful exit of an agent that is being retired or replaced: it runs `remember`, then `bye`. Returns what
+    # happened as one of: none (never introduced), bye (said it), lost (its session is not alive: the request was
+    # left in its inbox), forced (-Force). Throws when the agent is alive and does not answer in time.
+    param([string]$Name, [string]$Action)
+    $dir = Join-Path (Join-Path $roomObject.Path 'agents') $Name
+    $card = Read-RelayKeyValue (Join-Path $dir 'card')
+    if ($card.Count -eq 0) { return 'none' }
+    $started = ConvertFrom-RelayUtc (Get-RelayValue $card 'started_utc' '')
+    if ($Force) {
+        if (-not $Reason.Trim()) { throw '-Force needs -Reason: say why the exit steps are skipped (it is recorded)' }
+        return 'forced'
+    }
+    if (@(Get-ByeMessage $Name $started).Count -gt 0) { return 'bye' }
+    $launcher = Join-Path $roomObject.Local 'relay.ps1'
+    if (-not [System.IO.File]::Exists($launcher)) { throw "This PC has no launcher for the room ($launcher): send the exit request yourself (note ${Name}: run remember, then bye), then run this again" }
+    $asked = [DateTime]::UtcNow.AddSeconds(-2)
+    $text = "exit request`n`nYour seat is ending ($Action). Before you leave, in this order: 1. run remember for your last durable findings (one fact per entry, not a status); 2. run your bye verb, and in its draft say what slowed you down. Do not start anything new. Then stop."
+    Write-RelayText (Join-Path $roomObject.Local 'draft.md') $text
+    $shell = (Get-Process -Id $PID).Path
+    # Windows PowerShell 5.1 turns a native command's error output into a terminating error under Stop
+    $savedPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $output = @(& $shell -NoProfile -ExecutionPolicy Bypass -File $launcher note $Name 2>&1 | ForEach-Object { [string]$_ }) }
+    finally { $ErrorActionPreference = $savedPreference }
+    if ($LASTEXITCODE -ne 0) { throw "The exit request could not be sent ($($output -join ' | ')): send it yourself (note $Name), then run this again" }
+    $alive = Get-RelayFileTimeUtc (Join-Path $dir 'alive')
+    $now = Get-RelayRoomNow $roomObject
+    $staleMinutes = 5
+    $parsed = 0
+    if ([int]::TryParse((Get-RelayValue $roomObject.Info 'stale_minutes' '5'), [ref]$parsed) -and $parsed -gt 0) { $staleMinutes = $parsed }
+    $isAlive = ($alive -ne [DateTime]::MinValue -and ($now - $alive).TotalMinutes -lt $staleMinutes)
+    if (-not $isAlive) { return 'lost' }
+    $second = 60
+    $custom = 0
+    if ([int]::TryParse([string]$env:RELAY_MINUTE_SECONDS, [ref]$custom) -and $custom -ge 1) { $second = $custom }
+    $until = [DateTime]::UtcNow.AddSeconds($WaitMinutes * $second)
+    while ($true) {
+        if (@(Get-ByeMessage $Name $asked).Count -gt 0) { return 'bye' }
+        if ([DateTime]::UtcNow -ge $until) { break }
+        Start-Sleep -Seconds 1
+    }
+    throw "$Name is alive and has not said bye within $WaitMinutes minute(s). The exit request is in its inbox. NEXT: wait longer (run this again, with -WaitMinutes), tell it in its own session, or go on without the bye: -Force -Reason '<why>'."
+}
+
+function Write-ExitRecord {
+    param([string]$Name, [string]$Action, [string]$How)
+    $detail = $How
+    if ($How -eq 'forced') { $detail = "forced: $(ConvertTo-RelayHeaderText $Reason)" }
+    if ($How -eq 'lost') { $detail = 'lost: the session was not alive, the exit request was left in its inbox' }
+    Add-RelayLine (Join-Path $roomObject.Local 'exits.log') ('{0} {1} {2} exit={3}' -f (Format-RelayUtc), $Action, $Name, $detail)
+    return $detail
+}
+
 switch ($PSCmdlet.ParameterSetName) {
     'Add' {
         if (-not (Test-Path -LiteralPath $AnswersFile)) { throw "No answers file: $AnswersFile" }
@@ -179,7 +264,7 @@ switch ($PSCmdlet.ParameterSetName) {
         $specs = New-Object System.Collections.Generic.List[object]
         foreach ($entry in $entries) {
             Assert-RelayAgentKind ([string](Get-RelayProperty $entry 'kind' 'generic'))
-            $spec = ConvertTo-RelaySeatSpec -Agent $entry -RoomId $roomObject.Id -DevRoomPath $roomObject.Path -RemoteRoomPath (Get-RelayReachPath $roomObject)
+            $spec = ConvertTo-RelaySeatSpec -Agent $entry -RoomId $roomObject.Id -DevRoomPath $roomObject.Path -RemoteRoomPath (Get-RelayReachPath $roomObject) -FallbackRoomPath (Get-RelayReachFallback $roomObject)
             $null = Get-RelayWorkKind ([string]$spec['work'])
             $specs.Add($spec)
         }
@@ -219,10 +304,14 @@ switch ($PSCmdlet.ParameterSetName) {
         # The generation and the retirement come from this PC's canonical copy: the room's files are the agents' to write
         $canonDir = Join-Path (Join-Path $roomObject.Canon 'agents') $name
         if (Test-Path -LiteralPath (Join-Path $canonDir 'retired')) { throw "The agent '$name' is retired; add a new agent instead" }
+        # The old session leaves the way an agent leaves: remember, then bye (the coordinator's own session is not asked)
+        $exitHow = ''
+        if ($name -ne $roomObject.Coordinator) { $exitHow = Invoke-ExitStep -Name $name -Action 'a new session takes over your name' }
         $current = Get-RelayCanonicalGeneration $roomObject $name
         $next = $current + 1
         $prompt = Add-RelayAgentSeat -Room $roomObject -Name $name -Spec $spec -Generation $next -IsCoordinator:($name -eq $roomObject.Coordinator)
         "REPLACED ${name}: generation $next ($($spec['kind'])). The old session is told to stop at its next command."
+        if ($exitHow) { "exit of the old session: " + (Write-ExitRecord -Name $name -Action 'replace' -How $exitHow) }
         if ($name -eq $roomObject.Coordinator) {
             # The coordinator's start prompt stays on this PC: there is none in the room to take away
             "NEXT: run your own start with the new launcher: " + (Get-RelayCallLine -RoomPath $roomObject.Path -Name $name -Generation ([string]$next) -Shell 'powershell' -Launcher $roomObject.Local) + ' start <product> <model> <effort>'
@@ -231,15 +320,19 @@ switch ($PSCmdlet.ParameterSetName) {
             "start prompt: " + (Join-Path $roomObject.Path "PROMPT-$name.txt")
             Get-RelayCoordinatorNote -Kind @([string]$spec['kind'])
             Copy-Prompt $prompt $name $useClipboard
-            'NEXT: paste the start prompt into the new session. Its start prints the requests the old session left open.'
+            if ($useClipboard) { "NEXT: paste the start prompt for $name into the new session (it is on the clipboard now; with several replacements, one prompt at a time: -Clipboard <name> puts a named one back). Its start prints the requests the old session left open." }
+            else { "NEXT: paste the start prompt for $name into the new session (-Clipboard $name puts it on the clipboard). Its start prints the requests the old session left open." }
         }
     }
     'Retire' {
         $name = $Retire.ToLowerInvariant()
         Assert-Agent $name
         if ($name -eq $roomObject.Coordinator) { throw 'The coordinator cannot be retired; close the room instead' }
-        Write-RelayGuardedText $roomObject "agents/$name/retired" ("retired_utc: {0}`n" -f (Format-RelayUtc))
-        "RETIRED $name in room $($roomObject.Id). Its messages stay; nobody can write to it any more."
+        # The exit steps come first: a retired agent can no longer say bye
+        $exitHow = Invoke-ExitStep -Name $name -Action 'you are retired from this room'
+        $exitDetail = Write-ExitRecord -Name $name -Action 'retire' -How $exitHow
+        Write-RelayGuardedText $roomObject "agents/$name/retired" ("retired_utc: {0}`nexit: {1}`n" -f (Format-RelayUtc), (ConvertTo-RelayHeaderText $exitDetail))
+        "RETIRED $name in room $($roomObject.Id) (exit: $exitDetail). Its messages stay; nobody can write to it any more."
         "NEXT: give what $name was working on to another agent, if anything is left, and tell the agents who worked with it in a note."
     }
     'Control' {
@@ -342,6 +435,21 @@ switch ($PSCmdlet.ParameterSetName) {
         $assigned = $names -join ', '
         $firstName = $names[0]
         "NEXT: send $assigned the task now (write your draft, then run your command with: task $firstName). The tool shows each of them the new assignment together with that message."
+    }
+    'Clipboard' {
+        $name = $Clipboard.ToLowerInvariant()
+        Assert-Agent $name
+        $newest = $null
+        foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $roomObject.Local 'prompts') -Filter "PROMPT-$name-g*.txt" -File -ErrorAction SilentlyContinue)) {
+            $number = 0
+            if ($file.Name -match '-g([0-9]+)\.txt$' -and [int]::TryParse($Matches[1], [ref]$number)) {
+                if ($null -eq $newest -or $number -gt $newest.Number) { $newest = [pscustomobject]@{ Number = $number; Path = $file.FullName } }
+            }
+        }
+        if ($null -eq $newest) { throw "This PC has no saved start prompt for $name" }
+        $text = Read-RelayText $newest.Path
+        try { Set-Clipboard -Value $text.TrimEnd(); "on the clipboard: the start prompt for $name (generation $($newest.Number))" } catch { throw "The clipboard could not be set: $($_.Exception.Message)" }
+        "NEXT: paste it into the session of $name. Nothing else is on the clipboard."
     }
     'Prompt' {
         if (-not $JoinPrompt) { throw 'Give -JoinPrompt' }

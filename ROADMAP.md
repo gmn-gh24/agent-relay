@@ -33,6 +33,138 @@ for each item).
 | Dead coordinator wait | The board cannot tell a dead coordinator wait while the feed keeps the heartbeat alive. Check what the `OVERDUE` wake of 0.7.0 still misses before building anything |
 | Notes to all | A note to all also lands in every free seat's inbox, so a late joiner sees notes from before its time. Decide: keep (context) or stop (confusing) |
 
+## Top priority: integrity and small-context agents (from a research room, closed 2026-10-13)
+
+The 0.10.0 release closed the visible half of the integrity gap (a missing feed is now shown and refused; see
+CHANGELOG). The rest is design work, and R1 to R3 come first. Each item below says what happened, the
+evidence, the direction and what is open, so that a later session can start without the room's files (the
+room's archive is in the machine state of the PC that closed it).
+
+### R1. Integrity for agent-written records (top priority)
+
+- **What happened.** The owner edited an agent's `memory` file by hand and nothing reacted: the file has no
+  canonical copy, so even a running feed would not have noticed (`Get-RelayMemory` only printed "skipped: 1
+  malformed lines"). Room memory is shown to every agent on every wake, so a planted entry is an injection
+  path into the whole room. 0.10.0 labels memory UNVERIFIED, flags malformed lines on the board and adds
+  `Repair-RelayMemory.ps1`; a well-formed planted or altered entry is still not detected.
+- **Direction.** Make the records append-only with a per-entry hash chain (each line carries the hash of the
+  line before), or keep a coordinator-side mirror of each file that the feed compares; give every message a
+  sender proof; define the reaction to a mismatch (quarantine the entry, a card to the owner, an alarm).
+- **Open.** Whether the agents' tool can write a chain without a shared secret an agent could also forge (the
+  threat model is a confused or injected agent, not a skilled attacker, per "Direction"); what happens to
+  entries already in a room; which files are in scope (memory, journal, inbox, results, progress, card).
+
+### R2. Run the integrity pass from something that outlives the coordinator's session (top priority)
+
+- **What happened.** The feed ran in the coordinator's session; after a PC crash and a resume it was not
+  restarted and the check did not run for 83 minutes. 0.10.0 makes that visible and refuses `wait`; it does not
+  make the check survive.
+- **Direction.** A scheduled watcher started with the room and restarted at logon (a scheduled task running
+  `Watch-RelayFeed.ps1 -EndWithParent` is wrong for this; it needs a mode without a parent), registered by
+  `New-RelayRoom.ps1` and removed by the close.
+- **Open.** Elevation needed for a scheduled task; installed copy versus working copy paths; two feeds at once
+  (the pane's and the watcher's: `feed.state` holds only the last writer's pid).
+
+### R3. Compact mode for small-context agents (top priority)
+
+- **What happened.** One full read of what the room puts in front of an agent was about 12k tokens (start
+  instructions 2.2k, assignment 1.2k, rules 0.9k, join prompt 0.9k, room memory 3k, a task 0.7k, an attachment
+  3.1k), 17k with the protocol reference, before the harness's own prompt and repeated verb output. A light
+  local model stopped re-arming its wait after two empty waits.
+- **Direction.** A compact mode per agent kind or chosen at join: a short `START-HERE`, no reprint of unchanged
+  rules or of memory on every verb, terse `NEXT:` lines, a context budget per agent shown on the board.
+- **Open.** What the minimum is that keeps the safety rules (the introduction, "never type text on the command
+  line", the exit steps); whether the tool or the template decides; how the coordinator learns an agent's
+  window (Q37 below records it per kind).
+
+## Second pass: quick fixes from the same room
+
+Each is minutes of work with a test or a text change. Not done in 0.10.0; the owner chose the first pass only.
+
+### Coordinator guidance (skill and `coordinating.md` text)
+
+- **Q21. Keep agents busy.** On every wake, name what each idle agent could do; never end a turn with an
+  available agent idle and work it could take. (0.10.0 added the one-sentence rule to SKILL.md, workflow 2
+  step 10, and the rule list; the fuller guidance is open: what counts as work an idle agent could take,
+  parallel and cheap tasks, live checks.)
+- **Q22. Delivery ladder.** Before the first hand-over and whenever a loop repeats, state what the round must
+  prove and the cheapest path (installed product / swapped files / unpacked build / full package). Loop rule:
+  after the same expensive step ran twice, ask what makes the third run cost a tenth, and ask the remote agent
+  too. Tell the owner the chosen path and its limit. (One sentence is in SKILL.md since 0.10.0.)
+- **Q23. Handing files.** Plain files for small sets, `robocopy /E /MT:16 /R:1 /W:1` for folders, a hash
+  manifest, a zip only when size or count makes it faster. (One sentence is in SKILL.md since 0.10.0.)
+- **Q24. Task template.** Name the shell the commands assume; list the exact files attached and those the agent
+  is expected to read; give exact request or wire text for a protocol check or say "skip if unknown"; one task
+  at a time to an agent that works one at a time; for a screenshot of a destructive feature say "do not
+  trigger it"; ask the agent to say when the delivery method looks heavier than the check needs.
+- **Q25. Verification tasks.** Demand an exact quote per row; treat a result that arrives in a small fraction of
+  its budget as a flag to spot-check; show elapsed against budget on a result's board line (needs a small
+  board change; see R5).
+- **Q26. UI testing on a virtual machine.** Say up front that the console must stay unlocked; the agent's first
+  step checks for a lock and reports at once.
+- **Q27. Match the task to the agent's tools** (full-page fetch, elevation, shell) from the introductions and
+  the board before sending.
+- **Q28. `-Assign`.** The allowed values of `-Work` and `-MachineCare` are listed in SKILL.md workflow 4 since
+  0.10.0. Open: `-Assign` with both `-Roots` and `-May` produced an assignment that calls the work folder
+  "read-only for you" while "You may" allows writing there; the label must not be written when `-May` grants
+  writes in that root. Reproduce with a test on `ASSIGNMENT.md` first.
+- **Q29. START-HERE template.** Say "start ONE wait; exit 4 means yours is already running, do nothing". Three
+  agents and the coordinator were confused by exit code 4 from a second `wait`. (The template has a sentence on
+  exit 4 under "Stay reachable"; check it is where a small model reads it, and say it in the `NEXT:` line of
+  the second wait.)
+- **Q30. When an instruction names a group, confirm the set** before sending requests that cannot be taken
+  back.
+- **Q31. An owner decision about how something is done applies from the next time in the same room**, not
+  only to the future plugin.
+- **Q32. A coordinator blocked from messaging its own in-process subagents while a room is bound.** The skill
+  says subagents are part of the coordinator. Either remove the block for those, or name the exception in the
+  refusal text. Look at the pane's refusal in `hooks/register.tsx`.
+
+### Bugs
+
+- **Q34 (remainder).** 0.10.0 makes the tool move to the temporary folder when its working folder is gone, but
+  the case was not reproduced: on Linux, on a local disk and on Windows (both engines) it passes without the fix.
+  On Windows a shell standing in a folder on a share (also through the loopback admin share) keeps the folder from
+  being removed or renamed, and with the shell's location deleted in-process `check` and `help` ran on the old
+  tool too. Reproduce with a shell standing in a folder on a share that another machine removes, find the verb
+  that failed, and make the test fail first.
+- **Q35. The `task` word-match refusal** (`NOT SENT`, "two of that line's telling words") fired on most tasks
+  of that room, so `anyway` was needed almost every time. Narrow the match, or the default "Never" lines of a
+  tester assignment. Evidence: the room's transcript in the archive. Start with a test on real task texts.
+
+### Agent-kind table (`agent-kinds.json`, `agent-kinds.md`)
+
+- **Q36. Add kinds with measured facts.** `antigravity` (process agy.exe; reported itself as gemini-cli; wake
+  loop; fetches full pages); `cursor-agent` (joined on first paste; wake loop; Learn search and fetch);
+  `opencode` (process opencode.exe; wake loop; stopped re-arming its wait after two empty waits unless told to
+  keep going; effort not visible; reports a model alias, so ask which model it points to); a local model behind
+  the Claude Code CLI harness (join refused by the permission check; not usable); the process chain
+  `claude.exe < ollama.exe` as the hint for a local model.
+- **Q37. Record each kind's usable context and a "give it" line.** A light local model: one file under about 2k
+  tokens, no bookkeeping extras, long expected durations, an early `progress`.
+- **Q38. Let the introduction carry a product the table lacks, and the underlying model** when the harness
+  reports an alias. Two trial tasks done with a hosted strong model under Claude Code took 97 and 44 seconds; a
+  27B local model under OpenCode took 4 and 2 minutes and was correct on both.
+
+## Later: larger items from the same room
+
+- **R4. A send-files verb.** Takes a folder, chooses plain copy, robocopy or archive by size and count, hashes
+  what it sent and prints the manifest; delivered attachments are moved out or listed as delivered (the
+  sender's attach folder cannot be read by the receiver today).
+- **R5. Task durations from the room itself.** Show "delivered to result sent" per task on the board, so no
+  agent has to time itself (an agent cannot time its host's own file tools).
+- **R6. Telling thinking from stalled.** A progress ping per tool call from the harness, or a required early
+  `progress` line; the room could not tell for an agent with no wait running.
+- **R7. Cost per test round visible.** A per-room "test delivery" note in the plan (how artefacts reach each
+  machine, minutes per round), shown on the board.
+- **R8. A named draft per verb, or `remember` from a short argument file.** Today every message costs a
+  draft-file write plus a command.
+- **R9. Join output names seats previously taken from the same machine,** so a new session knows whether one
+  is its to resume.
+- **R10. A model and harness comparison kit.** The two trial tasks of that room (a grounded release note with
+  quotes; an exact-spec PowerShell function with a self-test) as a reusable benchmark with the room's own
+  timings. The results are in the room's `model-comparison.md` in its archive.
+
 ## Next: supply chain
 
 A checksum manifest (`MANIFEST.sha256`) for what a room is built from: `assets/room-package/`, `scripts/*.ps1`,

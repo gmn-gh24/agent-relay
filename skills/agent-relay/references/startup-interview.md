@@ -67,7 +67,7 @@ Both can be mixed in one room. Seats can be added at any time.
 | What is the job? | `job` | none, required |
 | What is the room called? | `room_name` | the first words of the job |
 | Where does the room live? | `rooms_root` | `C:\temp\agent-relay` (this PC only) |
-| How do other machines reach the room folder? | `reach_path` | the room folder with the share server's address in place of its name. It is the room folder itself (`\\<address>\share\rooms\<room-id>`), not the rooms root: the join prompt embeds it verbatim; a value that ends like the rooms root gets the room id appended |
+| How do other machines reach the room folder? | `reach_path`, `reach_fallback` | the room folder as this PC knows it, the share server by its host name first; the fallback is the same folder by the server's address, worked out from the name when left out (ask the owner for the server's name when only an address is known). It is the room folder itself (`\\<server>\share\rooms\<room-id>`), not the rooms root: the join prompt embeds it verbatim; a value that ends like the rooms root gets the room id appended |
 | How far does the coordinator decide alone? | `authority` | `within-task` |
 | How many agents come in through the join prompt? | `open_seats` | 0 |
 | Which agents are named in advance? | `agents` | none |

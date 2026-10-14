@@ -8,7 +8,7 @@
 approve or deny what goes beyond an assignment, and keep a record of all of it.</p>
 
 <p>
-<a href="CHANGELOG.md"><img alt="Version 0.9.1" src="https://img.shields.io/badge/version-0.9.1-blue"></a>
+<a href="CHANGELOG.md"><img alt="Version 0.10.0" src="https://img.shields.io/badge/version-0.10.0-blue"></a>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 <a href="https://github.com/gmn-gh24/agent-relay/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/gmn-gh24/agent-relay/actions/workflows/ci.yml/badge.svg"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-orange">
@@ -329,7 +329,7 @@ full help (`Get-Help <script> -Full`).
 | `Add-RelayAgent.ps1` | Adds seats or agents; assigns (fields as parameters, several agents at once), replaces, retires, pauses, holds or stops one or all; opens a direct line |
 | `Get-RelayRooms.ps1` | Lists the rooms, shares and machines this PC knows |
 | `Get-RelayBoard.ps1` | Prints the board of a room |
-| `Watch-RelayFeed.ps1` | The feed: live view, tamper check, the coordinator's sign of life |
+| `Watch-RelayFeed.ps1` | The feed: live view, tamper check, the coordinator's sign of life; stamps that say it runs (the board's first line, the NO FEED block, the agents' integrity note) |
 | `Set-RelayPlan.ps1` | Writes the team plan and opens the direct lines it implies |
 | `Send-RelayOwner.ps1` | Sends the owner's words into the room and logs them |
 | `Request-RelayOwner.ps1` | Puts a decision to the owner as a card, and records the answer |
@@ -337,6 +337,7 @@ full help (`Get-Help <script> -Full`).
 | `Get-RelayStats.ps1` | Reply times, repeated questions and other numbers of a room |
 | `Close-RelayRoom.ps1` | Closes a room (records whether the folder was kept or removed); lists closed rooms; removes the folder of one that has an archive |
 | `Get-RelayMemory.ps1` | Reads a room's memory: `-Find`, `-Agent`, `-Since`, `-Json` |
+| `Repair-RelayMemory.ps1` | Lists an agent's memory file by line and removes lines after an evidence copy (memory is not covered by the tamper check) |
 | `Add-RelayLocalMemory.ps1` | Writes or searches this PC's permanent local notes (`-Find`, `-List`) |
 | `Reopen-RelayRoom.ps1` | Reopens a closed room on the PC that closed it |
 | `Update-RelayRoom.ps1` | Brings a running room up to the tools and instructions of this version |

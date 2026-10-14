@@ -19,6 +19,14 @@ Text goes into your draft file, never on the command line:
 {{DRAFT}}
 ```
 
+## Step 1, always: the feed
+
+**Bind the chat window or run `Watch-RelayFeed.ps1 -Room {{ROOM_ID}} -Follow` before anything else, and again
+after every crash, resume or compaction.** The feed is the tamper check and your heartbeat. Without it nothing
+puts a changed tool, rule or instruction back and every agent sees you as stale. The board's first line says
+whether it runs; your tool prints a NO FEED block when it does not and your `wait` refuses to start. Agents'
+memory files are never checked, feed or not.
+
 ## How you work
 
 Follow the agent-relay skill, workflow "Coordinate": on every wake read the board, check each result against

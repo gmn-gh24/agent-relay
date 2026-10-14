@@ -25,7 +25,7 @@ claude plugin eval . --no-publish   # the skill's cases in evals/; each run is a
 ```
 
 - Engines are `ps7` and `ps5`. The four tool test files (`Tool`, `Team`, `Faults`, `Parity`) run once per engine;
-  the seven script files (`Scripts`, `Plan`, `Guard`, `Owner`, `Gate`, `Memory`, `Reopen`) take no `-Engines`. `RELAY_TEST_ENGINES=ps7`
+  the eight script files (`Scripts`, `Plan`, `Guard`, `Owner`, `Gate`, `Memory`, `Reopen`, `Integrity`) take no `-Engines`. `RELAY_TEST_ENGINES=ps7`
   narrows a run. `ps5` must be started from `powershell.exe`, `ps7` from `pwsh`. The gate runs both (`ps5` on
   Windows only).
 - The gate fails without PSScriptAnalyzer or Claude Code unless `-SkipAnalyzer` / `-SkipPane` is given. The
@@ -93,6 +93,12 @@ in a working copy, `%LOCALAPPDATA%\agent-relay` for an installed copy, or `AGENT
   `Write-RelayGuardedText` / `Copy-RelayGuardedFile`: canon first, room second. `Test-RelayTamper` (run every
   15 s by the feed) compares them, restores changes, and quarantines strangers. A new guarded file needs no extra
   registration; a new *kind* of stranger to detect does (see its candidate list).
+- The feed is the tamper check, and it stops when the coordinator's session stops. Two stamps say whether it runs:
+  `feed.state` in `<local>\rooms\<id>\` (what the board's first line, the coordinator's NO FEED block and its
+  `wait` decide by; the launcher names it in `RELAY_FEED_STATE`) and `agents\<coordinator>\integrity` in the room
+  (only a hint for the agents: anybody can write it). Files agents write for themselves (`memory`, `journal`, `card`,
+  inboxes) have no canonical copy and are not covered; `references/protocol.md` ("What the tamper check covers")
+  says exactly what is.
 - Message text never travels on a command line: it is written to a draft file and the verb takes plain words.
 - Nothing follows a link in the room: an agent can put a symbolic link or a junction anywhere in it. The module
   lists with `Get-RelayFileTree`, checks paths with `Test-RelayLinkedPath` and deletes with `Remove-RelayTree`;

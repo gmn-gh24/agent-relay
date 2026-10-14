@@ -38,6 +38,8 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
 
 # Every line printed for reading passes one place: no control character from a room file, no blank at the end
 & {
+    # The feed comes first: without it nothing checks the room, and an agent sees the coordinator as stale
+    $board.feed.text
     $closedMark = ''
     if ($board.isClosed) { $closedMark = '  [CLOSED]' }
     "=== room $($board.room)$closedMark ==="
@@ -102,14 +104,18 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
             if ($part.reviewer -cne '-') { "      reviewer: $($part.reviewer)" }
         }
     }
-    # What the agents recorded with `remember`: counted here, read with Get-RelayMemory.ps1
+    # What the agents recorded with `remember`: counted here, read with Get-RelayMemory.ps1. Memory is written by
+    # the agents and checked by nobody: no canonical copy, no tamper check.
     if ($board.memory.entries -gt 0) {
         ''
         $entryWord = 'entries'
         if ($board.memory.entries -eq 1) { $entryWord = 'entry' }
         $agentWord = 'agents'
         if ($board.memory.authors -eq 1) { $agentWord = 'agent' }
-        "memory: $($board.memory.entries) $entryWord from $($board.memory.authors) $agentWord"
+        "memory: $($board.memory.entries) $entryWord from $($board.memory.authors) $agentWord (written by the agents, UNVERIFIED: the tamper check does not cover it)"
+    }
+    foreach ($row in @($board.memory.skipped)) {
+        "  ATTENTION: $($row.lines) malformed line(s) skipped in $($row.agent)'s memory: planted, damaged or edited by hand. Look: Get-RelayMemory.ps1 -Room $($board.room); remove: Repair-RelayMemory.ps1 -Room $($board.room) -Agent $($row.agent) -List"
     }
     ''
     # A request whose header names another sender, receiver or number than the place of its file is marked
@@ -151,11 +157,13 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
         foreach ($alarm in @($board.alarms)) { "  $alarm" }
     }
     ''
+    if (-not $board.feed.isRunning -and -not $board.isClosed) { 'START THE FEED FIRST (see the first line): bind the chat window or run Watch-RelayFeed.ps1 -Room ' + $board.room + ' -Follow, before anything below.' }
     $attention = @($board.agents | Where-Object { $_.attention })
     $overdue = @($others | Where-Object { $_.isOverdue })
     if (@($board.waitingOnCoordinator).Count -gt 0) { 'NEXT: answer what waits on you, oldest first; check each result against its evidence before you accept it.' }
     elseif ($overdue.Count -gt 0) { "NEXT: a task is OVERDUE: ask its agent for its status now (ask $($overdue[0].to)); when that stays unanswered too, give the task to another agent that can do it, or tell the owner that the agent is not responding and what is blocked." }
     elseif (@($board.waitingOnOwner).Count -gt 0) { 'NEXT: the owner has open cards; carry on with whatever does not depend on them, then wait.' }
     elseif ($attention.Count -gt 0) { 'NEXT: tell the owner about the agents marked ATTENTION, then wait.' }
+    elseif (@($board.memory.skipped).Count -gt 0) { 'NEXT: memory lines were skipped (see ATTENTION above): look at them before you rely on room memory; then wait.' }
     else { 'NEXT: nothing waits on you; wait.' }
 } | ForEach-Object { ConvertTo-RelayPrintedLine $_ }

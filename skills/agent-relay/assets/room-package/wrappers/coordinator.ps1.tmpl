@@ -10,6 +10,8 @@ $env:RELAY_ROOM = '{{ROOM_PATH_PS}}'
 $env:RELAY_DRAFT = Join-Path $PSScriptRoot 'draft.md'
 # This PC's record of every message the coordinator sends: a message under its name that is not on it is forged
 $env:RELAY_SENT_LOG = Join-Path $PSScriptRoot 'sent.log'
+# This PC's record of the room's feed (Watch-RelayFeed.ps1 writes it): the tool says NO FEED when it is stale
+$env:RELAY_FEED_STATE = Join-Path $PSScriptRoot 'feed.state'
 $env:RELAY_WRAPPER = $PSCommandPath
 # Started by relay.cmd: the call lines the tool prints are for cmd
 if ($env:RELAY_LAUNCHER -eq 'cmd') { $env:RELAY_WRAPPER = Join-Path $PSScriptRoot 'relay.cmd' }

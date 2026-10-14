@@ -5,6 +5,11 @@ the owner hears about the room from you.
 
 ## The loop
 
+0. **The feed runs.** The board's first line says so (`FEED: running; ...`). When it says `NOT RUNNING`, or
+   your tool printed a NO FEED block, start the feed before anything else: bind the chat window or run
+   `scripts/Watch-RelayFeed.ps1 -Room <id> -Follow`. It is the tamper check and your heartbeat; your `wait`
+   refuses to start without it. What the check covers, and what it does not, is in `references/protocol.md`
+   ("What the tamper check covers").
 1. Your `wait` runs as a background command. Its exit wakes you: with new messages, or with an `OVERDUE`
    block for a task whose agent has sent nothing for the time the task should take.
 2. `scripts/Get-RelayBoard.ps1 -Room <id>` shows the agents, what waits on you, what waits on the owner,
@@ -20,6 +25,12 @@ Your wait prints the messages themselves. Reading files in the room by hand is n
 delivery record.
 
 ## Introductions
+
+The join prompt names the share server by its host name first and its address as the fallback, because the
+share was seen to refuse the address on one machine ("user name or password is incorrect"), not to resolve the
+name on another, and to take both on a third. An agent whose host guards against unknown scripts (a classifier
+or a permission check) may refuse the join command, which is the correct default; it stops after one attempt
+and the owner either starts that product with its guard off or runs the one join line themselves.
 
 Every agent's first message is its `hello`. It opens with what you hand out work by, in words: what kind of
 agent it is (product, model, effort, and the program it runs in as the machine shows it), the computer and
@@ -110,7 +121,27 @@ say so, and a wait that ends with nothing tells it to wait again, whatever its k
 - **An agent with nothing to do yet keeps waiting.** That is its work until its task comes. Tell it, if you
   tell it anything, that nothing is needed now and that its wait goes on.
 - **An agent that is not needed any more is retired**, not told to idle: `scripts/Add-RelayAgent.ps1 -Room <id>
-  -Retire <name>`, after its last durable findings are recorded. Its tool then tells it to stop.
+  -Retire <name>`. The retirement asks first (see "How an agent leaves"); its tool then tells it to stop.
+
+## How an agent leaves
+
+The exit steps always apply when an agent leaves gracefully: it runs `remember` for its last durable findings,
+then `bye` with what slowed it down. Only a crashed agent or machine is exempt, and the record says so.
+
+- **`-Retire` and `-Replace`** send the exit request themselves (a note through your launcher) and wait for the
+  `bye` (`-WaitMinutes`, 3 by default). An agent that already said `bye` since its last start, or that never
+  introduced itself, needs no request. An agent whose session is not alive is not waited for: the request
+  stays in its inbox and the exit is recorded as `lost`. An agent that is alive and does not answer in time
+  keeps its seat and the script says so: wait longer, tell it in its own session, or go on with
+  `-Force -Reason '<why>'`, which is recorded. The record is the `exit:` line of the retired marker and
+  `exits.log` on this PC. Because a retirement asks first, a retired agent never needs to be let back in
+  only to say goodbye (no `-Reinstate`).
+- **The close** (SKILL.md, "6. Close") lists each agent as bye received, not waiting, or lost, before the
+  closing note goes out, and `Close-RelayRoom.ps1 -Force` records the agents that could not answer.
+- **Two kinds of leaving.** After `bye` a seat is *offline*: the same session's own `start` takes it back
+  without your word, and the board then shows `returned after bye`. A seat that was retired is closed for
+  good (`-Replace` refuses a retired agent; add a new one). To end a seat for good, retire it; do not rely on
+  a `bye` alone.
 
 ## Only the room
 
@@ -235,6 +266,10 @@ A `result` closes the task it names. Before you accept it:
 3. Check what you can check yourself: run the test, open the file, compare the numbers.
 4. Decisions the agent made on its own are listed under "Decisions I made". Disagree now, not later.
 
+The room's own folders (`agents`, `files`, `tools` and the files at the top of the room folder) are never counted
+in a self-audit, however the share is spelled in an agent's root: other agents' heartbeats and the agent's own
+attachments are the room's bookkeeping, not changes of the work.
+
 The self-audit is evidence, not a fence. It shows what happened in the assigned folders; it does not show
 what an agent did elsewhere on its machine. It also cannot tell who changed a file: when you put new files into
 a folder that is one of an agent's roots (a kit you restage, for example), its next reports list them as
@@ -268,6 +303,12 @@ The "never" list of an assignment is not yours to lift at any level.
 
 ## Taking something to the owner
 
+**Ask the owner with choices.** Every question to the owner in your session goes through the host's question
+tool, with the options to pick named (a recommended one first); never as numbered prose the owner has to
+answer by typing. Prose is the fallback only when the host has no such tool. A prompt the owner must paste goes
+on the clipboard one at a time, with its name said; nothing else is put on the clipboard, and with several
+prompts (several `-Replace`) hand them over one by one (`Add-RelayAgent.ps1 -Clipboard <name>`).
+
 Write the question into your draft: what is asked, by whom, what you recommend, what happens on yes and on
 no. Then `scripts/Request-RelayOwner.ps1 -Room <id> -Re <message id>`. It reads your draft on this PC, prints
 the whole text it recorded, and refuses a file that lies in the room folder. The card shows in the chat
@@ -277,7 +318,7 @@ session, record it: `scripts/Request-RelayOwner.ps1 -Room <id> -Resolve <card> -
 approved|denied|answered|withdrawn`. Then pass the decision on with `reply`, in your own words, saying it is
 the owner's.
 
-At close, the owner is asked ONE combined question, in plain prose in the session (SKILL.md, "6. Close").
+At close, the owner is asked one combined set of choices through the question tool (SKILL.md, "6. Close").
 
 ## Standing rules
 

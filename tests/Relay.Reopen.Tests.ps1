@@ -354,7 +354,7 @@ Describe 'Reopen-RelayRoom' -Tag 'Scripts' {
         { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -Replace 'jack' -NoClipboard } | Should -Throw '*is closed*'
         $null = & $reopen -Room 'reo'
         ((& (Join-Path $scripts 'Update-RelayRoom.ps1') -Room 'reo') -join "`n") | Should -Match 'UP TO DATE|UPDATED'
-        ((& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -Replace 'jack' -NoClipboard) -join "`n") | Should -Match 'REPLACED jack: generation 2'
+        ((& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -Replace 'jack' -NoClipboard -Force -Reason 'the old session stays stopped after the reopen') -join "`n") | Should -Match 'REPLACED jack: generation 2'
         ((& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -OpenSeats 1 -NoClipboard) -join "`n") | Should -Match 'OPEN SEATS added'
         (Invoke-RelayTool -Room $room -Agent 'jack' -Engine $engine -Generation 2 -Words @('start', 'product', 'model', 'low')).ExitCode | Should -Be 0
         $old = Invoke-RelayTool -Room $room -Agent 'jack' -Engine $engine -Words @('check')
