@@ -2671,7 +2671,8 @@ function Set-RelayReachServer {
     param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$ServerName, [string]$FallbackAddress = '')
     if ($ServerName -cnotmatch '^[A-Za-z0-9._-]{1,253}$') { throw "-ServerName '$ServerName' is not a host name" }
     $parsed = $null
-    if ($FallbackAddress -and -not [System.Net.IPAddress]::TryParse($FallbackAddress, [ref]$parsed)) { throw "-FallbackAddress '$FallbackAddress' is not an IP address" }
+    # IPv4 only: an IPv6 address would make a share path that is not valid (\\fe80::1\share)
+    if ($FallbackAddress -and (-not [System.Net.IPAddress]::TryParse($FallbackAddress, [ref]$parsed) -or $parsed.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork)) { throw "-FallbackAddress '$FallbackAddress' is not an IPv4 address" }
     $old = Get-RelayReachPath $Room
     $oldFallback = Get-RelayReachFallback $Room
     # The part after the server: from the recorded spelling when it is a share path, else from this PC's path
@@ -2682,7 +2683,7 @@ function Set-RelayReachServer {
     $new = '\\' + $ServerName + $tail
     if (-not $FallbackAddress) {
         $resolved = Resolve-RelayHostAddress $ServerName
-        if ([System.Net.IPAddress]::TryParse($resolved, [ref]$parsed)) { $FallbackAddress = $resolved }
+        if ([System.Net.IPAddress]::TryParse($resolved, [ref]$parsed) -and $parsed.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork) { $FallbackAddress = $resolved }
     }
     $fallback = ''
     if ($FallbackAddress) { $fallback = '\\' + $FallbackAddress + $tail }

@@ -84,7 +84,7 @@ function Get-LineKind {
 $original = Read-RelayTextStrict $file
 $lines = @($original -split "`n")
 # A final empty piece is the end of the last line, not a line
-if ($lines.Count -gt 0 -and $lines[$lines.Count - 1] -eq '') { $lines = @($lines[0..($lines.Count - 2)]) }
+if ($lines.Count -gt 0 -and $lines[$lines.Count - 1] -eq '') { $lines = @($lines | Select-Object -First ($lines.Count - 1)) }
 
 if ($List) {
     "MEMORY FILE of ${name} in room $($roomObject.Id): $($lines.Count) line(s). Unverified: written by the agent, checked by nobody."

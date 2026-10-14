@@ -1439,13 +1439,20 @@ function Test-RoomBookkeeping {
     # host name or by its address, and a root assigned in one spelling must not make the other agents' heartbeats
     # and the agent's own attachments look like changes of the work.
     param([string]$FullPath)
-    $roomName = Split-Path -Leaf $script:Room
-    if (-not $roomName) { return $false }
-    $text = ($FullPath -replace '/', '\')
-    $marker = '\' + $roomName + '\'
-    $at = $text.LastIndexOf($marker, [System.StringComparison]::OrdinalIgnoreCase)
-    if ($at -lt 0) { return $false }
-    $rest = $text.Substring($at + $marker.Length)
+    # Compared as whole paths without the server part of a share path: a folder of the work that has the room's
+    # name (archive\<room>\tools) is not the room
+    $withoutServer = {
+        param([string]$Path)
+        $t = ($Path -replace '/', '\').TrimEnd('\')
+        if ($t -match '^\\\\[^\\]+(\\.*)?$') { $t = ''; if ($Matches.ContainsKey(1)) { $t = [string]$Matches[1] } }
+        return $t
+    }
+    $roomPath = & $withoutServer ([string]$script:Room)
+    if (-not $roomPath) { return $false }
+    $text = & $withoutServer $FullPath
+    $marker = $roomPath + '\'
+    if (-not $text.StartsWith($marker, [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+    $rest = $text.Substring($marker.Length)
     $first = $rest
     $cut = $rest.IndexOf([char]'\')
     if ($cut -ge 0) { $first = $rest.Substring(0, $cut) }

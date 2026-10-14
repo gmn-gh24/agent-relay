@@ -217,6 +217,15 @@ Describe 'Memory that nobody checks' -Tag 'Integrity' {
         { & (Join-Path $scripts 'Repair-RelayMemory.ps1') -Room $id -Agent nobody -List } | Should -Throw "*no agent 'nobody'*"
     }
 
+    It 'sees an empty memory file as no lines, and does not write blank lines into it' {
+        [System.IO.File]::WriteAllText($memory, '', $utf8)
+        $listing = @(& (Join-Path $scripts 'Repair-RelayMemory.ps1') -Room $id -Agent emma -List)
+        ($listing -join "`n") | Should -Match ': 0 line\(s\)\.'
+        ($listing -join "`n") | Should -Not -Match 'BLANK'
+        { & (Join-Path $scripts 'Repair-RelayMemory.ps1') -Room $id -Agent emma -Line 1 } | Should -Throw '*there is no line 1*'
+        [System.IO.File]::ReadAllText($memory) | Should -Be ''
+    }
+
     It 'removes an entry by its number (a planted entry that is well formed)' {
         $null = & (Join-Path $scripts 'Repair-RelayMemory.ps1') -Room $id -Agent emma -Line 3
         $after = [System.IO.File]::ReadAllText($memory)
@@ -351,7 +360,9 @@ Describe 'The host name first, the address as the fallback' -Tag 'Integrity' {
         $update = Join-Path $scripts 'Update-RelayRoom.ps1'
         { & $update -Room $id -FallbackAddress 10.9.8.7 } | Should -Throw '*goes with -ServerName*'
         { & $update -Room $id -ServerName 'bad name' } | Should -Throw '*is not a host name*'
-        { & $update -Room $id -ServerName files02 -FallbackAddress 'not-an-address' } | Should -Throw '*is not an IP address*'
+        { & $update -Room $id -ServerName files02 -FallbackAddress 'not-an-address' } | Should -Throw '*is not an IPv4 address*'
+        # IPv6 would make a share path that is not valid (\\fe80::1\team)
+        { & $update -Room $id -ServerName files02 -FallbackAddress 'fe80::1' } | Should -Throw '*is not an IPv4 address*'
         $output = @(& $update -Room $id -ServerName files02 -FallbackAddress 10.9.8.7) -join "`n"
         $output | Should -Match ([regex]::Escape("REACH: other machines now get \\files02\team\rooms\$id first"))
         $object = Resolve-RelayRoom $id
@@ -394,6 +405,32 @@ Describe 'The self-audit leaves the room''s own folders out' -Tag 'Integrity' {
         $report.Output | Should -Not -Match 'OUTSIDE  .*agents'
         $audit = (Get-Content -LiteralPath (Join-Path $room "files\emma-olivia-0002\self-audit.txt") -Raw) -replace "`r", ''
         $audit | Should -Match "(?m)^  \(\d+ change\(s\) in the room's own folders agents, files and tools are not counted"
+    }
+
+    It 'still counts a folder of the work that has the room''s name' {
+        $case = New-RelayTestId
+        $root = Join-Path $TestDrive "audit2-$case"
+        $id = "audit2-$case"
+        $work = Join-Path $root 'share'
+        $agents = @(
+            [ordered]@{ name = 'emma'; role = 'developer'; kind = 'generic'; transport = 'same-pc'; work = 'development'; roots = @(@{ root = $work; may = @('src/*') }) },
+            [ordered]@{ name = 'jack'; role = 'reviewer'; kind = 'generic'; transport = 'same-pc' }
+        )
+        $room = (New-RelayTestRoom -Root $root -RoomId $id -Agents $agents -Extra @{ rooms_root = (Join-Path $work 'rooms') }).Path
+        Start-TestAgent -Room $room -Names @('olivia', 'emma')
+        $null = New-Item -ItemType Directory -Path (Join-Path $work 'src') -Force
+        $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Work`n`nDo a thing."
+        $null = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+        Start-Sleep -Milliseconds 1200
+        # Not the room: another folder of the same name, with a tools folder in it
+        $other = Join-Path $work "archive\$id\tools"
+        $null = New-Item -ItemType Directory -Path $other -Force
+        [System.IO.File]::WriteAllText((Join-Path $other 'output.txt'), "work`n")
+        [System.IO.File]::WriteAllText((Join-Path $work 'src\mine.txt'), "mine`n")
+        $report = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('report') -Text "Done`n`n1. Result: done."
+        $report.ExitCode | Should -Be 0
+        $report.Output | Should -Match 'self-audit: 2 changed since start, 1 OUTSIDE the assigned paths'
+        $report.Output | Should -Match 'OUTSIDE  .*output\.txt'
     }
 }
 
