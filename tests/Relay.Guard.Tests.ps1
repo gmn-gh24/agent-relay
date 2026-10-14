@@ -435,7 +435,7 @@ Describe 'The coordinator runs its launcher (G4)' -Tag 'Guard' {
     }
 
     It 'writes a new launcher with the new generation when the coordinator is replaced' {
-        $text = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'olivia' -NoClipboard) -join "`n"
+        $text = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'olivia') -join "`n"
         $text | Should -Match 'REPLACED olivia: generation 2'
         $text | Should -Match ([regex]::Escape("NEXT: run your own start with the new launcher: powershell -NoProfile -ExecutionPolicy Bypass -File '$($object.Local)\relay.ps1' start <product> <model> <effort>"))
         (Get-GuardFile (Join-Path $object.Local 'relay.ps1')) | Should -Match "(?m)^\`$env:RELAY_GEN = '2'$"
@@ -557,25 +557,25 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
 
     It 'replaces an agent by the generation of this PC''s copy, whatever the room''s gen file says' {
         [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\gen'), '')
-        $text = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'emma' -NoClipboard) -join "`n"
+        $text = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'emma') -join "`n"
         $text | Should -Match 'REPLACED emma: generation 2'
         (Get-GuardFile (Join-Path $object.Canon 'agents\emma\gen')).Trim() | Should -Be '2'
         (Get-GuardFile (Join-Path $room 'agents\emma\gen')).Trim() | Should -Be '2'
         [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\gen'), '7')
-        $again = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'emma' -NoClipboard) -join "`n"
+        $again = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'emma') -join "`n"
         $again | Should -Match 'REPLACED emma: generation 3'
     }
 
     It 'refuses to replace an agent whose generation this PC has not got' {
         [System.IO.File]::WriteAllText((Join-Path $object.Canon 'agents\emma\gen'), "x`n")
-        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'emma' -NoClipboard } | Should -Throw "*has no generation for the agent 'emma'*"
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'emma' } | Should -Throw "*has no generation for the agent 'emma'*"
         Get-RelayCanonicalGeneration $object 'jack' | Should -Be 1
     }
 
     It 'knows a retired agent from this PC''s copy: deleting the room''s marker does not bring it back' {
         $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Retire 'jack'
         [System.IO.File]::Delete((Join-Path $room 'agents\jack\retired'))
-        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'jack' -NoClipboard } | Should -Throw '*is retired*'
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'jack' } | Should -Throw '*is retired*'
         { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Assign 'jack' -AnswersFile (Join-Path $root 'nothing.json') } | Should -Throw '*is retired*'
     }
 
@@ -609,10 +609,10 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
     }
 
     It 'writes the join prompt of Add-RelayAgent -OpenSeats and -JoinPrompt as a guarded file' {
-        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -OpenSeats 1 -NoClipboard
+        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -OpenSeats 1
         Get-RelayFileHash (Join-Path $room 'PROMPT-JOIN.txt') | Should -Be (Get-RelayFileHash (Join-Path $object.Canon 'PROMPT-JOIN.txt'))
         [System.IO.File]::WriteAllText((Join-Path $room 'PROMPT-JOIN.txt'), 'x')
-        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -JoinPrompt -NoClipboard
+        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -JoinPrompt
         Get-RelayFileHash (Join-Path $room 'PROMPT-JOIN.txt') | Should -Be (Get-RelayFileHash (Join-Path $object.Canon 'PROMPT-JOIN.txt'))
         @(Test-RelayTamper $object).Count | Should -Be 0
     }
@@ -620,7 +620,7 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
     It 'refuses ssh as a transport, whatever else the answers say, also when an agent is added later' {
         $more = Join-Path $root 'more.json'
         [System.IO.File]::WriteAllText($more, (ConvertTo-Json -Depth 6 @{ agents = @([ordered]@{ role = 'builder'; transport = 'ssh'; ssh = @{ target = 'dev@buildbox' } }) }))
-        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $more -NoClipboard } | Should -Throw '*the SSH bridge is not built yet: use share or same-pc*'
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $more } | Should -Throw '*the SSH bridge is not built yet: use share or same-pc*'
         @(Get-RelayRoster $object).Count | Should -Be 5
     }
 
@@ -686,13 +686,13 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
         $usedLetters = @($created.Seats | ForEach-Object { $_.name.Substring(0, 1) })
         $wanted = @(@('gina', 'lena', 'nora', 'vera', 'wren', 'xena', 'yuri', 'zara', 'kira', 'ivy', 'uma', 'quinn') | Where-Object { $usedLetters -notcontains $_.Substring(0, 1) } | Select-Object -First 4)
         [System.IO.File]::WriteAllText($answers, (ConvertTo-Json -Depth 6 @{ agents = @([ordered]@{ name = $wanted[0]; role = 'builder'; kind = 'codex' }, [ordered]@{ name = $wanted[1]; role = 'writer' }, [ordered]@{ name = $wanted[2]; role = 'tester'; kind = 'claude-code' }, [ordered]@{ name = $wanted[3]; role = 'tester'; kind = 'claude-code-headless' }) }))
-        $added = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $answers -NoClipboard)
+        $added = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -AnswersFile $answers)
         @($added | Where-Object { $_ -eq $line }).Count | Should -Be 1
         # Two kinds of Claude Code share one note: each kind prints it once
         @($added | Where-Object { $_ -eq $claude }).Count | Should -Be 2
-        $replaced = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace $wanted[0] -NoClipboard)
+        $replaced = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace $wanted[0])
         @($replaced | Where-Object { $_ -eq $line }).Count | Should -Be 1
-        $other = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace $wanted[1] -NoClipboard)
+        $other = @(& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace $wanted[1])
         @($other | Where-Object { $_ -match '^NOTE: (start Codex|Claude Code)' }).Count | Should -Be 0
         # What the owner is told about the risk is the coordinator's to say, never the scripts' or a prompt's
         (@($added) -join "`n") | Should -Not -Match 'virtual machine|throwaway|\brisk'
@@ -702,7 +702,7 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
         $line = 'NOTE: start Codex with codex --yolo: without it Codex keeps asking its user and its sandbox blocks the room''s commands'
         $answers = Join-Path $root 'codex-room.json'
         [System.IO.File]::WriteAllText($answers, (ConvertTo-Json -Depth 6 @{ job = 'Codex room'; room_id = "cx-$case"; rooms_root = (Join-Path $root 'cxrooms'); agents = @([ordered]@{ name = 'cora'; role = 'builder'; kind = 'codex' }, [ordered]@{ name = 'dana'; role = 'writer' }) }))
-        $made = @(& (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $answers -NoClipboard)
+        $made = @(& (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $answers)
         @($made | Where-Object { $_ -eq $line }).Count | Should -Be 1
     }
 
@@ -723,7 +723,7 @@ Describe 'What comes from this PC, not from the room: generations, seats, prompt
             [System.IO.File]::WriteAllText($registry, (ConvertTo-Json $owned))
             $answers = Join-Path $root 'letters-room.json'
             [System.IO.File]::WriteAllText($answers, (ConvertTo-Json -Depth 6 @{ job = 'Letters room'; room_id = "lt-$case"; rooms_root = (Join-Path $root 'ltrooms'); agents = @([ordered]@{ name = 'cora'; role = 'builder' }, [ordered]@{ name = 'dana'; role = 'writer' }) }))
-            { & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $answers -NoClipboard } | Should -Not -Throw
+            { & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $answers } | Should -Not -Throw
             $seats = @(Get-RelayRoster (Resolve-RelayRoom "lt-$case"))
             $seats | Should -Contain 'cora'
             $seats | Should -Contain 'dana'
@@ -1362,7 +1362,7 @@ Describe 'A message under the coordinator''s name counts only when the coordinat
         $older = "# an older tool that keeps no record`n"
         [System.IO.File]::WriteAllText((Join-Path $object.Canon 'tools/relay.ps1'), $older)
         [System.IO.File]::WriteAllText((Join-Path $room 'tools/relay.ps1'), $older)
-        $text = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'olivia' -NoClipboard) -join "`n"
+        $text = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -Replace 'olivia') -join "`n"
         $text | Should -Match 'REPLACED olivia'
         [System.IO.File]::Exists((Get-RelaySentLogPath $object)) | Should -BeFalse
         Write-GuardForgery -Path (Join-Path $inbox 'olivia-0001.md') -Id 'olivia-emma-0001' -To 'emma'

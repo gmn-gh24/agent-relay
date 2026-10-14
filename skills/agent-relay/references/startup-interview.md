@@ -163,7 +163,7 @@ list makes the folder read-only. The self-audit marks every change outside these
 ## After the room exists
 
 - Run your own `start`.
-- Hand the prompts to the owner. Say which one is on the clipboard, and how each product is started: Codex CLI
+- Hand the prompts to the owner. Pass `-Clipboard` when the owner is about to paste; say which prompt is on the clipboard when you do. Say how many free seats the room has, not their names. Say how each product is started: Codex CLI
   with `codex --yolo`, Claude Code with `claude --dangerously-skip-permissions` when the owner wants no
   questions. For a risky job add the one line about a virtual machine or a throwaway computer
   (`agent-kinds.md`, "Starting an agent without its own guard"). That line is for the owner, not for a prompt.

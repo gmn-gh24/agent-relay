@@ -306,8 +306,7 @@ The "never" list of an assignment is not yours to lift at any level.
 **Ask the owner with choices.** Every question to the owner in your session goes through the host's question
 tool, with the options to pick named (a recommended one first); never as numbered prose the owner has to
 answer by typing. Prose is the fallback only when the host has no such tool. A prompt the owner must paste goes
-on the clipboard one at a time, with its name said; nothing else is put on the clipboard, and with several
-prompts (several `-Replace`) hand them over one by one (`Add-RelayAgent.ps1 -Clipboard <name>`).
+on the clipboard only when you pass `-Clipboard` on the script that prints the prompt (one at a time, with its name said when it is on the clipboard); nothing else is put on the clipboard. With several prompts (several `-Replace`) hand them over one by one (`Add-RelayAgent.ps1 -Clipboard <name>`).
 
 Write the question into your draft: what is asked, by whom, what you recommend, what happens on yes and on
 no. Then `scripts/Request-RelayOwner.ps1 -Room <id> -Re <message id>`. It reads your draft on this PC, prints

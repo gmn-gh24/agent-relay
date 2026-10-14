@@ -20,7 +20,7 @@
     -Line          Opens a direct line between two agents (-Line emma -To jack), both ways.
     -OpenSeats     Adds that many seats nobody is named for. Any agent given the room's join prompt
                    (PROMPT-JOIN.txt) takes the next free one and says what it is in its introduction.
-    -JoinPrompt    Prints the room's join prompt again and puts it on the clipboard.
+    -JoinPrompt    Prints the room's join prompt again; pass -Clipboard to put it on the clipboard.
     -Assign        Gives one or more agents that are already in the room a new assignment. The fields come as
                    parameters (-Role, -Work, -Task, -DoneWhen, -NonGoals, -Roots, -May, -ProposeOk, -AskFirst,
                    -Never, -MachineCare, -MachineNotes, -Expertise, -Standards, -DocTools), or from a JSON file
@@ -51,9 +51,6 @@
 
 .PARAMETER Room
     Room id or room folder.
-
-.PARAMETER NoClipboard
-    Do not put the start prompt on the clipboard.
 
 .PARAMETER WaitMinutes
     How long -Retire and -Replace wait for the bye of an agent that is alive (0 to 60, default 3).
@@ -116,7 +113,9 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'Line')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$To,
     [Parameter(Mandatory, ParameterSetName = 'Open')][ValidateRange(1, 200)][int]$OpenSeats,
     [Parameter(Mandatory, ParameterSetName = 'Prompt')][switch]$JoinPrompt,
-    [switch]$NoClipboard
+    [Parameter(ParameterSetName = 'Prompt')]
+    [Parameter(ParameterSetName = 'Open')]
+    [switch]$CopyJoin
 )
 
 $ErrorActionPreference = 'Stop'
@@ -155,7 +154,7 @@ function Assert-Agent {
     if ($all -notcontains $Name) { throw "There is no agent '$Name' in room $($roomObject.Id). Agents: $($all -join ', ')" }
 }
 
-$useClipboard = -not $NoClipboard
+$useClipboard = $PSBoundParameters.ContainsKey('CopyJoin') -and $CopyJoin
 
 function ConvertTo-AssignRoot {
     # One -Roots entry as the answers hold a root: '<folder>', '<folder>=<pattern>,<pattern>', or a hashtable or
@@ -187,7 +186,7 @@ function ConvertTo-AssignRoot {
 function Copy-Prompt {
     param([string]$Text, [string]$Name, [bool]$Enabled)
     if (-not $Enabled) { return }
-    try { Set-Clipboard -Value $Text.TrimEnd(); "on the clipboard: the start prompt for $Name" } catch { $null = $_ }
+    try { Set-RelayClipboard -Text $Text.TrimEnd(); "on the clipboard: the start prompt for $Name" } catch { $null = $_ }
 }
 
 function Get-ByeMessage {
@@ -448,7 +447,7 @@ switch ($PSCmdlet.ParameterSetName) {
         }
         if ($null -eq $newest) { throw "This PC has no saved start prompt for $name" }
         $text = Read-RelayText $newest.Path
-        try { Set-Clipboard -Value $text.TrimEnd(); "on the clipboard: the start prompt for $name (generation $($newest.Number))" } catch { throw "The clipboard could not be set: $($_.Exception.Message)" }
+        try { Set-RelayClipboard -Text $text.TrimEnd(); "on the clipboard: the start prompt for $name (generation $($newest.Number))" } catch { throw "The clipboard could not be set: $($_.Exception.Message)" }
         "NEXT: paste it into the session of $name. Nothing else is on the clipboard."
     }
     'Prompt' {
@@ -459,14 +458,24 @@ switch ($PSCmdlet.ParameterSetName) {
         Write-RelayText (Join-Path (Join-Path $roomObject.Local 'prompts') 'PROMPT-JOIN.txt') $prompt
         $prompt.TrimEnd()
         ''
-        if ($useClipboard) { try { Set-Clipboard -Value $prompt.TrimEnd(); 'on the clipboard: the join prompt' } catch { $null = $_ } }
+        if ($useClipboard) {
+            try { Set-RelayClipboard -Text $prompt.TrimEnd(); 'on the clipboard: the join prompt' }
+            catch { 'not on the clipboard' }
+        }
+        else { 'not on the clipboard' }
         'NEXT: the owner pastes the join prompt into each agent that should join. Give no work to an agent before its introduction has arrived.'
     }
     'Open' {
         $opened = Add-RelayOpenSeat -Room $roomObject -Count $OpenSeats
-        "OPEN SEATS added to room $($roomObject.Id): " + ($opened.Names -join ', ')
+        $seatCount = $opened.Names.Count
+        if ($seatCount -eq 1) { "1 free seat added to room $($roomObject.Id)" }
+        else { "$seatCount free seats added to room $($roomObject.Id)" }
         'join prompt, the same for every agent: ' + (Join-Path $roomObject.Path 'PROMPT-JOIN.txt')
-        if ($useClipboard) { try { Set-Clipboard -Value $opened.Prompt.TrimEnd(); 'on the clipboard: the join prompt' } catch { $null = $_ } }
+        if ($useClipboard) {
+            try { Set-RelayClipboard -Text $opened.Prompt.TrimEnd(); 'on the clipboard: the join prompt' }
+            catch { 'not on the clipboard' }
+        }
+        else { 'not on the clipboard' }
         'NEXT: the owner pastes the join prompt into each agent that should join. Give no work to an agent before its introduction has arrived.'
     }
 }

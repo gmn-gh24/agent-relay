@@ -256,7 +256,7 @@ function New-RelayTestRoom {
     $answersFile = Join-Path $Root "answers-$RoomId.json"
     [System.IO.File]::WriteAllText($answersFile, (ConvertTo-Json -InputObject $answers -Depth 8))
     $env:AGENT_RELAY_LOCAL = Join-Path $Root 'local'
-    return (& (Join-Path (Get-RelayTestPath scripts) 'New-RelayRoom.ps1') -AnswersFile $answersFile -NoClipboard -PassThru)
+    return (& (Join-Path (Get-RelayTestPath scripts) 'New-RelayRoom.ps1') -AnswersFile $answersFile -PassThru)
 }
 
 function Get-RelayTestJoinedName {

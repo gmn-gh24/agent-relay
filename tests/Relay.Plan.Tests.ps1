@@ -641,7 +641,7 @@ Describe 'Set-RelayPlan: texts, lines in order, reserved seats' -Tag 'Plan' {
         Get-TestLine $room 'jack' | Should -Be @('emma', 'henry')
     }
     It 'lets a part be reserved for a seat nobody has taken yet, and opens its lines' {
-        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -OpenSeats 1 -NoClipboard
+        $null = & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room $id -OpenSeats 1
         $seat = @(Get-RelayTestOpenSeat $room)[0]
         $plan = [ordered]@{ goal = 'Reserved'; parts = @([ordered]@{ id = 'a'; owner = $seat; reviewer = 'emma'; title = 'For the next agent' }) }
         $output = @(& $setPlan -Room $id -PlanFile (Save-TestPlan $root $plan 'reserved.json'))
