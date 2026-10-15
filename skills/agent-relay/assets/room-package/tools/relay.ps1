@@ -31,7 +31,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.6.0'
+$script:ToolVersion = '3.6.1'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -2156,13 +2156,13 @@ function Invoke-Remember {
     $text = (($parts -join ' ') -replace '[ \t]+', ' ').Trim(' ', "`t")
     # " | " separates the fields of the memory file: inside the text it becomes " / "
     while ($text.Contains(' | ')) { $text = $text.Replace(' | ', ' / ') }
-    if (-not $text) { Exit-WithError "there is nothing to remember: $path is missing or empty" 'write what you learned into that file with your file tool (15 to 500 characters) and run the same command again' }
+    if (-not $text) { Exit-WithError "there is nothing to remember: $path is missing or empty" 'write what you learned into that file with your file tool (15 to 500 characters, up to 5 tags) and run the same command again' }
     # Every agent reads the memory: the same patterns as for a message, no override
     $found = Find-Secret $text
     if ($found) { Exit-WithError "the text looks like it contains $found; nothing was remembered" 'take the secret out of the text and run the same command again' }
     $length = Get-CharCount $text
     if ($length -lt 15) { Exit-WithError "the text is too short to help anybody: $length characters, 15 at least; nothing was remembered" "write the finding in a full sentence into $path and run the same command again" }
-    if ($length -gt 500) { Exit-WithError "the text is too long: $length characters, 500 at most; nothing was remembered" "write the finding in one to three sentences into $path and run the same command again" }
+    if ($length -gt 500) { Exit-WithError "your entry is $length characters; the limit is 500 (15 to 500 characters, up to 5 tags); nothing was remembered" "write the finding in one to three sentences (15 to 500 characters, up to 5 tags) into $path and run the same command again" }
     $file = Join-Path $script:MyDir 'memory'
     if (Test-Link $file) { Exit-WithError "your memory file $file is a link (a symbolic link or a junction), not a file of its own; nothing was remembered and the link was left as it is" 'delete the link (only the link, not what it points at) and run the same command again. If you did not make the link, tell the coordinator.' }
     $key = Get-MemoryKey $text
@@ -2376,6 +2376,12 @@ function ConvertTo-IntroductionWord {
         $rest = @($rest[0..($rest.Count - 2)])
         $Call = "$Call new"
     }
+    # join may end with "as <name>": the seat that session wants, not a fourth word of its introduction
+    $seatName = ''
+    if ($IsJoin -and $rest.Count -ge 3 -and $rest[$rest.Count - 2].Trim().ToLowerInvariant() -eq 'as') {
+        $seatName = $rest[$rest.Count - 1].Trim().ToLowerInvariant()
+        if ($rest.Count -gt 2) { $rest = @($rest[0..($rest.Count - 3)]) } else { $rest = @() }
+    }
     $plain = New-Object System.Collections.Generic.List[string]
     foreach ($word in $rest) {
         $joined = (($word -replace '\s+', ' ').Trim()) -replace ' ', '-'
@@ -2392,7 +2398,9 @@ function ConvertTo-IntroductionWord {
         if ($IsJoin) { $verbName = 'join' }
         Exit-WithError "$verbName takes three words, your product, your model and your effort, each of letters, digits, dot and dash (64 at most); the $($labels[$index]) '$shown' is not such a word" "run it as: $Call <product> <model> <effort>   for example: $Call codex-cli gpt-6-sol medium   A name of several words is fine as you were given it: its blanks become dashes. Write unknown where you do not know."
     }
-    return @($front + $three)
+    $words = @($front + $three)
+    if ($seatName) { $words += @('as', $seatName) }
+    return $words
 }
 
 function Invoke-Start {
@@ -2573,7 +2581,7 @@ function Request-Seat {
     # join: gives this session a seat of the room and returns the seat's name: the seat it already has when
     # the session is known to have joined before, otherwise the next free one. Ends the process when it cannot
     # tell whether this session joined before, or when no seat is free.
-    param([bool]$IsNew, [string]$Product)
+    param([bool]$IsNew, [string]$Product, [string]$SeatName = '')
     $joinWrapper = Get-WrapperPath
     $session = Get-SessionKey
     $environmentSession = Get-SessionEnvironmentKey
@@ -2602,6 +2610,19 @@ function Request-Seat {
             return $order
         })
     $ordered = @($seats.ToArray())
+
+    if ($SeatName) {
+        # A seat asked for by name: only that one, and only while nobody holds it. A name that is no seat of
+        # this room, is retired or is already taken gets the same refusal, and no other seat is taken.
+        $wanted = @($ordered | Where-Object { [string]::Equals($_.Name, $SeatName, [System.StringComparison]::Ordinal) })
+        if ($wanted.Count -eq 0) { Exit-WithError "Seat $SeatName is not free; run join without a name for the next free seat" "run it as: $(Format-Call $joinWrapper) <product> <model> <effort>" }
+        $wantedClaim = Read-KeyValue (Join-Path $wanted[0].Dir 'claim')
+        if ($wantedClaim.Count -gt 0) {
+            $wantedSession = Get-Value $wantedClaim 'session' ''
+            if (-not ($session -and $wantedSession -eq $session)) { Exit-WithError "Seat $SeatName is not free; run join without a name for the next free seat" "run it as: $(Format-Call $joinWrapper) <product> <model> <effort>" }
+        }
+        $ordered = $wanted
+    }
 
     foreach ($seat in $ordered) {
         $claim = Read-KeyValue (Join-Path $seat.Dir 'claim')
@@ -3766,7 +3787,7 @@ function Show-Usage {
     Say "  $call who                            who is in the room"
     Say "  $call team                           the plan, who does which part, and where everybody stands"
     Say "  $call progress                       tell the team where you stand, in one line (draft file); wakes nobody"
-    Say "  $call remember [tag ...]             keep a finding for the whole team (draft file); wakes nobody"
+    Say "  $call remember [tag ...]             keep a finding for the whole team (draft file, 15 to 500 characters, up to 5 tags); wakes nobody"
     Say "  $call find [word|tag:name ...]       search what the team keeps; do it before you start or ask"
     Say "  $call bye                            leave the room"
     Say '  coordinator only: task <name> [anyway] [<minutes it should take>], ask <name>, note <name>|all'
@@ -3863,9 +3884,14 @@ if ($verb -eq 'join') {
     $joinCall = Format-Call (Get-WrapperPath)
     $isNew = (@($tokens).Count -ge 1 -and $tokens[0].ToLowerInvariant() -eq 'new')
     if ($isNew) { $tokens = @($tokens | Select-Object -Skip 1) }
+    $seatName = ''
+    if (@($tokens).Count -ge 2 -and $tokens[@($tokens).Count - 2].ToLowerInvariant() -eq 'as') {
+        $seatName = $tokens[@($tokens).Count - 1]
+        if (@($tokens).Count -gt 2) { $tokens = @($tokens[0..(@($tokens).Count - 3)]) } else { $tokens = @() }
+    }
     if (@($tokens).Count -lt 1) { Exit-WithError 'join needs to know what you are' "run it as: $joinCall <product> <model> <effort>   (your agent product as exactly as you know it, for example claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent or copilot-cli; your model; your reasoning effort setting if your session shows one; write unknown where you do not know)" }
     if (Test-Path -LiteralPath (Join-Path $script:Room 'CLOSED')) { Exit-WithError "the room $($script:RoomId) is closed" 'there is nothing to join: tell your owner' 5 }
-    $script:Me = Request-Seat -IsNew $isNew -Product $tokens[0]
+    $script:Me = Request-Seat -IsNew $isNew -Product $tokens[0] -SeatName $seatName
     $script:MyGen = (Read-Text (Join-Path (Get-AgentDir $script:Me) 'gen')).Trim()
     if (-not $script:MyGen) { $script:MyGen = '1' }
     $env:RELAY_NAME = $script:Me
