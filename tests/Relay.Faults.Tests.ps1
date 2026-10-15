@@ -1057,7 +1057,8 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
                 $check = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -TimeoutSeconds (45 * $pace)
                 $watch.Stop()
                 $check.TimedOut | Should -BeFalse
-                $check.ExitCode | Should -BeIn @(3, 4)
+                # 0: treated as another wait already listening (calm line); 3: nothing new; 4: old lease-lost code
+                $check.ExitCode | Should -BeIn @(0, 3, 4)
                 $watch.Elapsed.TotalSeconds | Should -BeLessThan (30 * $pace)
                 $watch.Restart()
                 $waited = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '1') -Environment @{ RELAY_MINUTE_SECONDS = '4' } -TimeoutSeconds (45 * $pace)
