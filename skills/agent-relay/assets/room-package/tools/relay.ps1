@@ -2950,9 +2950,34 @@ function Show-Placeholder {
     Say 'DO: ask its sender to send it again; if you have no line to the sender, tell the coordinator.'
 }
 
+function Get-ShownSet {
+    # An absent file belongs to an older room: preserve its delivery history once. Once initialized,
+    # missing ids are unshown deliveries and must be replayed. Even an empty history gets its marker file.
+    param([hashtable]$Delivered)
+    $path = Join-Path $script:MyDir 'shown'
+    if (-not [System.IO.File]::Exists($path)) {
+        $ids = New-Object System.Collections.Generic.List[string]
+        foreach ($id in $Delivered.Keys) { $ids.Add([string]$id) }
+        $ids.Sort([System.StringComparer]::Ordinal)
+        $stamp = Get-UtcStamp
+        $lines = New-Object System.Collections.Generic.List[string]
+        foreach ($id in $ids) { $lines.Add("$id $stamp") }
+        $text = ''
+        if ($lines.Count -gt 0) { $text = ($lines.ToArray() -join "`n") + "`n" }
+        Write-Text $path $text
+        Add-Journal 'shown' "seeded from $($ids.Count) delivered records"
+    }
+    $set = @{}
+    foreach ($line in ((Read-Text $path) -split "`n")) {
+        $id = ($line.Trim() -split ' ')[0]
+        if ($id) { $set[$id] = $true }
+    }
+    return $set
+}
+
 function Send-Delivery {
-    # Prints the messages, then records them as delivered: exactly the ones it printed. A session that dies in
-    # between gets them again, and the requests among them stay open until answered: nothing is lost either way.
+    # Print and flush the complete notification before acknowledging it. A buffered writer can accept every
+    # WriteLine yet fail at Flush; neither its shown stamps nor its delivery records may advance then.
     param([object[]]$Deliverable)
     $items = @($Deliverable)
     Sync-Assignment
@@ -2965,21 +2990,6 @@ function Send-Delivery {
         Show-Message $message -HeaderOnly:$short
         if (-not $short) { $printed += $message.Body.Length }
     }
-    $stamp = Get-UtcStamp
-    foreach ($item in $items) {
-        $mark = ''
-        if ($item.Placeholder) { $mark = ' unreadable' }
-        Add-Line (Join-Path $script:MyDir 'delivered') "$($item.Entry.Id) $stamp$mark"
-    }
-
-    foreach ($item in $items) {
-        if ($item.Placeholder) { continue }
-        if ($item.Message.Type -ceq 'answer' -and $item.Message.Re) { $null = Save-ProposalEntry -Id $item.Message.Re -State 'closed' }
-    }
-
-    Write-Status 'working' "woken by $($items.Count) message(s)"
-    Add-Journal 'delivered' ((@($items | ForEach-Object { $_.Entry.Id })) -join ',')
-    Save-StateValue 'idle_timeouts' '0'
     $null = Show-NewRule
     Show-NewMemory
     $open = @(Get-OpenRequest $script:Me)
@@ -2996,6 +3006,24 @@ function Send-Delivery {
     if ($hasTask -and $script:Wake -eq 'background') { Say "NEXT: start your wait as a background command now, before the work: $(Get-Call) wait   Then handle the messages above in order, each as its DO line says." }
     elseif ($hasTask -and $script:Wake -eq 'loop') { Say "NEXT: handle the messages above in order, each as its DO line says, and run $(Get-Call) check after every step of the work. Then run: $(Get-Call) wait" }
     else { Say "NEXT: handle the messages above in order, each as its DO line says. Then run: $(Get-Call) wait$(Get-WaitMode)" }
+
+    # A successful flush acknowledges the output API, not whether a downstream reader kept the bytes.
+    [Console]::Out.Flush()
+    $stamp = Get-UtcStamp
+    foreach ($item in $items) {
+        $mark = ''
+        if ($item.Placeholder) { $mark = ' unreadable' }
+        # A crash between these writes may repeat the message, but cannot hide one that was never printed.
+        Add-Line (Join-Path $script:MyDir 'shown') "$($item.Entry.Id) $stamp"
+        Add-Line (Join-Path $script:MyDir 'delivered') "$($item.Entry.Id) $stamp$mark"
+    }
+    foreach ($item in $items) {
+        if ($item.Placeholder) { continue }
+        if ($item.Message.Type -ceq 'answer' -and $item.Message.Re) { $null = Save-ProposalEntry -Id $item.Message.Re -State 'closed' }
+    }
+    Write-Status 'working' "woken by $($items.Count) message(s)"
+    Add-Journal 'delivered' ((@($items | ForEach-Object { $_.Entry.Id })) -join ',')
+    Save-StateValue 'idle_timeouts' '0'
 }
 
 function Invoke-WaitControl {
@@ -3050,7 +3078,8 @@ function Invoke-WaitDelivery {
     # another wait holds the lease, -1 when nothing was delivered in this round. A file that cannot be read yet
     # stays pending and ends no wait.
     param([object[]]$Entries, [hashtable]$Delivered, [string]$Token, [int]$Settle, $ShareNow, [DateTime]$Since)
-    $new = @($Entries | Where-Object { -not $Delivered.ContainsKey($_.Id) })
+    $shown = Get-ShownSet $Delivered
+    $new = @($Entries | Where-Object { -not $Delivered.ContainsKey($_.Id) -or -not $shown.ContainsKey($_.Id) })
     if ($new.Count -eq 0) { return -1 }
     # The room's clock now: the time the file system gave the last heartbeat, plus what passed since
     $deliverable = @(Get-Deliverable $new (Get-RoomTimeNow $ShareNow $Since))
@@ -3058,13 +3087,15 @@ function Invoke-WaitDelivery {
     # Messages sent together are delivered together: one wake, not two
     if ($Settle -gt 0) {
         Start-Sleep -Milliseconds $Settle
-        $new = @(@(Get-InboxEntry $script:Me) | Where-Object { -not $Delivered.ContainsKey($_.Id) })
+        $new = @(@(Get-InboxEntry $script:Me) | Where-Object { -not $Delivered.ContainsKey($_.Id) -or -not $shown.ContainsKey($_.Id) })
         $deliverable = @(Get-Deliverable $new (Get-RoomTimeNow $ShareNow $Since))
         if ($deliverable.Count -eq 0) { return -1 }
     }
     $verdict = Get-LeaseVerdict $Token
     if ($verdict -eq 'lost') { return 4 }
     if ($verdict -ne 'mine') { return -1 }
+    $unshown = @($deliverable | Where-Object { $Delivered.ContainsKey($_.Entry.Id) -and -not $shown.ContainsKey($_.Entry.Id) })
+    if ($unshown.Count -gt 0) { Say ('delivered but not shown: ' + ((@($unshown | ForEach-Object { $_.Entry.Id })) -join ', ')) }
     Send-Delivery $deliverable
     return 0
 }

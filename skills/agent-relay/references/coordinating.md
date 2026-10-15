@@ -22,7 +22,7 @@ the owner hears about the room from you.
    background command only. A wait started as a detached process of its own holds the lease and wakes nobody.
 
 Your wait prints the messages themselves. Reading files in the room by hand is not needed and skips the
-delivery record.
+delivery record. Never redirect `wait`'s output to nothing; keep it visible or capture it in the file your launcher or pane reads.
 
 ## Introductions
 
