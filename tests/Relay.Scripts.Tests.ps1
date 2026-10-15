@@ -1129,6 +1129,49 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         ((& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow') -join "`n") | Should -Not -Match 'nudge'
     }
 
+    It 'shows a seat the coordinator ended as stopped, not as attention, and still marks a live dead wait' {
+        foreach ($name in 'olivia', 'jack', 'emma', 'henry') {
+            [System.IO.File]::WriteAllText((Join-Path $room "agents\$name\status"), "state: listening`ndetail: `nsince_utc: 2026-10-10T08:00:00Z`ngen: 1`n")
+            $aliveFile = Join-Path $room "agents\$name\alive"
+            if (-not (Test-Path -LiteralPath $aliveFile)) { [System.IO.File]::WriteAllText($aliveFile, "2026-10-10T08:00:00Z`n") }
+            (Get-Item -LiteralPath $aliveFile).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-12)
+        }
+        # Emma's seat expects another computer in this template: that word is not what this test is about
+        $seat = Join-Path $room 'agents\emma\seat'
+        Write-RelayGuardedText $object 'agents/emma/seat' ([System.IO.File]::ReadAllText($seat) -replace 'expect_computer: .*', 'expect_computer: ')
+        # Jack's session is of the older generation: the seat was replaced
+        Write-RelayGuardedText $object 'agents/jack/gen' "2`n"
+        # Emma was stopped through its control, Henry was retired
+        Write-RelayGuardedText $object 'agents/emma/control' "state: stop`nnote: `n"
+        [System.IO.File]::WriteAllText((Join-Path $object.Canon 'agents\henry\retired'), "retired_utc: 2026-10-10T08:00:00Z`n")
+        $board = Get-RelayBoard $object
+        $byName = @{}
+        foreach ($agent in @($board.agents)) { $byName[$agent.name] = $agent }
+        $byName['jack'].stopped | Should -Match '^stopped \(replaced\) \d+ min ago$'
+        $byName['emma'].stopped | Should -Match '^stopped \(control stop\) \d+ min ago$'
+        $byName['henry'].stopped | Should -Match '^stopped \(retired\) \d+ min ago$'
+        foreach ($name in 'jack', 'emma', 'henry') { $byName[$name].attention | Should -Be '' }
+        $byName['olivia'].attention | Should -Match 'wait died \d+ min ago: owner must restart that session'
+        $text = (& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow') -join "`n"
+        $text | Should -Match 'stopped \(replaced\) \d+ min ago'
+        $text | Should -Match 'stopped \(control stop\) \d+ min ago'
+        $text | Should -Match 'stopped \(retired\) \d+ min ago'
+        @([regex]::Matches($text, 'ATTENTION: wait died')).Count | Should -Be 1
+    }
+
+    It 'marks an open task that was sent after its agent said bye' {
+        $byeUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture)
+        [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\status'), "state: offline`ndetail: said bye`nsince_utc: $byeUtc`ngen: 1`n")
+        $sentUtc = [DateTime]::UtcNow.AddMinutes(-1).ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture)
+        $task = "---`nid: olivia-emma-0099`nfrom: olivia`nto: emma`ntype: task`nre: `nsubject: After the bye`nsent_utc: $sentUtc`nexpects: reply`n---`nDo it when you are back.`n"
+        [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\inbox\olivia-0099.md'), $task, (New-Object System.Text.UTF8Encoding($false)))
+        $board = Get-RelayBoard $object
+        $row = @($board.open | Where-Object { $_.id -eq 'olivia-emma-0099' })
+        $row.Count | Should -Be 1
+        $row[0].sentAfterBye | Should -BeTrue
+        ((& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow') -join "`n") | Should -Match 'olivia-emma-0099.*sent after bye'
+    }
+
     It 'marks an agent that wakes on a background command, has a task it was shown and no wait running' {
         # Jack is shown its task and starts no wait: no message reaches it until its session looks by itself
         $null = Invoke-RelayTool -Room $room -Agent 'jack' -Engine $engine -Words @('check')

@@ -429,6 +429,8 @@ you act on it. Thank the agent: it did the right thing by telling you and not ac
 | control: pause / stop | you or the owner paused or stopped it | `-Control <name> -State run` to resume |
 | control: hold (why) | you put it on hold: it starts nothing new, and its `check` exits 7 | `-Control <name>|all -State run` when the reason is gone |
 | has not picked up N message(s) for M min | messages lie in its inbox and its tool has not shown them: its session has probably ended while it worked (its state still says `working`) | do not wait for it. Ask the owner to look at that session; `-Replace` it if it is to go on, `-Retire` it and give its parts to others if not. A room sets the limit with `pickup_minutes` in its answers (30) |
+| stopped (retired / replaced / control stop) N min ago | that seat was ended on purpose: retired, replaced by a newer generation, or stopped through `-Control stop`. It is no dead wait and no ATTENTION | nothing: nobody restarts that session. Give its open work to another agent, or let the replacement session pick it up |
+| sent after bye, next to an open task | the task and the agent's `bye` crossed: the task was sent after the agent had said bye and waits in its inbox (your `task` prints a WARNING when you send one) | nothing to send again: it is delivered when that session returns with `start`, or the seat is replaced |
 
 Replacing: `scripts/Add-RelayAgent.ps1 -Room <id> -Replace <name>` keeps the name, the assignment and the
 open requests; the old session is told to stop at its next command, and the new one gets everything from its

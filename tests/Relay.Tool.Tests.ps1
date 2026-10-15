@@ -501,6 +501,19 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             foreach ($said in $task.Output, ($all -join "`n"), ($colleague -join "`n")) { $said | Should -Not -Match 'parked|NOTE: ' }
         }
 
+        It 'warns when a task is sent to an agent that has said bye, and sends it all the same' {
+            $bye = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('bye')
+            $bye.ExitCode | Should -Be 0 -Because $bye.Output
+            (Get-Content -LiteralPath (Join-Path $room 'agents\emma\status') -Raw) | Should -Match '(?m)^state: offline$'
+            $before = @(Get-RelayTestInbox -Room $room -Agent 'emma' -From 'olivia').Count
+            $task = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Work after the bye`n`nDo it when you are back."
+            $task.ExitCode | Should -Be 0 -Because $task.Output
+            $task.Output | Should -Match 'WARNING: emma said bye at \S+; the task waits in its inbox until that session returns \(start\) or the seat is replaced'
+            $inbox = @(Get-RelayTestInbox -Room $room -Agent 'emma' -From 'olivia')
+            $inbox.Count | Should -Be ($before + 1)
+            ([System.IO.File]::ReadAllText((Join-Path $room "agents\emma\inbox\$($inbox[$inbox.Count - 1])"))) | Should -Match 'subject: Work after the bye'
+        }
+
         It 'sends a task with the minutes it should take, shows them to its receiver, and takes the room''s default without a number' {
             $task = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma', '20') -Text "Count the files`n`nCount them." -Environment $own
             $task.ExitCode | Should -Be 0

@@ -1585,11 +1585,29 @@ function Get-RelayAgentState {
         # A seat nobody is named for: free until an agent given the join prompt takes it
         $isOpen = ((Get-RelayValue $seat 'open' '') -eq 'yes')
         $isFree = ($isOpen -and $card.Count -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $dir 'claim')))
+        # A seat the coordinator ended on purpose is no dead wait to restart: retired, replaced by a newer
+        # generation (the session's own status is of the older one), or stopped through its control
+        $currentGen = 0
+        $null = [int]::TryParse((Read-RelayText (Join-Path $canonDir 'gen')).Trim(), [ref]$currentGen)
+        $sessionGenText = Get-RelayValue $status 'gen' ''
+        if (-not $sessionGenText) { $sessionGenText = Get-RelayValue $card 'gen' '' }
+        $sessionGen = 0
+        $null = [int]::TryParse($sessionGenText, [ref]$sessionGen)
+        $isReplaced = ($currentGen -gt 0 -and $sessionGen -gt 0 -and $sessionGen -lt $currentGen)
+        $stoppedKind = ''
+        if ($isStale) {
+            if ($isRetired) { $stoppedKind = 'retired' }
+            elseif ($isReplaced) { $stoppedKind = 'replaced' }
+            elseif ($control -ceq 'stop') { $stoppedKind = 'control stop' }
+        }
+        $stopped = ''
+        if ($stoppedKind) { $stopped = "stopped ($stoppedKind) $silent min ago" }
         $attention = ''
         $expected = Get-RelayValue $seat 'expect_computer' ''
         $computer = Get-RelayValue $card 'computer' ''
         if ($isRetired) { $state = 'retired' }
         elseif ($isFree) { $state = 'free seat' }
+        elseif ($stopped) { $attention = '' }
         elseif ($expected -and $computer -and $expected -ne $computer) { $attention = "introduced itself from $computer, expected ${expected}: check with the owner before giving it work" }
         elseif ($isStale) { $attention = "wait died $silent min ago: owner must restart that session" }
         elseif ($state -eq 'not started' -and $isOpen) { $attention = 'took a seat but has not introduced itself: owner must look at that session' }
@@ -1662,6 +1680,7 @@ function Get-RelayAgentState {
                 state         = $state
                 detail        = (Get-RelayValue $status 'detail' '')
                 isStale       = $isStale
+                stopped       = $stopped
                 silentMinutes = $silent
                 control       = $control
                 attention     = $attention
@@ -1869,6 +1888,16 @@ function Get-RelayBoard {
         # for that long (0 expected minutes: not a task of the coordinator)
         $clock = [pscustomobject]@{ expectedMinutes = 0; isDelivered = $false; elapsedMinutes = 0; quietMinutes = 0; isOverdue = $false; alerts = 0 }
         if ($message.Type -ceq 'task' -and $message.From -ceq $Room.Coordinator) { $clock = Get-RelayTaskClock -Room $Room -Message $message -Messages $messages -Now $now -TaskLog $taskLog }
+        # A task that crossed its receiver's bye: the receiver's status still says so, and the task was
+        # sent after the time that status was written
+        $sentAfterBye = $false
+        if ($message.Type -ceq 'task') {
+            $targetStatus = Read-RelayKeyValue (Join-Path (Join-Path (Join-Path $Room.Path 'agents') ([string]$message.To)) 'status')
+            if ((Get-RelayValue $targetStatus 'state' '') -ceq 'offline' -and (Get-RelayValue $targetStatus 'detail' '') -ceq 'said bye') {
+                $byeAt = ConvertFrom-RelayUtc (Get-RelayValue $targetStatus 'since_utc' '')
+                if ($null -ne $byeAt -and $message.Time -ge $byeAt) { $sentAfterBye = $true }
+            }
+        }
         $openRows.Add([pscustomobject]@{
                 id              = $message.Id
                 from            = $message.From
@@ -1885,6 +1914,7 @@ function Get-RelayBoard {
                 quietMinutes    = $clock.quietMinutes
                 isOverdue       = $clock.isOverdue
                 alerts          = $clock.alerts
+                sentAfterBye    = $sentAfterBye
             })
     }
     $cards = New-Object System.Collections.Generic.List[object]

@@ -3664,6 +3664,17 @@ function Invoke-Send {
     if ($Verb -eq 'ask') { $type = 'question'; $expects = 'reply' }
     if ($Verb -eq 'task') { $type = 'task'; $expects = 'reply' }
     if ($Verb -eq 'propose') { $type = 'proposal'; $expects = "proceed $minutes" }
+    # A task can cross its receiver's bye (the bye and the task were sent at the same time): it is sent all
+    # the same and waits in the inbox, and the coordinator is told at once. The receiver's status says so.
+    $byeWarnings = New-Object System.Collections.Generic.List[string]
+    if ($Verb -eq 'task') {
+        foreach ($target in $targets) {
+            $targetStatus = Read-KeyValue (Join-Path (Get-AgentDir $target) 'status')
+            if ((Get-Value $targetStatus 'state' '') -ceq 'offline' -and (Get-Value $targetStatus 'detail' '') -ceq 'said bye') {
+                $byeWarnings.Add("WARNING: $target said bye at $(Get-Value $targetStatus 'since_utc' '?'); the task waits in its inbox until that session returns (start) or the seat is replaced")
+            }
+        }
+    }
     $sentIds = New-Object System.Collections.Generic.List[string]
     $notNoted = New-Object System.Collections.Generic.List[string]
     foreach ($target in $targets) {
@@ -3681,6 +3692,7 @@ function Invoke-Send {
         return 0
     }
     Say ("SENT $($sentIds -join ', ') ($type) to " + ((@($targets | ForEach-Object { Get-DisplayName $_ })) -join ', '))
+    foreach ($byeWarning in $byeWarnings) { Say $byeWarning }
     if ($Verb -eq 'task') {
         if ($script:TaskLog -and $notNoted.Count -eq 0) { Say "expected: $expected minutes. Your wait wakes you when the receiver has sent nothing for that long." }
         else { Say "expected: $expected minutes. This could not be noted on this PC, so no wait will say when the task is overdue: look at the board yourself when the time is up." }
