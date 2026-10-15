@@ -34,6 +34,13 @@
                    may change inside it), or as a hashtable @{ root = '<folder>'; may = @('<pattern>') }.
                    Writing the fields on the command line keeps backslashes and dollar signs as they are: a
                    JSON file written through another shell lost both.
+                   To change one list and keep every other field, give only these (with -Assign <name>,
+                   never together with the fields above or -AnswersFile): -AddMay <line>, -RemoveMay <line>,
+                   -AddRoots '<folder>=<pattern>' (a folder that is a root already gets the patterns added),
+                   -RemoveRoots <folder>, -AddProposeOk <line>, -AddAskFirst <line>, -RemoveNever <line>. A
+                   line to remove must match a line of the list exactly (case counts); one that is not there
+                   is refused, and nothing is written for any name. A line added twice is added once. The
+                   result is written the way a full -Assign writes it.
 
     -Clipboard     Puts the saved start prompt of one agent (its newest generation) on the clipboard. After
                    several -Replace calls in a row only the last prompt is on the clipboard; this puts a named
@@ -101,6 +108,14 @@ param(
     [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$ProposeOk,
     [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$AskFirst,
     [Parameter(ParameterSetName = 'Assign')][AllowEmptyCollection()][string[]]$Never,
+    # Incremental edits of one list: used alone, they keep every other field of the assignment
+    [Parameter(ParameterSetName = 'Assign')][string[]]$AddMay,
+    [Parameter(ParameterSetName = 'Assign')][string[]]$RemoveMay,
+    [Parameter(ParameterSetName = 'Assign')][object[]]$AddRoots,
+    [Parameter(ParameterSetName = 'Assign')][string[]]$RemoveRoots,
+    [Parameter(ParameterSetName = 'Assign')][string[]]$AddProposeOk,
+    [Parameter(ParameterSetName = 'Assign')][string[]]$AddAskFirst,
+    [Parameter(ParameterSetName = 'Assign')][string[]]$RemoveNever,
     [Parameter(Mandatory, ParameterSetName = 'Replace')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Replace,
     [Parameter(ParameterSetName = 'Replace')][string]$Kind = '',
     [Parameter(ParameterSetName = 'Replace')][Parameter(ParameterSetName = 'Retire')][ValidateRange(0, 60)][int]$WaitMinutes = 3,
@@ -182,6 +197,86 @@ function ConvertTo-AssignRoot {
     $folder = [string](Get-RelayProperty $Entry 'root' '')
     if (-not $folder.Trim()) { throw "A root needs a folder: give it as '<folder>', '<folder>=<pattern>,<pattern>', or @{ root = '<folder>'; may = @('<pattern>') }" }
     return [pscustomobject]@{ root = $folder.Trim(); may = @(@(Get-RelayProperty $Entry 'may' @()) | ForEach-Object { [string]$_ } | Where-Object { $_.Trim() }) }
+}
+
+function Get-AssignLine {
+    # The lines an incremental parameter names, each one as given: an empty line is refused
+    param([string[]]$Value, [string]$Parameter)
+    $lines = @(@($Value) | Where-Object { $null -ne $_ })
+    foreach ($line in $lines) { if (-not $line.Trim()) { throw "-$Parameter takes lines of text, not an empty one" } }
+    return $lines
+}
+
+function Add-AssignLine {
+    # The list with each new line at its end; a line that is there already (ordinal, case counts) is not added twice
+    param([object[]]$Current, [string[]]$Add)
+    $result = New-Object System.Collections.Generic.List[string]
+    foreach ($line in @($Current)) { if ($null -ne $line) { $result.Add([string]$line) } }
+    foreach ($line in @($Add)) {
+        $known = $false
+        foreach ($have in $result) { if ([string]::Equals($have, $line, [System.StringComparison]::Ordinal)) { $known = $true; break } }
+        if (-not $known) { $result.Add($line) }
+    }
+    return @($result.ToArray())
+}
+
+function Get-AssignLineWithout {
+    # The list without the lines named, each of which must be in it exactly (ordinal, case counts)
+    param([object[]]$Current, [string[]]$Remove, [string]$List, [string]$Parameter, [string]$Name)
+    $result = New-Object System.Collections.Generic.List[string]
+    foreach ($line in @($Current)) { if ($null -ne $line) { $result.Add([string]$line) } }
+    foreach ($line in @($Remove)) {
+        $at = -1
+        for ($index = 0; $index -lt $result.Count; $index++) {
+            if ([string]::Equals($result[$index], $line, [System.StringComparison]::Ordinal)) { $at = $index; break }
+        }
+        if ($at -lt 0) { throw "-${Parameter}: '$line' is not in the $List list of ${Name}. Its lines: $(if ($result.Count -gt 0) { ($result | ForEach-Object { "'$_'" }) -join ', ' } else { '(none)' })" }
+        $result.RemoveAt($at)
+    }
+    return @($result.ToArray())
+}
+
+function Find-AssignRoot {
+    # The place of a folder among the roots (a folder compares ordinally, case ignored: Windows paths), or -1
+    param([System.Collections.Generic.List[object]]$Roots, [string]$Folder)
+    $wanted = $Folder.Trim()
+    for ($index = 0; $index -lt $Roots.Count; $index++) {
+        $folder = [string]$Roots[$index].root
+        if ($folder.Equals($wanted, [System.StringComparison]::OrdinalIgnoreCase)) { return $index }
+    }
+    return -1
+}
+
+function Get-IncrementalAnswer {
+    # What the incremental parameters make of one seat's saved answers: only the lists they change, each as the whole
+    # new list, so that the same merge as a full -Assign writes them. -Lines holds the lines by parameter name.
+    param([Parameter(Mandatory)]$Spec, [Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][hashtable]$Lines, [object[]]$AddedRoots = @(), [string[]]$RemovedRoots = @())
+    $fields = [ordered]@{}
+    if ($Lines.ContainsKey('AddMay') -or $Lines.ContainsKey('RemoveMay')) {
+        $may = @($Spec['may'])
+        if ($Lines.ContainsKey('AddMay')) { $may = Add-AssignLine $may $Lines['AddMay'] }
+        if ($Lines.ContainsKey('RemoveMay')) { $may = Get-AssignLineWithout $may $Lines['RemoveMay'] 'may' 'RemoveMay' $Name }
+        $fields['may'] = $may
+    }
+    if ($Lines.ContainsKey('AddProposeOk')) { $fields['propose_ok'] = Add-AssignLine @($Spec['propose_ok']) $Lines['AddProposeOk'] }
+    if ($Lines.ContainsKey('AddAskFirst')) { $fields['ask_first'] = Add-AssignLine @($Spec['ask_first']) $Lines['AddAskFirst'] }
+    if ($Lines.ContainsKey('RemoveNever')) { $fields['never'] = Get-AssignLineWithout @($Spec['never']) $Lines['RemoveNever'] 'never' 'RemoveNever' $Name }
+    if (@($AddedRoots).Count -gt 0 -or @($RemovedRoots).Count -gt 0) {
+        $roots = New-Object System.Collections.Generic.List[object]
+        foreach ($entry in @($Spec['roots'])) { if ($null -ne $entry) { $roots.Add((ConvertTo-AssignRoot $entry)) } }
+        foreach ($added in @($AddedRoots)) {
+            $at = Find-AssignRoot $roots $added.root
+            if ($at -lt 0) { $roots.Add($added) }
+            else { $roots[$at] = [pscustomobject]@{ root = $roots[$at].root; may = @(Add-AssignLine @($roots[$at].may) @($added.may)) } }
+        }
+        foreach ($folder in @($RemovedRoots)) {
+            $at = Find-AssignRoot $roots $folder
+            if ($at -lt 0) { throw "-RemoveRoots: '$folder' is not a root of ${Name}. Its roots: $(if ($roots.Count -gt 0) { ($roots | ForEach-Object { "'$($_.root)'" }) -join ', ' } else { '(none)' })" }
+            $roots.RemoveAt($at)
+        }
+        $fields['roots'] = @($roots.ToArray())
+    }
+    return [pscustomobject]$fields
 }
 
 function Copy-Prompt {
@@ -391,17 +486,32 @@ switch ($PSCmdlet.ParameterSetName) {
             if ($card.Count -eq 0) { throw "The agent '$name' has not introduced itself yet: an assignment follows the introduction, it does not come before it" }
             $cards[$name] = $card
         }
+        $byParameter = [ordered]@{
+            Role = 'role'; Work = 'work'; Task = 'task'; DoneWhen = 'done_when'; MachineCare = 'machine_care'; MachineNotes = 'machine_notes'
+            Expertise = 'expertise'; Standards = 'standards'; DocTools = 'doc_tools'; NonGoals = 'non_goals'; Roots = 'roots'
+            May = 'may'; ProposeOk = 'propose_ok'; AskFirst = 'ask_first'; Never = 'never'
+        }
+        # The incremental parameters change one list and keep the rest: they work alone, never with a full field
+        $incrementalLines = @{}
+        foreach ($parameter in 'AddMay', 'RemoveMay', 'AddProposeOk', 'AddAskFirst', 'RemoveNever') {
+            if ($PSBoundParameters.ContainsKey($parameter)) { $incrementalLines[$parameter] = Get-AssignLine $PSBoundParameters[$parameter] $parameter }
+        }
+        $addedRoots = @()
+        if ($PSBoundParameters.ContainsKey('AddRoots')) { $addedRoots = @(@($AddRoots) | ForEach-Object { ConvertTo-AssignRoot $_ }) }
+        $removedRoots = @()
+        if ($PSBoundParameters.ContainsKey('RemoveRoots')) { $removedRoots = @(Get-AssignLine $RemoveRoots 'RemoveRoots') }
+        $incremental = @('AddMay', 'RemoveMay', 'AddRoots', 'RemoveRoots', 'AddProposeOk', 'AddAskFirst', 'RemoveNever' | Where-Object { $PSBoundParameters.ContainsKey($_) }).Count -gt 0
+        if ($incremental) {
+            $mixed = @($byParameter.Keys | Where-Object { $PSBoundParameters.ContainsKey($_) })
+            if ($AnswersFile) { $mixed += 'AnswersFile' }
+            if ($mixed.Count -gt 0) { throw "-AddMay, -RemoveMay, -AddRoots, -RemoveRoots, -AddProposeOk, -AddAskFirst and -RemoveNever change one list and keep every other field: they cannot be combined with the full fields or -AnswersFile (given: -$($mixed -join ', -')). Use one kind or the other." }
+        }
         # The assignment: the file's fields first, then every field given as a parameter over them
         $fields = [ordered]@{}
         if ($AnswersFile) {
             if (-not (Test-Path -LiteralPath $AnswersFile)) { throw "No answers file: $AnswersFile" }
             $fromFile = ConvertFrom-RelayJson (Read-RelayText $AnswersFile)
             if ($null -ne $fromFile) { foreach ($property in $fromFile.PSObject.Properties) { $fields[$property.Name] = $property.Value } }
-        }
-        $byParameter = [ordered]@{
-            Role = 'role'; Work = 'work'; Task = 'task'; DoneWhen = 'done_when'; MachineCare = 'machine_care'; MachineNotes = 'machine_notes'
-            Expertise = 'expertise'; Standards = 'standards'; DocTools = 'doc_tools'; NonGoals = 'non_goals'; Roots = 'roots'
-            May = 'may'; ProposeOk = 'propose_ok'; AskFirst = 'ask_first'; Never = 'never'
         }
         foreach ($parameter in $byParameter.Keys) {
             if (-not $PSBoundParameters.ContainsKey($parameter)) { continue }
@@ -410,12 +520,16 @@ switch ($PSCmdlet.ParameterSetName) {
             elseif ($value -is [array]) { $value = @(@($value) | ForEach-Object { [string]$_ }) }
             $fields[$byParameter[$parameter]] = $value
         }
-        if ($fields.Count -eq 0) { throw 'Give the assignment: its fields as parameters (-Role, -Work, -Task, -DoneWhen, -Roots, -Never, ...), or -AnswersFile with a JSON file' }
+        if ($fields.Count -eq 0 -and -not $incremental) { throw 'Give the assignment: its fields as parameters (-Role, -Work, -Task, -DoneWhen, -Roots, -Never, ...), or -AnswersFile with a JSON file' }
         $answers = [pscustomobject]$fields
         $prepared = New-Object System.Collections.Generic.List[object]
         foreach ($name in $names) {
             $card = $cards[$name]
-            $spec = Merge-RelaySeatSpec -Spec (Read-RelaySeatSpec $roomObject $name) -Answers $answers
+            $saved = Read-RelaySeatSpec $roomObject $name
+            # An incremental edit starts from this seat's own saved lists: every name may differ, and a line that is
+            # not there refuses the call before anything is written
+            if ($incremental) { $answers = Get-IncrementalAnswer -Spec $saved -Name $name -Lines $incrementalLines -AddedRoots $addedRoots -RemovedRoots $removedRoots }
+            $spec = Merge-RelaySeatSpec -Spec $saved -Answers $answers
             # An agent that came in through the join prompt: its machine is known from its introduction, which the agent
             # wrote; its control characters go before the name is kept anywhere
             if (([string]$spec['machine']).StartsWith('(', [System.StringComparison]::Ordinal)) { $spec['machine'] = ConvertTo-RelayHeaderText (Get-RelayValue $card 'computer' ([string]$spec['machine'])) }

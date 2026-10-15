@@ -1865,6 +1865,67 @@ Describe 'Open seats' -Tag 'Scripts' {
         @(Test-RelayTamper (Resolve-RelayRoom 'params')).Count | Should -Be 0
     }
 
+    It 'changes one list of an assignment with -Add and -Remove parameters and keeps every other field' {
+        $room = (New-RelayTestRoom -Root $root -RoomId 'incr' -Extra @{ open_seats = 1 }).Path
+        $name = @(Get-RelayTestOpenSeat $room)[0]
+        (Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'm', 'e')).ExitCode | Should -Be 0
+        $add = Join-Path $scripts 'Add-RelayAgent.ps1'
+        $null = & $add -Room 'incr' -Assign $name -Role tester -Work testing -Task 'Run the suite on the kit.' -DoneWhen 'A report is sent.' -Roots 'C:\work\kit=tests/*' -May 'Run the tests.' -Never 'Change a file under src.', 'Push anything.'
+        $file = Join-Path $room "agents\$name\ASSIGNMENT.md"
+
+        # One line added to "may": role, task, roots and never stay as they were
+        $text = (& $add -Room 'incr' -Assign $name -AddMay 'Read the logs of the run.') -join "`n"
+        $text | Should -Match "ASSIGNED ${name}: tester \(testing\)"
+        $assignment = Get-Content -LiteralPath $file -Raw
+        $assignment | Should -Match '- Run the tests\.\s+- Read the logs of the run\.'
+        $assignment | Should -Match '\*\*Role:\*\* tester'
+        $assignment | Should -Match 'Run the suite on the kit\.'
+        $assignment | Should -Match ([regex]::Escape('- `C:\work\kit`: you may change `tests/*`.'))
+        $assignment | Should -Match '- Change a file under src\.\s+- Push anything\.'
+        (Read-RelayKeyValue (Join-Path $room "agents\$name\seat"))['role'] | Should -Be 'tester'
+        # Adding the same line twice adds it once
+        $null = & $add -Room 'incr' -Assign $name -AddMay 'Read the logs of the run.'
+        @([regex]::Matches((Get-Content -LiteralPath $file -Raw), 'Read the logs of the run\.')).Count | Should -Be 1
+
+        # A line removed from "never" goes, the other stays; a line that is not there is refused and nothing changes
+        $null = & $add -Room 'incr' -Assign $name -RemoveNever 'Push anything.'
+        $assignment = Get-Content -LiteralPath $file -Raw
+        $assignment | Should -Not -Match 'Push anything\.'
+        $assignment | Should -Match '- Change a file under src\.'
+        { & $add -Room 'incr' -Assign $name -RemoveNever 'push anything.' } | Should -Throw '*is not in the never list*'
+        { & $add -Room 'incr' -Assign $name -RemoveNever 'Change a file under src.', 'Not a line.' } | Should -Throw '*is not in the never list*'
+        (Get-Content -LiteralPath $file -Raw) | Should -Match '- Change a file under src\.'
+
+        # A root with its pattern is added next to the first; a second call for the same folder adds patterns to it
+        $null = & $add -Room 'incr' -Assign $name -AddRoots 'C:\work\docs=*.md'
+        $assignment = Get-Content -LiteralPath $file -Raw
+        $assignment | Should -Match ([regex]::Escape('- `C:\work\kit`: you may change `tests/*`.'))
+        $assignment | Should -Match ([regex]::Escape('- `C:\work\docs`: you may change `*.md`.'))
+        $null = & $add -Room 'incr' -Assign $name -AddRoots 'C:\work\docs=*.txt'
+        (Get-Content -LiteralPath $file -Raw) | Should -Match ([regex]::Escape('- `C:\work\docs`: you may change `*.md`, `*.txt`.'))
+        $null = & $add -Room 'incr' -Assign $name -RemoveRoots 'C:\work\docs'
+        $assignment = Get-Content -LiteralPath $file -Raw
+        $assignment | Should -Not -Match ([regex]::Escape('C:\work\docs'))
+        { & $add -Room 'incr' -Assign $name -RemoveRoots 'C:\work\docs' } | Should -Throw '*is not a root*'
+
+        # The other lists
+        $null = & $add -Room 'incr' -Assign $name -AddProposeOk 'Install a module for this run.' -AddAskFirst 'Restart the machine.' -RemoveMay 'Run the tests.'
+        $assignment = Get-Content -LiteralPath $file -Raw
+        $assignment | Should -Match '- Install a module for this run\.'
+        $assignment | Should -Match '- Restart the machine\.'
+        $assignment | Should -Not -Match 'Run the tests\.'
+        $assignment | Should -Match '- Read the logs of the run\.'
+
+        # The same write as a full assignment: the room's copy matches this PC's canonical copy
+        @(Test-RelayTamper (Resolve-RelayRoom 'incr')).Count | Should -Be 0
+
+        # An incremental parameter does not mix with the full fields or a file
+        { & $add -Room 'incr' -Assign $name -AddMay 'Anything.' -Role builder } | Should -Throw '*cannot be combined*'
+        { & $add -Room 'incr' -Assign $name -RemoveNever 'Change a file under src.' -Never 'Push anything.' } | Should -Throw '*cannot be combined*'
+        { & $add -Room 'incr' -Assign $name -AddRoots 'C:\x=y' -AnswersFile (Join-Path $root 'none.json') } | Should -Throw '*cannot be combined*'
+        (Read-RelayKeyValue (Join-Path $room "agents\$name\seat"))['role'] | Should -Be 'tester'
+    }
+
     It 'keeps a room working whose ROOM, seats, saved answers and kinds still carry park_after: nothing reads the number' {
         $room = (New-RelayTestRoom -Root $root -RoomId 'older' -Extra @{ open_seats = 1 }).Path
         $object = Resolve-RelayRoom 'older'

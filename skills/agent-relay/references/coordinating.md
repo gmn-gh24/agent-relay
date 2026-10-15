@@ -209,7 +209,8 @@ five-minute task. One task per message. Long material goes into the room's `work
 
 When "done when" cannot be reached without a change that the assignment lists under "never", the task cannot
 carry the approval: the agent will ask its owner, every time, and it is right to. Re-assign first (`-Assign`
-with the wider `-May` or `-ProposeOk`, or a shorter `-Never`), then send. Your tool reads this PC's copy of
+with the wider `-May` or `-ProposeOk`, or a shorter `-Never`; or one line with `-AddMay`, `-AddProposeOk` or
+`-RemoveNever`, which keep every other field), then send. Your tool reads this PC's copy of
 the receiver's assignment before it sends a task (never the room's, which any agent can edit): when the
 task's words run into a line under "Never" or "Not part of this
 task" (two of that line's telling words in the task), it refuses with `NOT SENT`, names the line, and keeps
