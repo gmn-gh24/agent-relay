@@ -1441,6 +1441,23 @@ function Test-InScope {
     return $false
 }
 
+function Test-InOtherScope {
+    # True when a changed file lies inside another assigned root and that root's own patterns allow it. A bare root
+    # (the project folder) with a root below it that has the pattern * must not make the files of that inner root
+    # look like changes outside the assignment: they are judged where a pattern allows them. A folder that only
+    # starts with the name of the root (work-2 next to work) is not inside it.
+    param([string]$FullPath, [Parameter(Mandatory)]$Scope, [object[]]$Scopes)
+    $full = ($FullPath -replace '/', '\')
+    foreach ($other in @($Scopes)) {
+        if ([object]::ReferenceEquals($other, $Scope)) { continue }
+        $marker = (([string]$other.Root -replace '/', '\').TrimEnd('\')) + '\'
+        if (-not $full.StartsWith($marker, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        $relative = $full.Substring($marker.Length) -replace '\\', '/'
+        if (Test-InScope $relative @($other.May)) { return $true }
+    }
+    return $false
+}
+
 function Test-RoomBookkeeping {
     # True when a path lies in this room's own bookkeeping: under agents\, files\ or tools\ of the room folder, or
     # a file at its top. Found by the room folder's name, not by the whole path: the same share is reached by its
@@ -1590,7 +1607,7 @@ function Get-Audit {
                 if (Test-RoomBookkeeping ([System.IO.Path]::Combine($scope.Root, $path))) { $bookkeeping++; continue }
                 $listed++
                 $changed++
-                if (Test-InScope $path @($scope.May)) { $lines.Add("  ok       $entry") }
+                if ((Test-InScope $path @($scope.May)) -or (Test-InOtherScope ([System.IO.Path]::Combine($scope.Root, $path)) $scope $scopes)) { $lines.Add("  ok       $entry") }
                 else {
                     $outside++
                     $lines.Add("  OUTSIDE  $entry")
