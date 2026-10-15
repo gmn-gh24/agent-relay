@@ -1519,6 +1519,53 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $other.Output | Should -Match 'ERROR: arguments are single plain words \(letters, digits, dot, dash\): no text, no paths, no quotes'
     }
 
+    It 'join as a name takes that seat when it is free, and refuses a taken, retired or unknown name without taking a seat' {
+        $named = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'm', 'e', 'as', $openSeats[1])
+        $named.ExitCode | Should -Be 0 -Because $named.Output
+        Get-RelayTestJoinedName $named | Should -Be $openSeats[1]
+        $seatText = Get-Content -LiteralPath (Join-Path $room "agents\$($openSeats[1])\seat") -Raw
+        ($seatText -match '(?m)^display: (.+)$') | Should -BeTrue
+        $display = $Matches[1].Trim()
+        $named.Output | Should -Match ("=== you are " + $display + " \($($openSeats[1])\)")
+        Test-Path -LiteralPath (Join-Path $room "agents\$($openSeats[1])\claim") | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $room "agents\$($openSeats[0])\claim") | Should -BeFalse
+
+        $taken = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'new', 'claude-code', 'm', 'e', 'as', $openSeats[1])
+        $taken.ExitCode | Should -Be 1
+        $taken.Output | Should -Match ("Seat " + $openSeats[1] + " is not free; run join without a name for the next free seat")
+        Test-Path -LiteralPath (Join-Path $room "agents\$($openSeats[0])\claim") | Should -BeFalse
+
+        $unknown = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'new', 'codex', 'm', 'e', 'as', 'nosuchseat')
+        $unknown.ExitCode | Should -Be 1
+        $unknown.Output | Should -Match 'Seat nosuchseat is not free; run join without a name for the next free seat'
+        Test-Path -LiteralPath (Join-Path $room "agents\$($openSeats[0])\claim") | Should -BeFalse
+
+        [System.IO.File]::WriteAllText((Join-Path $room "agents\$($openSeats[2])\retired"), "retired`n")
+        $retired = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'new', 'codex', 'm', 'e', 'as', $openSeats[2])
+        $retired.ExitCode | Should -Be 1
+        $retired.Output | Should -Match ("Seat " + $openSeats[2] + " is not free; run join without a name for the next free seat")
+        Test-Path -LiteralPath (Join-Path $room "agents\$($openSeats[2])\claim") | Should -BeFalse
+
+        $withNew = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'new', 'codex', 'm', 'e', 'as', $openSeats[0])
+        $withNew.ExitCode | Should -Be 0 -Because $withNew.Output
+        Get-RelayTestJoinedName $withNew | Should -Be $openSeats[0]
+    }
+
+    It 'remember says its limits in the help and in the refusal, with the measured length' {
+        $help = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('help')
+        $help.ExitCode | Should -Be 0
+        $help.Output | Should -Match 'remember \[tag \.\.\.\].*15 to 500 characters.*up to 5 tags'
+
+        (Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('start', 'p', 'm', 'e')).ExitCode | Should -Be 0
+        Set-RelayTestDraft -Room $room -Agent 'emma' -Text ('x' * 600)
+        $refused = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('remember', 'build')
+        $refused.ExitCode | Should -Be 1
+        $refused.Output | Should -Match 'your entry is 600 characters; the limit is 500'
+        $refused.Output | Should -Match '15 to 500 characters'
+        $refused.Output | Should -Match 'up to 5 tags'
+        Test-Path -LiteralPath (Join-Path $room 'agents\emma\memory') | Should -BeFalse
+    }
+
     It 'keeps one draft file for every verb: the one in the folder of join, whatever folder a verb is run from' {
         $homeFolder = Join-Path $root ('home-' + (New-RelayTestId))
         $workFolder = Join-Path $root ('work-' + (New-RelayTestId))
