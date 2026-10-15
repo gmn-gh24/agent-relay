@@ -68,6 +68,12 @@ shell. The owner should never have to ask what is in the room.
 - A machine is in use unless the owner declared it disposable for this job. That an agent runs in a virtual
   machine, that the machine has "test" in its name, or that it was disposable last time, changes nothing.
 
+Not yet verified live (2026-10-14): a Windows child process inherits its parent's token, so an agent started
+from an elevated session is elevated too, with nothing special in the plugin; only the first elevated agent
+needs a UAC prompt. Trap: an elevated process does not see the mapped network drives of the normal session, so
+a room on a share must be opened by its UNC path from an elevated window. Warning: an elevated agent started
+with its product guard off can change the whole machine; give it only the tasks that need its rights.
+
 **Welcome.** When an introduction has arrived and matches what the owner expected, and the role is settled,
 send a welcome note at once (draft file, then `note <name>`; with the first task, `task <name> <minutes>`
 instead). It repeats what the join told the agent, so the join prompt can stay short. Subject
