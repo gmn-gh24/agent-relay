@@ -62,6 +62,7 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
         if ($agent.progress) { "             progress: $($agent.progress)  ($($agent.progressUtc))" }
         if (@($agent.parts).Count -gt 0) { "             parts: $(@($agent.parts) -join ', ')" }
         if ($agent.attention) { "             ATTENTION: $($agent.attention)" }
+        if ($agent.stopped) { "             $($agent.stopped)" }
     }
     # Who can do administrator work, so that such a task goes to an agent that needs nobody's hand for it
     $remote = @($board.agents | Where-Object { $_.isIntroduced -and -not $_.isCoordinator -and $_.state -ne 'retired' })
@@ -129,7 +130,7 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
     $others = @($board.open | Where-Object { $_.to -ne $board.coordinator })
     "OPEN WITH THE AGENTS ($($others.Count))"
     foreach ($request in $others) {
-        "  $($request.id)  $($request.type) to $($request.to), $($request.ageMinutes) min: $($request.subject)" + $(if ($request.mismatch) { $headerMark } else { '' })
+        "  $($request.id)  $($request.type) to $($request.to), $($request.ageMinutes) min: $($request.subject)" + $(if ($request.mismatch) { $headerMark } else { '' }) + $(if ($request.sentAfterBye) { '   [sent after bye]' } else { '' })
         # A task against the time it should take: OVERDUE when its receiver has sent nothing for that long
         if ($request.expectedMinutes -gt 0) {
             $delivered = "not delivered yet: the agent has not picked it up, sent $($request.elapsedMinutes) min ago"
