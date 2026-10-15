@@ -18,6 +18,25 @@ cards; a room that is treated as untrusted.
   inside one account. A feature request for distributed agent teams in Claude Code
   (<https://github.com/anthropics/claude-code/issues/79507>) would cover the Claude-only half if it ships.
 
+## Owner's priorities (2026-10-14)
+
+Set by the owner after the plugin-improvements room (eight agents of five products, twelve branches in two and a
+half hours). These three come before everything below; the items they point at keep their own sections.
+
+1. **The coordinator's turn count.** It is the real cost of a room: one wake per message, one turn per wake, and
+   a restart of `wait` at the end of every turn. Cheap wins first: a wait that batches (D9) and a help verb that
+   keeps the first output short (D1). The strong one: a Claude Code Stop hook that holds the turn while no wait
+   lease is alive (D3).
+2. **The launcher.** Starting an agent from inside a room, headless, with the product's guard and context flags
+   set (D2). It turns a thirty-second ritual per seat into one command and makes remote seats routine; the
+   per-product facts it needs are in `references/agent-kinds.md`.
+3. **Lessons into defaults.** Not a code item: the rules that this room proved go into the coordinator's
+   references so the next room avoids the friction without a line of code. Done on the same branch as this entry:
+   one test gate at a time per machine; long runs to a loop-waking agent in pieces, one suite or one edition per
+   command, output to a file; a local model takes a runner seat (one command per task, a literal report), never
+   a coder seat. Where: `references/coordinating.md` ("Owner standing rules seen in real rooms") and
+   `references/agent-kinds.md`.
+
 ## Next: room tool
 
 One release of `relay.ps1` (a room package version bump, tests on both PowerShell editions, a failing test first

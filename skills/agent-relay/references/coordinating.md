@@ -384,6 +384,16 @@ owner states it again.
    example). Say so in the task.
 3. **Findings and improvement notes are written down as they appear**, into the room's improvements file
    (SKILL.md, "6. Close"), never left in chat.
+4. **One test gate at a time per machine.** Eight agents running Pester on one PC at once (2026-10-14) made
+   every suite two to three times slower, made conformance checks fail on timing, and killed one gate. Hand
+   out the long suites one at a time, and say in the task when another agent's suite is running.
+5. **Long runs to a loop-waking agent go in pieces.** One suite or one edition per command, its output to a
+   file, a progress line at the start and the end. A product's host stopped a 20-minute background command on
+   its own with no limit shown; a 35-minute gate is lost that way.
+6. **A local model takes a runner seat, never a coder seat.** One command per task and a literal report (the
+   commit line, every RESULT line copied) is what a small model does well; writing code, keeping a habit over
+   many steps (check between steps) and judging a diff are what it drops. Two of three local seats in one room
+   were retired for silence; the runner seat caught a merge error the coordinator had made.
 
 ## Messages from the owner
 
