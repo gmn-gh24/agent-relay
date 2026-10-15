@@ -1567,6 +1567,11 @@ function Get-RelayAgentState {
         $canonDir = Join-Path (Join-Path $Room.Canon 'agents') $name
         $seat = Read-RelayKeyValue (Join-Path $canonDir 'seat')
         $card = Read-RelayKeyValue (Join-Path $dir 'card')
+        # What the owner stated for the seat (Add-RelayAgent.ps1 -Seat -SetModel/-SetEffort) is this PC's own
+        # record and wins over what the card, which the agent writes, says
+        $stated = Read-RelayKeyValue (Join-Path $canonDir 'stated')
+        $statedModel = Get-RelayValue $stated 'model' ''
+        $statedEffort = Get-RelayValue $stated 'effort' ''
         $status = Read-RelayKeyValue (Join-Path $dir 'status')
         $controlMap = Read-RelayKeyValue (Join-Path $canonDir 'control')
         $control = Get-RelayValue $controlMap 'state' 'run'
@@ -1659,9 +1664,11 @@ function Get-RelayAgentState {
                 os            = (Get-RelayValue $card 'os' '')
                 hostApp       = (Get-RelayValue $card 'host_app' '')
                 product       = (Get-RelayValue $card 'product' '')
-                model         = (Get-RelayValue $card 'model' '')
-                tier          = (Get-RelayModelTier (Get-RelayValue $card 'model' ''))
-                effort        = (Get-RelayValue $card 'effort' '')
+                model         = (Get-RelayValue $stated 'model' (Get-RelayValue $card 'model' ''))
+                modelOwner    = [bool]$statedModel
+                tier          = (Get-RelayModelTier (Get-RelayValue $stated 'model' (Get-RelayValue $card 'model' '')))
+                effort        = (Get-RelayValue $stated 'effort' (Get-RelayValue $card 'effort' ''))
+                effortOwner   = [bool]$statedEffort
             })
     }
     return @($agents.ToArray())
@@ -1678,6 +1685,63 @@ function Get-RelayRightsKind {
     if ($text -like '*can elevate*') { return 'can-elevate' }
     if ($text -like 'not elevated*') { return 'none' }
     return 'unknown'
+}
+
+function Test-RelayModelName {
+    # A model or an effort as one word: letters, digits and . _ + : / ( ) - only, up to 64 characters. It goes into
+    # a file on this PC and into the board, so nothing else is taken, whoever said it.
+    param([string]$Name)
+    return ([string]$Name) -cmatch '^[A-Za-z0-9][A-Za-z0-9._+:/()-]{0,63}$'
+}
+
+function Get-RelayKnownModelFile {
+    return (Join-Path (Get-RelayLocalRoot) 'models.json')
+}
+
+function Get-RelayKnownModel {
+    # The models this PC has seen in introductions and from the owner: name, product, the day first seen. A file
+    # that is not readable as that list is no list: the models seen again are written afresh.
+    $text = Read-RelayText (Get-RelayKnownModelFile)
+    if (-not $text.Trim()) { return @() }
+    try { $table = ConvertFrom-RelayJson $text } catch { return @() }
+    if ($null -eq $table -or $null -eq $table.PSObject.Properties['models']) { return @() }
+    return @(@($table.models) | Where-Object { $null -ne $_ -and $null -ne $_.PSObject.Properties['name'] -and (Test-RelayModelName ([string]$_.name)) } | ForEach-Object {
+            [pscustomobject]@{ name = [string]$_.name; product = [string](Get-RelayProperty $_ 'product' ''); date = [string](Get-RelayProperty $_ 'date' '') }
+        })
+}
+
+function Add-RelayKnownModel {
+    # Adds each model name that is not in the list yet (names compare ordinally, case ignored), with its product and
+    # today's date, once. 'unknown', an empty name and a name that is no model name are left out: the cards are
+    # room text. Nothing is written when nothing is new. The list holds 300 names at most.
+    param([AllowEmptyCollection()][object[]]$Entry = @())
+    $known = New-Object System.Collections.Generic.List[object]
+    foreach ($item in @(Get-RelayKnownModel)) { $known.Add($item) }
+    $changed = $false
+    foreach ($new in @($Entry)) {
+        $name = ([string]$new.name).Trim()
+        if (-not $name -or $name.Equals('unknown', [System.StringComparison]::OrdinalIgnoreCase) -or -not (Test-RelayModelName $name)) { continue }
+        $seen = $false
+        foreach ($have in $known) { if ($have.name.Equals($name, [System.StringComparison]::OrdinalIgnoreCase)) { $seen = $true; break } }
+        if ($seen -or $known.Count -ge 300) { continue }
+        $product = ([string]$new.product).Trim()
+        if ($product -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$') { $product = '' }
+        $known.Add([pscustomobject]@{ name = $name; product = $product; date = (Format-RelayUtc -Format 'yyyy-MM-dd') })
+        $changed = $true
+    }
+    if ($changed) { Write-RelayTextAtomic (Get-RelayKnownModelFile) ((ConvertTo-Json -InputObject ([ordered]@{ models = @($known.ToArray()) }) -Depth 4) + "`n") }
+}
+
+function Get-RelayModelLabel {
+    # What the board prints for an agent's model and effort. What the owner stated is marked, because it is not what
+    # the agent said: both stated "m/e (owner)", one of them "m (owner model)/e" or "m/e (owner effort)".
+    param([Parameter(Mandatory)]$Agent)
+    $model = [string]$Agent.model
+    $effort = [string]$Agent.effort
+    if ($Agent.modelOwner -and $Agent.effortOwner) { return "$model/$effort (owner)" }
+    if ($Agent.modelOwner) { return "$model (owner model)/$effort" }
+    if ($Agent.effortOwner) { return "$model/$effort (owner effort)" }
+    return "$model/$effort"
 }
 
 function Get-RelayModelTier {
@@ -1779,6 +1843,8 @@ function Get-RelayBoard {
         $plan | Add-Member -NotePropertyName differs -NotePropertyValue ([bool](Test-RelayPlanDifference $Room))
     }
     $agents = @(Get-RelayAgentState -Room $Room -Now $now -Open $open -Plan $plan -Messages $messages)
+    # Every introduction adds its model to the list of models this PC has seen (the choices offered to the owner)
+    Add-RelayKnownModel -Entry @($agents | Where-Object { $_.isIntroduced -and $_.model } | ForEach-Object { [pscustomobject]@{ name = $_.model; product = $_.product } })
 
     $openRows = New-Object System.Collections.Generic.List[object]
     $taskLog = Read-RelayTaskLog $Room

@@ -2021,6 +2021,62 @@ Describe 'Open seats' -Tag 'Scripts' {
         { & $add -Room 'incr' -Assign $name -RemoveNever 'Change a file under src.' -Never 'Push anything.' } | Should -Throw '*cannot be combined*'
         { & $add -Room 'incr' -Assign $name -AddRoots 'C:\x=y' -AnswersFile (Join-Path $root 'none.json') } | Should -Throw '*cannot be combined*'
         (Read-RelayKeyValue (Join-Path $room "agents\$name\seat"))['role'] | Should -Be 'tester'
+    It 'records the model and effort the owner stated for a seat, shows them as owner''s on the board, and keeps the models seen on this PC' {
+        $room = (New-RelayTestRoom -Root $root -RoomId 'stated' -Extra @{ open_seats = 2 }).Path
+        $open = @(Get-RelayTestOpenSeat $room)
+        $add = Join-Path $scripts 'Add-RelayAgent.ps1'
+        $board = Join-Path $scripts 'Get-RelayBoard.ps1'
+        $known = Join-Path (Get-RelayLocalRoot) 'models.json'
+        # A seat that has not introduced itself is refused, and nothing is written for it
+        { & $add -Room 'stated' -Seat $open[0] -SetModel 'gpt-6.1-mini' } | Should -Throw '*has not introduced itself yet*'
+        { & $add -Room 'stated' -Seat $open[0] } | Should -Throw '*-SetModel and -SetEffort*'
+
+        # An agent that cannot see its model and effort joins with unknown
+        (Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'unknown', 'unknown')).ExitCode | Should -Be 0
+        $null = & $add -Room 'stated' -Assign $open[0] -Role builder -Work development -Task 'Build it.' -DoneWhen 'It builds.'
+        $before = ((& $board -Room 'stated') -join "`n")
+        $before | Should -Match 'codex unknown/unknown \[unknown\]'
+        $before | Should -Not -Match '\(owner\)'
+        (& $add -Room 'stated' -Assign $open[0] -Role builder) -join "`n" | Should -Match 'FIT: development wants a strong model;.*did not give a model name'
+
+        # The owner's answer goes on the seat: the board, the tier and the FIT line use it, marked as the owner's
+        $set = (& $add -Room 'stated' -Seat $open[0] -SetModel 'gpt-6.1-mini' -SetEffort 'medium') -join "`n"
+        $set | Should -Match "SET $($open[0]): model gpt-6\.1-mini \(owner\), effort medium \(owner\)"
+        $set | Should -Match 'FIT: development wants a strong model;.*is light'
+        $after = ((& $board -Room 'stated') -join "`n")
+        $after | Should -Match 'codex gpt-6\.1-mini/medium \(owner\) \[light\]'
+        # It is kept in this PC's canonical copy, which the board reads: the room's card may say anything
+        $object = Resolve-RelayRoom 'stated'
+        (Read-RelayKeyValue (Join-Path $object.Canon "agents\$($open[0])\stated"))['model'] | Should -Be 'gpt-6.1-mini'
+        @(Test-RelayTamper $object).Count | Should -Be 0
+
+        # The agent starts again with values of its own: the owner's stay, until they are cleared
+        (Invoke-RelayTool -Room $room -Agent $open[0] -Engine $engine -Words @('start', 'codex', 'gpt-6.1', 'high')).ExitCode | Should -Be 0
+        ((& $board -Room 'stated') -join "`n") | Should -Match 'codex gpt-6\.1-mini/medium \(owner\) \[light\]'
+        $null = & $add -Room 'stated' -Seat $open[0] -SetModel ''
+        ((& $board -Room 'stated') -join "`n") | Should -Match 'codex gpt-6\.1/medium \(owner effort\) \[strong\]'
+        $null = & $add -Room 'stated' -Seat $open[0] -SetEffort ''
+        ((& $board -Room 'stated') -join "`n") | Should -Match 'codex gpt-6\.1/high \[strong\]'
+        ((& $board -Room 'stated') -join "`n") | Should -Not -Match '\(owner\)'
+
+        # Only one of the two may be given; a value that is no model name is refused
+        $null = & $add -Room 'stated' -Seat $open[0] -SetEffort 'high'
+        ((& $board -Room 'stated') -join "`n") | Should -Match 'codex gpt-6\.1/high \(owner effort\) \[strong\]'
+        { & $add -Room 'stated' -Seat $open[0] -SetModel "bad`nname" } | Should -Throw '*is not a model name*'
+
+        # The models this PC has seen: every name once, with its product and the day
+        $null = & $add -Room 'stated' -Seat $open[0] -SetModel 'gpt-6.1-mini'
+        $null = & $add -Room 'stated' -Seat $open[0] -SetModel 'gpt-6.1-mini'
+        $table = ConvertFrom-RelayJson (Read-RelayText $known)
+        @($table.models | Where-Object { $_.name -ceq 'gpt-6.1-mini' }).Count | Should -Be 1
+        @($table.models | Where-Object { $_.name -ceq 'gpt-6.1' }).Count | Should -Be 1
+        @($table.models | Where-Object { $_.name -ceq 'unknown' }).Count | Should -Be 0
+        $entry = @($table.models | Where-Object { $_.name -ceq 'gpt-6.1-mini' })[0]
+        $entry.product | Should -Be 'codex'
+        $entry.date | Should -Match '^\d{4}-\d{2}-\d{2}$'
+        $list = (& $add -ListModels) -join "`n"
+        $list | Should -Match 'gpt-6\.1-mini\s+codex\s+\d{4}-\d{2}-\d{2}'
+        $list | Should -Match 'gpt-6\.1\s+codex'
     }
 
     It 'keeps a room working whose ROOM, seats, saved answers and kinds still carry park_after: nothing reads the number' {

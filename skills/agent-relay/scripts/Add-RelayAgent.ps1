@@ -42,6 +42,15 @@
                    is refused, and nothing is written for any name. A line added twice is added once. The
                    result is written the way a full -Assign writes it.
 
+    -Seat          States what the owner said about one agent that cannot see its own model or effort (it joins with
+                   unknown): -Seat emma -SetModel gpt-6.1 -SetEffort medium, one or both. The values go into this
+                   PC's canonical copy of the seat, win over the agent's own card on the board (printed with "(owner)"),
+                   and are used by the tier lines and the FIT line. A later start of the agent does not replace them;
+                   -SetModel '' or -SetEffort '' hands the value back to what the agent says. A seat that has not
+                   introduced itself is refused.
+    -ListModels    Prints the models this PC has seen (every introduction and every -SetModel adds its model once, with
+                   its product and the day): the choices to offer the owner. Needs no -Room.
+
     -Clipboard     Puts the saved start prompt of one agent (its newest generation) on the clipboard. After
                    several -Replace calls in a row only the last prompt is on the clipboard; this puts a named
                    one there, and the owner pastes one prompt at a time.
@@ -89,7 +98,11 @@
 
 [CmdletBinding(DefaultParameterSetName = 'Add')]
 param(
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Room,
+    # The models list is about this PC, not a room: -ListModels needs no -Room
+    [Parameter(Mandatory, ParameterSetName = 'Add')][Parameter(Mandatory, ParameterSetName = 'Assign')][Parameter(Mandatory, ParameterSetName = 'Replace')]
+    [Parameter(Mandatory, ParameterSetName = 'Clipboard')][Parameter(Mandatory, ParameterSetName = 'Retire')][Parameter(Mandatory, ParameterSetName = 'Control')]
+    [Parameter(Mandatory, ParameterSetName = 'Line')][Parameter(Mandatory, ParameterSetName = 'Open')][Parameter(Mandatory, ParameterSetName = 'Prompt')]
+    [Parameter(Mandatory, ParameterSetName = 'Seat')][Parameter(ParameterSetName = 'Models')][ValidateNotNullOrEmpty()][string]$Room,
     [Parameter(Mandatory, ParameterSetName = 'Add')][Parameter(ParameterSetName = 'Assign')][ValidateNotNullOrEmpty()][string]$AnswersFile,
     # One or more names; a name list typed as one word (emma,jack) is split below
     [Parameter(Mandatory, ParameterSetName = 'Assign')][ValidateNotNullOrEmpty()][string[]]$Assign,
@@ -129,6 +142,11 @@ param(
     [Parameter(ParameterSetName = 'Control')][string]$Note = '',
     [Parameter(Mandatory, ParameterSetName = 'Line')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Line,
     [Parameter(Mandatory, ParameterSetName = 'Line')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$To,
+    [Parameter(Mandatory, ParameterSetName = 'Seat')][ValidatePattern('^[A-Za-z][A-Za-z0-9]{1,15}$')][string]$Seat,
+    # What the owner stated: a model or an effort as one word, or an empty one to hand the value back to the agent
+    [Parameter(ParameterSetName = 'Seat')][AllowEmptyString()][string]$SetModel,
+    [Parameter(ParameterSetName = 'Seat')][AllowEmptyString()][string]$SetEffort,
+    [Parameter(Mandatory, ParameterSetName = 'Models')][switch]$ListModels,
     [Parameter(Mandatory, ParameterSetName = 'Open')][ValidateRange(1, 200)][int]$OpenSeats,
     [Parameter(Mandatory, ParameterSetName = 'Prompt')][switch]$JoinPrompt,
     [switch]$NoClipboard
@@ -137,6 +155,20 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'RelayCommon.psm1') -Force
+
+if ($PSCmdlet.ParameterSetName -eq 'Models') {
+    # The models this PC has seen: the choices to offer the owner for an agent that joined with unknown
+    $models = @(Get-RelayKnownModel | Sort-Object { $_.name.ToLowerInvariant() })
+    if ($models.Count -eq 0) {
+        'No model has been recorded on this PC yet: every introduction and every -Seat <name> -SetModel adds one.'
+    }
+    else {
+        "MODELS seen on this PC ($($models.Count)), in $(Get-RelayKnownModelFile)"
+        foreach ($model in $models) { ConvertTo-RelayPrintedLine ('  {0,-30} {1,-16} {2}' -f $model.name, $model.product, $model.date) }
+        'NEXT: offer these to the owner, with the effort levels, unknown and other, then record the answer: -Room <id> -Seat <name> -SetModel <model> -SetEffort <effort>.'
+    }
+    return
+}
 
 $roomObject = Resolve-RelayRoom $Room
 if ($roomObject.IsClosed) { throw "The room $($roomObject.Id) is closed" }
@@ -549,6 +581,44 @@ switch ($PSCmdlet.ParameterSetName) {
         $assigned = $names -join ', '
         $firstName = $names[0]
         "NEXT: send $assigned the task now (write your draft, then run your command with: task $firstName). The tool shows each of them the new assignment together with that message."
+    }
+    'Seat' {
+        $name = $Seat.ToLowerInvariant()
+        if (-not $PSBoundParameters.ContainsKey('SetModel') -and -not $PSBoundParameters.ContainsKey('SetEffort')) { throw 'Give -SetModel and -SetEffort (one or both): the model and the effort the owner stated for this seat (an empty value hands it back to what the agent says)' }
+        Assert-Agent $name
+        if ($name -eq $roomObject.Coordinator) { throw 'The coordinator states its own model and effort in its start' }
+        if (Test-Path -LiteralPath (Join-Path (Join-Path (Join-Path $roomObject.Canon 'agents') $name) 'retired')) { throw "The agent '$name' is retired" }
+        $card = Read-RelayKeyValue (Join-Path (Join-Path (Join-Path $roomObject.Path 'agents') $name) 'card')
+        if ($card.Count -eq 0) { throw "The agent '$name' has not introduced itself yet: what the owner states belongs to an introduction, it does not come before it" }
+        # Words typed with blanks become one word, as the join command does for the agent
+        $given = [ordered]@{}
+        foreach ($pair in @(@('SetModel', 'model'), @('SetEffort', 'effort'))) {
+            if (-not $PSBoundParameters.ContainsKey($pair[0])) { continue }
+            $value = ([string]$PSBoundParameters[$pair[0]]).Trim() -replace ' +', '-'
+            if ($value -and -not (Test-RelayModelName $value)) { throw "'$value' is not a $($pair[1]) name: letters, digits and . _ + : / ( ) - only, up to 64 characters, in one line" }
+            $given[$pair[1]] = $value
+        }
+        # The record of this PC: canonical copy first, the room second; the board reads the first
+        $stated = Read-RelayKeyValue (Join-Path (Join-Path (Join-Path $roomObject.Canon 'agents') $name) 'stated')
+        $kept = [ordered]@{}
+        foreach ($key in 'model', 'effort') {
+            if ($given.Contains($key)) { if ($given[$key]) { $kept[$key] = $given[$key] } }
+            elseif ((Get-RelayValue $stated $key '')) { $kept[$key] = Get-RelayValue $stated $key '' }
+        }
+        $kept['stated_utc'] = Format-RelayUtc
+        Write-RelayGuardedText $roomObject "agents/$name/stated" (ConvertTo-RelayKeyValueText $kept)
+        if ($kept.Contains('model')) { Add-RelayKnownModel -Entry @([pscustomobject]@{ name = [string]$kept['model']; product = (Get-RelayValue $card 'product' '') }) }
+        $board = @((Get-RelayBoard (Resolve-RelayRoom $roomObject.Id)).agents | Where-Object { $_.name -eq $name })
+        $parts = @()
+        if ($board.Count -gt 0) {
+            $parts += "model $($board[0].model) " + $(if ($board[0].modelOwner) { '(owner)' } else { '(its own)' })
+            $parts += "effort $($board[0].effort) " + $(if ($board[0].effortOwner) { '(owner)' } else { '(its own)' })
+        }
+        ConvertTo-RelayPrintedLine "SET ${name}: $($parts -join ', ')"
+        $spec = Read-RelaySeatSpec $roomObject $name
+        $fit = Get-RelayFitNote -Room (Resolve-RelayRoom $roomObject.Id) -Name $name -Work ([string]$spec['work'])
+        if ($fit) { ConvertTo-RelayPrintedLine $fit }
+        'NEXT: the board and the FIT lines use these values now, and a later start of the agent does not replace them. -SetModel '''' or -SetEffort '''' hands one back to what the agent says.'
     }
     'Clipboard' {
         $name = $Clipboard.ToLowerInvariant()

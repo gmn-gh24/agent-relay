@@ -53,7 +53,7 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
         $mark = ''
         if ($agent.isCoordinator) { $mark = '*' }
         $where = 'not introduced'
-        if ($agent.isIntroduced) { $where = "$($agent.product) $($agent.model)/$($agent.effort) [$($agent.tier)] | $($agent.elevation) | $($agent.shell) | $($agent.computer) $($agent.ipv4)" }
+        if ($agent.isIntroduced) { $where = "$($agent.product) $(Get-RelayModelLabel $agent) [$($agent.tier)] | $($agent.elevation) | $($agent.shell) | $($agent.computer) $($agent.ipv4)" }
         $care = ''
         if ($agent.machineCare -eq 'disposable') { $care = ' [disposable for this job]' }
         '  {0,-9}{1,-1} {2,-12} gen {3,-2} {4,-22} {5}{6}' -f $agent.display, $mark, $agent.state, $agent.gen, $agent.role, $where, $care
