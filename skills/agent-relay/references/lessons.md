@@ -913,3 +913,14 @@ five products; twelve branches were accepted in two and a half hours, eighteen m
   board in time.
 - Changed by this room: the three standing rules in `coordinating.md`, the owner's priorities at the head
   of `ROADMAP.md`, and an un-retire item on the roadmap for the seat that cannot be brought back.
+- **Promoted from the room's memory, with the owner's approval.** Never edit code while a gate runs:
+  Pester discovers the assertions before it runs them while the scripts import the module again on every
+  call, so an edit in the middle mixes old assertions with new code on both engines; freeze the files
+  until the gate ends, or rerun the affected suite fresh. A test must not start a real `wait` to prove a
+  live lease: the wait outlives the test and hangs the ones after it; a fake lease file under the agent's
+  generation folder proves the same. Windows PowerShell 5.1 has no `String.Contains` overload with a
+  `StringComparison`: use `IndexOf` with `Ordinal`, as the conventions already say for every parsed text.
+- **The static gate did not parse the test files.** A merge that lost a closing brace between two tests
+  passed `-StaticOnly` and failed only when Windows PowerShell 5.1 loaded the file; the local runner seat
+  reported the parser's words and the fix took a minute. Not changed yet: a parse pass over every `.ps1`
+  and `.psm1` on both engines belongs in the static step (the room's improvements file lists it).
