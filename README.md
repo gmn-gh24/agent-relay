@@ -8,7 +8,7 @@
 approve or deny what goes beyond an assignment, and keep a record of all of it.</p>
 
 <p>
-<a href="CHANGELOG.md"><img alt="Version 0.10.0" src="https://img.shields.io/badge/version-0.10.0-blue"></a>
+<a href="CHANGELOG.md"><img alt="Version 0.11.0" src="https://img.shields.io/badge/version-0.11.0-blue"></a>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 <a href="https://github.com/gmn-gh24/agent-relay/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/gmn-gh24/agent-relay/actions/workflows/ci.yml/badge.svg"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-orange">
@@ -124,6 +124,13 @@ says what to do, so an agent with little context still knows its next step. Mess
 command line: it is written into a draft file, and the verbs take single plain words.
 
 The full protocol is in [`skills/agent-relay/references/protocol.md`](skills/agent-relay/references/protocol.md).
+
+**When a room pays for itself.** A room is worth its overhead when the work comes as a batch of
+independent, well-specified changes behind a slow test gate, when it should run on another machine
+unattended, or when you want other vendors' models working on your own terms: then several agents work in
+parallel, each change is tested and reviewed on its own, and the record is already written. For a single
+change, for exploration where the next step depends on what the last one shows, or for a small local model
+as the coder, it does not pay: one session, working directly, is faster and cheaper.
 
 ---
 

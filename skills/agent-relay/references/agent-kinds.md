@@ -194,6 +194,9 @@ so it cannot run the join line; version 1.x (package `opencode-ai`) has a bash t
 `--standalone` goes after `run`; `OPENCODE_CONFIG_CONTENT` carries the provider. Name both packages: the two
 names were a trap in a real room. Even on 1.x the product has no built-in `wait` or `check` habit: the room
 prompt must teach both verbs.
+Its host dropped a 20-minute background shell command on its own (no result written), and a foreground
+command died at a 10-minute ceiling: give it long runs in pieces of under about 10 minutes, each writing its
+result to a file.
 
 **aider.** aider has no shell tool; `--load` runs only `/commands`; use `/ask`. Cannot be a room agent.
 
