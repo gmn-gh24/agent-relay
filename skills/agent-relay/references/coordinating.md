@@ -46,6 +46,13 @@ shell. The owner should never have to ask what is in the room.
   (UAC prompt)` (an administrator account that is not elevated: administrator work needs the owner to answer a
   prompt on that machine), and `not elevated, no administrator rights` (elevating takes another account's
   credentials).
+
+Not yet verified live 2026-10-14: a Windows child process inherits its parent's token, so an
+agent started from an elevated session is elevated too, with nothing special in the plugin;
+only the first elevated agent needs a UAC prompt. Trap: an elevated process does not see
+the mapped network drives of the normal session, so a room on a share must be opened by its
+UNC path from an elevated window. Warning: an elevated agent started with its product guard
+off can change the whole machine; give it only the tasks that need its rights.
 - **Hand work to an agent that can do it alone.** Before a task goes out, match what it needs (administrator
   rights, a shell, a machine, a product) against the introductions. When the owner asks for "an elevated
   agent" and the board says `elevated: NOBODY`, stop there: tell the owner that no agent in the room is
