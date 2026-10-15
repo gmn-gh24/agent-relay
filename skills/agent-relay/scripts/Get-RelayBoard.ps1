@@ -83,7 +83,7 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
         '          plain command runs go to the lightest, running tests to a standard one, writing or reviewing code and tests to the strongest'
     }
     $free = @($board.agents | Where-Object { $_.isFree })
-    if ($free.Count -gt 0) { "  free seats ($($free.Count)): " + ((@($free | ForEach-Object { $_.display })) -join ', ') + '   (any agent given PROMPT-JOIN.txt takes the next one)' }
+    if ($free.Count -gt 0) { "  free seats: $($free.Count)   (any agent given PROMPT-JOIN.txt takes the next one)" }
     elseif (@($board.agents | Where-Object { $_.isOpen }).Count -gt 0) { '  free seats (0): add some with Add-RelayAgent.ps1 -OpenSeats <n> before another agent joins' }
     if ($board.turnedAway) { "  ATTENTION: an agent tried to join and found no free seat ($($board.turnedAway))" }
     # The team plan (Set-RelayPlan.ps1 writes it): who builds which part, and which parts wait for another

@@ -290,10 +290,10 @@ Describe 'The exit steps of -Retire and -Replace' -Tag 'Integrity' {
     }
 
     It 'applies the same steps to a replaced session, and names the prompt to paste' {
-        { & $addScript -Room $id -Replace emma -NoClipboard -WaitMinutes 0 } | Should -Throw '*emma is alive and has not said bye*'
+        { & $addScript -Room $id -Replace emma -WaitMinutes 0 } | Should -Throw '*emma is alive and has not said bye*'
         Get-RelayCanonicalGeneration (Resolve-RelayRoom $id) 'emma' | Should -Be 1
         [System.IO.File]::SetLastWriteTimeUtc((Join-Path $room 'agents\emma\alive'), [DateTime]::UtcNow.AddMinutes(-30))
-        $output = @(& $addScript -Room $id -Replace emma -NoClipboard) -join "`n"
+        $output = @(& $addScript -Room $id -Replace emma) -join "`n"
         $output | Should -Match 'REPLACED emma: generation 2'
         $output | Should -Match 'exit of the old session: lost'
         $output | Should -Match 'NEXT: paste the start prompt for emma into the new session \(-Clipboard emma puts it on the clipboard\)'

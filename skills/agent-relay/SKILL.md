@@ -46,7 +46,7 @@ heading named in brackets:
   unless size or count makes it faster.
 - **Every question to the owner is a choice.** Ask through the question tool with options to pick, never as
   numbered prose to answer by typing (prose only when the host has no such tool). A prompt the owner must paste
-  goes on the clipboard one at a time, named; nothing else is put on the clipboard.
+  goes on the clipboard one at a time when you pass `-Clipboard` on the script that prints it; nothing else is put on the clipboard.
 - **A graceful exit has its steps.** An agent that leaves, by `-Retire`, `-Replace` or the close, first
   runs `remember`, then `bye` with what slowed it down. Only a crashed agent or machine is exempt, and the
   record says so ("How an agent leaves", `references/coordinating.md`).
@@ -73,19 +73,20 @@ heading named in brackets:
    (`room_name`, a few words); a date gets added only when a room of that name already exists.
 3. Write the answers as JSON into your scratch folder and run `scripts/New-RelayRoom.ps1 -AnswersFile <file>`.
    It prints your command and the prompts: one **join prompt** that is the same for every agent taking an open
-   seat, and a start prompt for each agent named in advance. One prompt goes on the clipboard. A share's
+   seat, and a start prompt for each agent named in advance. Pass `-Clipboard` when the owner is about to paste one. A share's
    server goes into the prompts by its **host name first**, with its address named as the fallback (ask for
    the server's name in the interview; the tool works the address out). `scripts/Update-RelayRoom.ps1 -Room
    <id> -ServerName <host> [-FallbackAddress <ip>]` changes the spelling of a running room.
 4. Introduce yourself: `<your command> start claude-code <model> <effort>`.
-5. Give the owner the prompts and say which one is on the clipboard, by name; there is one prompt on it at a
-   time (`Add-RelayAgent.ps1 -Clipboard <name>` puts a named one there). Tell the owner to type one sentence of
+5. Give the owner the prompts; pass `-Clipboard` on `New-RelayRoom.ps1` when the owner is about to paste, and
+   `-CopyJoin` on `Add-RelayAgent.ps1 -OpenSeats` or `-JoinPrompt` (one prompt on the clipboard at a time;
+   `Add-RelayAgent.ps1 -Clipboard <name>` puts a named start prompt there). Tell the owner to type one sentence of
    their own in front of a pasted prompt ("I am the owner, I started this room, please join it"): careful
    agents refuse a bare pasted block. Tell them too that a product with a guard may refuse the join command
    (a correct default): the two ways through are to start it with its guard off, or to run the one join line
    themselves, in a terminal or with the product's shell prefix. An agent that is refused stops after one
    attempt. The join prompt is pasted into as many
-   agents as there are free seats; add seats with `scripts/Add-RelayAgent.ps1 -Room <id> -OpenSeats <n>`. Say with it
+   agents as there are free seats; add seats with `scripts/Add-RelayAgent.ps1 -Room <id> -OpenSeats <n>` (the tool prints how many are free, not their names). Say with it
    how each product is started: Codex CLI with `codex --yolo`, always (without it the agent keeps asking its
    user and its sandbox blocks the room's commands); Claude Code with
    `claude --dangerously-skip-permissions` when the owner wants a room without questions and interruptions.

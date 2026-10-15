@@ -8,7 +8,7 @@
     Creates <rooms_root>\<room id>\ with the protocol reference, the tools, one folder per agent (the coordinator
     included) holding its instructions and wrappers, and the standing-rules file. Everything only this PC may
     write is also kept as a canonical copy under .local\rooms\<room id>\canon, which the feed compares against.
-    The start prompt of every agent is saved as PROMPT-<name>.txt in the room; the first one goes to the clipboard.
+    The start prompt of every agent is saved as PROMPT-<name>.txt in the room; pass -Clipboard to put one on the clipboard.
 
     The answers file is JSON; references\startup-interview.md describes every field. Minimal example:
 
@@ -80,8 +80,8 @@
 .PARAMETER NoTabTitles
     The agents' tools do not name their terminal tabs ("tab_titles": no).
 
-.PARAMETER NoClipboard
-    Do not put the first start prompt on the clipboard (the tests use this).
+.PARAMETER Clipboard
+    Put the join prompt (when the room has open seats) or the first agent's start prompt on the clipboard.
 
 .PARAMETER PassThru
     Return an object (room id, path, names, prompts) instead of the text summary.
@@ -109,7 +109,7 @@ param(
     [string]$ReachPath,
     [ValidateRange(1, 1440)][int]$TaskMinutes,
     [switch]$NoTabTitles,
-    [switch]$NoClipboard,
+    [switch]$Clipboard,
     [switch]$PassThru
 )
 
@@ -335,15 +335,15 @@ finally {
 
 # On the clipboard: the join prompt when the room has open seats, otherwise the first agent's start prompt
 $copyText = $joinPrompt
-$copyLabel = 'the join prompt (the same for every agent that joins)'
+$copyLabel = 'the join prompt'
 if (-not $copyText) {
     $firstName = @($prompts.Keys)[0]
     $copyText = [string]$prompts[$firstName]
     $copyLabel = "the start prompt for $firstName"
 }
 $isCopied = $false
-if (-not $NoClipboard) {
-    try { Set-Clipboard -Value $copyText.TrimEnd(); $isCopied = $true } catch { $isCopied = $false }
+if ($Clipboard) {
+    try { Set-RelayClipboard -Text $copyText.TrimEnd(); $isCopied = $true } catch { $isCopied = $false }
 }
 # The coordinator runs its launcher on this PC, not a wrapper in the room
 $coordinatorCall = Get-RelayCallLine -RoomPath $roomPath -Name $coordinatorName -Generation '1' -Shell 'powershell' -Launcher $room.Local
@@ -373,4 +373,5 @@ foreach ($name in $prompts.Keys) { "start prompt for ${name}: " + (Join-Path $ro
 Get-RelayCoordinatorNote -Kind @($seats | ForEach-Object { [string]$_.kind })
 if ($joinPrompt) { "join prompt, for any agent ($openSeats free seat(s)): " + (Join-Path $roomPath 'PROMPT-JOIN.txt') }
 if ($isCopied) { "on the clipboard: $copyLabel" }
+else { 'not on the clipboard' }
 "NEXT: run your own start ($coordinatorCall start <product> <model> <effort>), hand the prompts to the agents' sessions, then wait. Give no work to an agent before its introduction has arrived."

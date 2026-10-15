@@ -2989,6 +2989,19 @@ function Resolve-RelayDraftPath {
     return $full
 }
 
+function Set-RelayClipboard {
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Low')]
+    param([Parameter(Mandatory)][string]$Text)
+    if (-not $PSCmdlet.ShouldProcess('the clipboard', 'put the prompt on the clipboard')) { return }
+    if ($env:RELAY_TEST_CLIPBOARD_LOG) {
+        $folder = Split-Path -Parent $env:RELAY_TEST_CLIPBOARD_LOG
+        if ($folder -and -not (Test-Path -LiteralPath $folder)) { $null = New-Item -ItemType Directory -Path $folder -Force }
+        [System.IO.File]::AppendAllText($env:RELAY_TEST_CLIPBOARD_LOG, $Text)
+        return
+    }
+    Set-Clipboard -Value $Text
+}
+
 #endregion
 
 Export-ModuleMember -Function *-Relay*

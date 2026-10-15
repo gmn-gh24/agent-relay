@@ -153,7 +153,7 @@ function Write-Feed {
                 Write-Line ('  {0,-9} {1,-12} {2,-20} {3}{4}' -f $agent.display, $agent.state, $agent.role, $where, $attention)
             }
             $free = @($Item.agents | Where-Object { $_.isFree })
-            if ($free.Count -gt 0) { Write-Line "  free seats ($($free.Count)): $((@($free | ForEach-Object { $_.display })) -join ', ')" }
+            if ($free.Count -gt 0) { Write-Line "  free seats: $($free.Count)" }
             if ($null -ne $Item.plan) { Write-PlanText $Item.plan }
             Write-Line ''
             foreach ($row in @($Item.messages)) { Write-MessageText $row 2 }
