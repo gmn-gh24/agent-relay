@@ -60,6 +60,13 @@ hand): a product that shows every such code as a failed command had its agents s
 quiet wait, several of them in one room. Only `check` keeps 3 for "nothing new", so a script can test it. The
 prompts still tell an agent to go by the text ("nothing arrived") and the `NEXT:` line, never by the number.
 
+Before you seat an agent, give it enough context window: Copilot CLI at least 32,768 (16,384 compacts right
+after the first prompt), Claude Code at least 65,536, Codex CLI enough for about 30,000 tokens of its own
+start-up context (it keeps answering past the limit). Start-up context seen in rooms: Claude Code about 25,200
+tokens untrimmed, about 5,700 with `--disable-slash-commands --strict-mcp-config --tools Bash,Read,Write,Edit`,
+about 1,100 with `--bare` (needs an API key); Copilot CLI about 11,700; Codex CLI about 30,000. Keep an
+agent's first room output under about 2,000 tokens.
+
 ## Starting an agent without its own guard
 
 Each product has a guard of its own: it asks its user before a command, or runs commands in a sandbox. In a
@@ -81,15 +88,6 @@ blocks the room's commands. The owner starts the agents, so say this when you ha
 - **It changes nothing else.** A machine is still in use unless the owner declared it disposable for this
   job, and the assignment's limits hold whatever the agent was started with.
 
-## Elevation
-
-Not yet verified live 2026-10-14: a Windows child process inherits its parent's token, so an agent
-started from an elevated session is elevated too, with nothing special in the plugin; only the first
-elevated agent needs a UAC prompt. Trap: an elevated process does not see the mapped network drives
-of the normal session, so a room on a share must be opened by its UNC path from an elevated window.
-Warning: an elevated agent started with its product guard off can change the whole machine; give it
-only the tasks that need its rights.
-
 ## Notes per product
 
 **Claude Code.** Started as it is, it asks its user before commands it has no permission for, on its own
@@ -107,15 +105,13 @@ tab), or start it with the environment variable `CLAUDE_CODE_DISABLE_TERMINAL_TI
 Its command tool shows every exit code but 0 as an error: `robocopy` returns 1 for "files were copied", and
 an agent that copies a kit with it reports a failed copy, or copies again, until it reads the code. A task
 that has it copy files says so (`robocopy` codes below 8 are success), or has it copy with `Copy-Item`.
-Seen 2026-10-14, a relay window loads the user's plugins and hooks (a memory plugin wrote files into the temp
-folder and made a model call at exit): start relay windows with plugins and hooks off where the client allows
-it. Start-up context is about 25,200 tokens untrimmed; `--disable-slash-commands --strict-mcp-config
---tools Bash,Read,Write,Edit` brings it to about 5,700; `--bare` brings it to about 1,100 and needs an API
-key. It reserves about 33,000 before compacting, so a 65,536 window is the minimum. Effort is not in an
-environment variable: `~/.claude/settings.json` has `modelSettings.<model>.effortLevel` and a top-level
-`effortLevel`, and a `--effort` launch flag overrides both and cannot be read from inside. A session started
-with a custom Anthropic API key (instead of claude.ai sign-in) has no claude.ai connectors for that session;
-expected behaviour, worth knowing before a launcher sets one.
+A relay window loads the user's plugins and hooks (a memory plugin wrote files into the temp folder and made a
+model call at exit): start relay windows with plugins and hooks off where the client allows it. It reserves
+about 33,000 tokens before compacting (window minimum above). Effort is not in an environment variable:
+`~/.claude/settings.json` has `modelSettings.<model>.effortLevel` and a top-level `effortLevel`, and a
+`--effort` launch flag overrides both and cannot be read from inside. A session started with a custom
+Anthropic API key (instead of claude.ai sign-in) has no claude.ai connectors for that session; expected
+behaviour, worth knowing before a launcher sets one.
 
 **Claude Code, headless (`claude -p`).** No background wake: the wait runs in the foreground under the
 command time limit. It needs its shell and file tools allowed and the room folder added (`--allowedTools`,
@@ -156,9 +152,9 @@ folder in the room, not next to the draft: the instructions name the folder in f
 an `attach` folder in its working folder, which was the root of a share other jobs use.
 When the owner says "codex luna medium", that is the three words of an introduction: product, model, effort.
 It is never the name of an agent: names come from the room's pool.
-Seen 2026-10-14, Codex CLI cannot be a room agent on an Ollama-served model (web search breaks the Responses
-stream; no shell tool without model metadata; tool items rejected). Against its normal provider it works. It
-needs `wire_api = "responses"` for a local provider.
+Codex CLI cannot be a room agent on an Ollama-served model (web search breaks the Responses stream; no shell
+tool without model metadata; tool items rejected). Against its normal provider it works. It needs
+`wire_api = "responses"` for a local provider.
 
 Codex models have names that do not say Codex (OpenAI's Codex models page, read 2026-10-11; check it again
 when a name here is not what an agent reports, and add a new family word to `scripts/model-tiers.json`):
@@ -179,47 +175,36 @@ Effort goes from low (shown as Light) over medium, high and xhigh (Extra High) t
 model or plan has every step: Luna has no ultra, and some plans leave out Extra High. The owner sets it with
 `/model` in the session or `model_reasoning_effort` in Codex's configuration.
 
-**Copilot CLI.**
-Seen 2026-10-14, an unattended Copilot stops at "Confirm folder trust" when the work folder is not in
+**Copilot CLI.** An unattended Copilot stops at "Confirm folder trust" when the work folder is not in
 `trustedFolders` of its `config.json`, then at an "Allow path access" question for the room folder; `--allow-all`
 does not remove the first. A saved `providers.json` makes it ignore `COPILOT_PROVIDER_*` variables and ask for a
-GitHub sign-in. Working recipe: a private `COPILOT_HOME` copy without `providers.json`, the work folder added to
-`trustedFolders`, and `--add-dir <room folder>`. Copilot cannot remember approval of a UNC path ("UNC/network
+GitHub sign-in. Working recipe: a private `COPILOT_HOME` copy without `providers.json`, the work folder added
+to `trustedFolders`, and `--add-dir <room folder>`. Copilot cannot remember approval of a UNC path ("UNC/network
 paths cannot be approved"): every room command on a share is a new permission event that only the allow-all
-flag answers without a human. A 16,384-token window compacts right after the first prompt: give a room agent at
-least 32,768. Start-up context seen 2026-10-14 is about 11,700 tokens for one word prompt.
+flag answers without a human. A `wait` run as a background shell command is stopped after about 20 minutes;
+the agent must start `wait` again. Window and start-up sizes are in Model and effort above.
 
-**OpenCode.**
-Seen 2026-10-14, version 2.x (package `@opencode/cli`) gives the model only a JavaScript execute tool and no
-shell, so it cannot run the join line; version 1.x (package `opencode-ai`) has a bash tool and can be a room
-agent. `--standalone` goes after `run`; `OPENCODE_CONFIG_CONTENT` carries the provider. Name both packages: the
-two names were a trap in a real room.
+**OpenCode.** Version 2.x (package `@opencode/cli`) gives the model only a JavaScript execute tool and no shell,
+so it cannot run the join line; version 1.x (package `opencode-ai`) has a bash tool and can be a room agent.
+`--standalone` goes after `run`; `OPENCODE_CONFIG_CONTENT` carries the provider. Name both packages: the two
+names were a trap in a real room. Even on 1.x the product has no built-in `wait` or `check` habit: the room
+prompt must teach both verbs.
 
-**aider.**
-Seen 2026-10-14, aider has no shell tool; `--load` runs only `/commands`; use `/ask`. Cannot be a room agent.
+**aider.** aider has no shell tool; `--load` runs only `/commands`; use `/ask`. Cannot be a room agent.
 
-**DeepSeek Harness (dsh).**
-Seen 2026-10-14, joins through `dsh headless --patch <overlay>` with `DSH_PERMISSION_MODE=danger-full-access`
-and a work folder on the local disk (its sandbox refuses shares and a Dev Drive). A plain `dsh headless` defaults
-to a cloud provider and must never be run for a local-model room.
+**DeepSeek Harness (dsh).** Joins through `dsh headless --patch <overlay>` with
+`DSH_PERMISSION_MODE=danger-full-access` and a work folder on the local disk (its sandbox refuses shares and a
+Dev Drive). A plain `dsh headless` defaults to a cloud provider and must never be run for a local-model room.
 
 **Everything else.** Starts on the generic profile. Watch the first waits: if the agent's commands are cut
-off before a minute, lower `wait_minutes` for its seat (answers field) or switch it to `manual`.
+off before a minute, lower `wait_minutes` for its seat (answers field) or switch it to `manual`. For a local
+loop agent whose commands finish in seconds, retire or hold other seats before you lower `wait_minutes` to one
+or two minutes for the room.
 
-**All products.**
-Seen 2026-10-14, stopping an agent window by force skips its launcher's cleanup (temporary settings folders
+**All products.** Stopping an agent window by force skips its launcher's cleanup (temporary settings folders
 stay): retire the seat first so the agent exits by itself, then close the window. Never ask an agent for a
 screenshot of another machine (a screen-capture attempt raised a Microsoft Defender alert and produced a blank
-image); read the window text instead. State a minimum window per product: Copilot 32k, Claude Code 64k,
-Codex about 30k of its own start-up context. Start-up context seen 2026-10-14: Claude Code about 25,200 tokens
-untrimmed, about 5,700 with `--disable-slash-commands --strict-mcp-config --tools Bash,Read,Write,Edit`,
-about 1,100 with `--bare` (needs API key); Copilot CLI about 11,700; Codex CLI about 30,000 (it keeps answering
-past its limit). Rule of thumb: an agent's first room output should stay under about 2,000 tokens. Not yet
-verified live 2026-10-14: a Windows child process inherits its parent's token, so an agent started from an
-elevated session is elevated too, with nothing special in the plugin; only the first elevated agent needs a
-UAC prompt. Trap: an elevated process does not see the mapped network drives of the normal session, so a room
-on a share must be opened by its UNC path from an elevated window. Warning: an elevated agent started with its
-product guard off can change the whole machine; give it only the tasks that need its rights.
+image); read the window text instead.
 
 ## When an agent has trouble
 

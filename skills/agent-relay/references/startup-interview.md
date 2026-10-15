@@ -158,7 +158,9 @@ that it is brilliant adds nothing; telling it which standard to read and which c
 ```
 
 `roots[].may` lists the patterns the agent may change inside that folder (`src/*`, `tests/*.ps1`); an empty
-list makes the folder read-only. The self-audit marks every change outside these patterns.
+list makes the folder read-only. The self-audit marks every change outside these patterns. The folder where an
+agent runs `join` or `start` (its draft and wrapper) is not one of those roots unless you list it: that is
+normal, not a conflict with the assignment.
 
 ## After the room exists
 
