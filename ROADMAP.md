@@ -35,7 +35,8 @@ half hours). These three come before everything below; the items they point at k
    one test gate at a time per machine; long runs to a loop-waking agent in pieces, one suite or one edition per
    command, output to a file; a local model takes a runner seat (one command per task, a literal report), never
    a coder seat. Where: `references/coordinating.md` ("Owner standing rules seen in real rooms") and
-   `references/agent-kinds.md`.
+   `references/agent-kinds.md`. The code half of the first rule, test suites on separate machines and never in
+   parallel on one, is D11.
 
 ## Next: room tool
 
@@ -285,6 +286,21 @@ on a seat) are not listed: they ship, or are in the CHANGELOG.
   characters. A name an agent made up can appear as a choice offered to the owner.
 - **Direction.** Decide whether only names the owner stated are offered, or the card names with a mark.
 - **Open.** What the owner needs more: a short list of real models, or all the names that were seen.
+
+### D11. Test suites on separate machines, never in parallel on one (owner, 2026-10-15)
+
+- **What happened.** Eight agents ran Pester suites on one PC at once: every suite two to three times slower,
+  child processes timing out (`-999`), conformance checks failing on timing, one gate killed, and the
+  coordinator's own suite stopped to free the machine. The same suites passed one after another.
+- **Direction.** Two parts. The coordinator advises the owner, at the startup interview and when a job has a
+  test gate, to put test runs on separate machines (one runner seat per machine, the kit staged there) and
+  says so in every task that runs a suite. The tooling prevents parallel runs on one machine: the gate
+  (`tests/Invoke-AllTests.ps1`, `Invoke-Suite.ps1`) refuses or waits when another Pester run of this repository
+  is alive on the machine, and the runner seat's task text carries the rule. Standing rule 4 in
+  `coordinating.md` is the text half; this item is the code half.
+- **Open.** Refuse or queue (wait for the other run to end, with a progress line); how a run is detected (a
+  lock file in the repository's temp folder, or the process list); whether the room tool's `wait` should
+  print the warning to a runner agent before it starts a command.
 
 ## Next: supply chain
 
