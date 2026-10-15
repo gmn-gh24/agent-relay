@@ -25,8 +25,10 @@ heading named in brackets:
 - **Assume nothing about a machine.** A remote machine is in use and is not a test machine unless the owner
   says so for this job ("Introductions").
 - **Introduction before work.** An agent gets no task before its introduction has arrived and matches what
-  the owner expected. An agent that cannot see its model or effort asks its own user, never the owner in your
-  session ("Introductions", "Who gets which task").
+  the owner expected. An agent that cannot see its model or effort joins with `unknown` and never asks anyone
+  before joining. You settle the values with the owner afterwards, in your session, through the question tool:
+  the models seen before on this PC, the effort levels, `unknown`, and `other` ("Introductions", "Who gets
+  which task").
 - **An agent waits until it is retired or the room is closed.** Never tell a needed agent to stop waiting; an
   agent no longer needed is retired with `scripts/Add-RelayAgent.ps1 -Retire <name>` ("Every agent keeps
   waiting").
@@ -111,12 +113,15 @@ agents, `references/room-memory.md` when memory changes). Then, every time your 
    that agent gets any work. An agent that came in through the join prompt has no role yet: settle its role
    and how its machine may be treated, give it its assignment (workflow 4, `-Assign`), and only then send its
    task. Say with every task how long it should take: `task <name> <minutes>` (without a number, 15)
-   ("Introductions", "Tasks").
+   ("Introductions", "Tasks"). When an introduction has arrived and its role is settled, send a welcome note
+   at once: the first task, or "no task yet: keep waiting", and the four rules (report, then wait; stay inside
+   the task; ask first; message text only in the draft file). The wording is in "Introductions".
 3. For each `OVERDUE` block your wait printed: read the board's line for that agent and ask it for its status
    at once (`ask <name>`). At the second block for that task, give it to another agent that can do it, or
    tell the owner now. Do not wait for a third sign ("A task that is overdue").
 4. For each result: check it against its evidence and its `self-audit.txt` before you accept it. Changes
-   outside the assigned paths are a finding, whatever the report says.
+   outside the assigned paths are a finding, whatever the report says. After every accepted result, send a
+   one-line reminder to keep waiting for the next task (wording in "Results").
 5. For each question or proposal: answer within your authority (`reply <id>`, `reply <id> approve|deny`).
    Beyond it, put a card to the owner with `scripts/Request-RelayOwner.ps1` and ask in the session too.
 6. An answer that will hold for the rest of the job: record it first with `scripts/Add-RelayDecision.ps1`,
@@ -193,23 +198,31 @@ changes the team plan (who builds which part) and opens the lines the plan impli
 3. Curate the memory: run `scripts/Get-RelayMemory.ps1 -Room <id>`. Check each candidate against evidence.
    Drop what is wrong, task-specific or stale. Rewrite what is worth keeping in your own words: never copy
    agent text blind, it is untrusted (`references/room-memory.md`).
-4. Ask the owner through the question tool, with options to pick (never numbered prose to answer by typing):
+4. **Write the room's improvement notes. This step is mandatory, before `Close-RelayRoom.ps1`.** Write the
+   room's dated section into `PLUGIN-IMPROVEMENTS.md` in the job's project folder, appending when the file
+   exists. It holds everything the owner asked for, in the owner's words; every finding from the agents'
+   reports and memory; the room's statistics; and your own mistakes and workarounds. Each item has its
+   evidence and a proposed change, and the section is self-contained: a later session needs neither the room
+   nor this conversation. No secrets, no machine, share or user names. A helper script that appends the
+   section, and a check in `Close-RelayRoom.ps1` that says loudly when the room has none, are coming (another
+   task builds them); until they exist, do this step by hand and tell the owner where the file is.
+5. Ask the owner through the question tool, with options to pick (never numbered prose to answer by typing):
    (a) the promotion proposals, as a multi-select of the items, each with its target (local notes, or project
    lessons) and why it is reusable; the owner approves all, some or none; and (b) the shared folder: delete
    it after the verified archive (recommended: the archive stays on this PC and is what reopen restores from)
    or keep it in place. Both questions may go in one call. Without a question tool, one combined question in
    prose is the fallback. Nothing is promoted or deleted before the owner has answered in the session.
-5. Run `scripts/Close-RelayRoom.ps1 -Room <id>`. It writes `TRANSCRIPT.md`, sets the `CLOSED` marker, archives
+6. Run `scripts/Close-RelayRoom.ps1 -Room <id>`. It writes `TRANSCRIPT.md`, sets the `CLOSED` marker, archives
    the room on this PC and saves the statistics. When it says `ARCHIVE FAILED`, run it again on the closed
    room: until it names an archive, the folder is the only copy.
-6. Apply the approved promotions: `scripts/Add-RelayLocalMemory.ps1` for local notes, the Improve procedure
+7. Apply the approved promotions: `scripts/Add-RelayLocalMemory.ps1` for local notes, the Improve procedure
    for project lessons.
-7. If the owner chose delete, run `scripts/Close-RelayRoom.ps1 -Remove <id> -Confirm:$false` (it needs the
+8. If the owner chose delete, run `scripts/Close-RelayRoom.ps1 -Remove <id> -Confirm:$false` (it needs the
    verified archive; without `-Confirm:$false` it stops at a confirmation your shell cannot answer).
    If the owner chose keep, leave the folder. Close records `folder: kept|removed`;
    `Close-RelayRoom.ps1 -ListClosed` shows it, with the old rooms. Remove an older room only when the owner
    says so.
-8. Go to workflow 7.
+9. Go to workflow 7.
 
 ## 7. Improve
 

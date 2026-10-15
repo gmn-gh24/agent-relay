@@ -854,3 +854,25 @@ changes the same room caused in the tools and the skill follow in the next secti
   the blocked-command rule remains in `PROTOCOL.md`, with its after-join summary belonging in `START-HERE.md`.
   An unknown model or effort no longer delays joining: the agent writes `unknown`, and the coordinator
   settles it with the owner after the agent is in.
+
+## 2026-10-14: the Ollama room, by the numbers (115 messages in 281 minutes)
+
+A research room of several agents on several machines; its statistics and its owner-requested notes gave
+these numbers and the changes they led to:
+
+- **32 requests, 3 never answered; median reply 3 minutes, slowest 56.** The slowest was an agent with no wait
+  running: nothing could reach it, and the status request to it took 31 minutes. Changed: the exit
+  code of a second `wait` is 0 and the instructions enforce keep-waiting (an agent waits until it is retired
+  or the room is closed); the coordinator sends a welcome after a join and a reminder after every accepted
+  result, so an agent never ends a turn without a wait (`coordinating.md`, "Introductions", "Results").
+- **11 reports flagged changes outside the assigned paths, all false.** Every one was the reviewer's own work
+  folder, which lay inside an allowed root. Not changed: a self-audit cannot tell such a folder from a real
+  change; the coordinator reads each flagged line against the roots it assigned (`coordinating.md`,
+  "Results").
+- **One idle agent polled the room 49 times, and one started a second wait four or
+  five times.** Each poll cost a turn on a local model, and its host showed the second wait's exit code as a
+  failure. Changed: the second wait exits 0, and the START-HERE and the join prompt were shortened so the
+  rules that stop polling fit in a small context window.
+- **No tamper alarm fired, no question was asked twice and nothing was delivered twice.** Nothing to change.
+- **One useful leaving remark: a product has two package names on the registry,** and the task notes named
+  only one. Changed: `agent-kinds.md` records such naming traps per product.
