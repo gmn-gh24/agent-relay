@@ -700,6 +700,83 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
     }
 
     Context 'Waiting' {
+        It 'delivery output: a closed buffered stdout leaves the message for the next check' {
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Keep this notification`n`nIts output must not disappear."
+            $id = 'olivia-emma-0001'
+            $tool = Join-Path $room 'tools\relay.ps1'
+            $backup = Join-Path $room 'tools\relay-buffered-inner.ps1'
+            [System.IO.File]::Copy($tool, $backup)
+            # A real child whose stdout buffers writes successfully but cannot flush to its closed stream.
+            # Main used to record delivery before that failure could be observed: no bytes reach the caller.
+            $wrapper = @'
+$before = [Console]::Out
+$stream = [System.IO.File]::Open((Join-Path $PSScriptRoot 'closed-output'), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+$writer = New-Object System.IO.StreamWriter($stream, (New-Object System.Text.UTF8Encoding($false)), 1048576)
+$stream.Dispose()
+[Console]::SetOut($writer)
+$code = 1
+try { & (Join-Path $PSScriptRoot 'relay-buffered-inner.ps1') @args; $code = $LASTEXITCODE }
+finally { [Console]::SetOut($before) }
+exit $code
+'@
+            [System.IO.File]::WriteAllText($tool, $wrapper, (New-Object System.Text.UTF8Encoding($false)))
+            try { $lost = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '1') }
+            finally { [System.IO.File]::Copy($backup, $tool, $true) }
+            $lost.Output | Should -Not -Match 'Keep this notification'
+            [System.IO.File]::ReadAllText((Join-Path $room 'tools\closed-output')) | Should -Be ''
+            $delivered = Join-Path $room 'agents\emma\delivered'
+            $receipt = ''
+            if (Test-Path -LiteralPath $delivered) { $receipt = [System.IO.File]::ReadAllText($delivered) }
+            $receipt | Should -Not -Match $id
+            [System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\journal')) | Should -Not -Match " delivered $id"
+            Test-Path -LiteralPath (Join-Path $room 'agents\emma\inbox\olivia-0001.md') | Should -BeTrue
+            $recovered = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+            $recovered.ExitCode | Should -Be 0
+            $recovered.Output | Should -Match 'subject: Keep this notification'
+        }
+
+        It 'delivery output: a normal wait prints and records once' {
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Visible notification`n`nShown once."
+            $first = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '1')
+            $first.ExitCode | Should -Be 0
+            $first.Output | Should -Match 'subject: Visible notification'
+            [System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\delivered')) | Should -Match '(?m)^olivia-emma-0001 '
+            $next = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+            $next.ExitCode | Should -Be 3
+            $next.Output | Should -Not -Match 'Visible notification|delivered but not shown'
+        }
+
+        It 'delivery output: check recovers a recorded delivery with no shown stamp' {
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Recover the notification`n`nThe earlier print was lost."
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Already visible`n`nThis one must not repeat."
+            [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\delivered'), "olivia-emma-0001 2026-10-10T08:00:00Z`nolivia-emma-0002 2026-10-10T08:00:00Z`n")
+            [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\shown'), "olivia-emma-0002 2026-10-10T08:00:00Z`n")
+            [System.IO.File]::AppendAllText((Join-Path $room 'agents\emma\journal'), "2026-10-10T08:00:00Z delivered olivia-emma-0001`n")
+            $recovered = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+            $recovered.ExitCode | Should -Be 0
+            $recovered.Output | Should -Match '(?m)^delivered but not shown: olivia-emma-0001$'
+            $recovered.Output | Should -Match 'subject: Recover the notification'
+            $recovered.Output | Should -Not -Match 'Already visible'
+            Test-Path -LiteralPath (Join-Path $room 'agents\emma\inbox\olivia-0001.md') | Should -BeTrue
+            (Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')).ExitCode | Should -Be 3
+        }
+
+        It 'delivery output: an upgrade seeds an absent shown file without replaying history' {
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Legacy notification`n`nAlready delivered by an earlier tool."
+            [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\delivered'), "olivia-emma-0001 2026-10-10T08:00:00Z`njack-emma-0009 2026-10-10T08:00:00Z unreadable`n")
+            $shown = Join-Path $room 'agents\emma\shown'
+            Test-Path -LiteralPath $shown | Should -BeFalse
+            $first = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+            $first.ExitCode | Should -Be 3
+            $first.Output | Should -Not -Match 'Legacy notification|delivered but not shown'
+            $stamps = [System.IO.File]::ReadAllText($shown)
+            $stamps | Should -Match '(?m)^olivia-emma-0001 '
+            $stamps | Should -Match '(?m)^jack-emma-0009 '
+            (Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')).ExitCode | Should -Be 3
+            $journal = [System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\journal'))
+            @([regex]::Matches($journal, '(?m)^\S+ shown seeded from 2 delivered records$')).Count | Should -Be 1
+        }
+
         It 'wakes when a message arrives' {
             $waiting = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')
             # A busy machine starts a PowerShell in more than three seconds: the status is looked at until it says so

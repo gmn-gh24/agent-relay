@@ -106,6 +106,7 @@ headers are for reading only: who is alive is judged from file times on the room
 
 A request stays open until a `result` or `answer` names it in `re`. `show open` lists what you owe. Nothing is
 lost when a session dies between reading a message and acting on it.
+On the first read in an older room, a missing `shown` file is seeded from `delivered`; later shown/delivered acknowledgements follow successful print and flush, while messages remain in the inbox.
 
 A `task` may carry one more header line, `expected_minutes: 15`: how long the coordinator expects it to take.
 The tool prints it with the task (`expected: 15 minutes`). If you are not done by then, send a `note` that says
@@ -166,6 +167,7 @@ sent is overdue. Only one `wait` runs per agent: a second one waits up to
 35 seconds for the first to end and then listens in its place; it exits with code 4 only when the first one is
 still alive after that, and says which process it is. A wait that is stopped before anything arrived (Ctrl+C, or
 its host stops it) says so and tells you to run `wait` again.
+`check` prints `delivered but not shown: <ids>` and reprints recorded deliveries with no shown stamp, so an interrupted print can be recovered.
 
 ## Wake modes
 
