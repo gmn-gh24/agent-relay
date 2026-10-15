@@ -225,10 +225,11 @@ with the wider `-May` or `-ProposeOk`, or a shorter `-Never`; or one line with `
 `-RemoveNever`, which keep every other field), then send. Your tool reads this PC's copy of
 the receiver's assignment before it sends a task (never the room's, which any agent can edit): when the
 task's words run into a line under "Never" or "Not part of this
-task" (two of that line's telling words in the task), it refuses with `NOT SENT`, names the line, and keeps
-your draft. Re-assign and send again; when the line does not apply, send it as it is with `task <name> anyway`.
-It is a word match, not a judgment: it misses what is said in other words and it flags a task that only
-mentions the subject, so read the line it names before you decide. Better, foresee it at assignment time: a test job on a
+task" (requested actions in the task's active sentences), it refuses with `NOT SENT`, names the line, prints
+the task sentence that matched, and keeps your draft. Re-assign and send again; when the line does not apply,
+send it as it is with `task <name> anyway`. Negated clauses (`do not push`, `no install`) are ignored; noun
+mentions alone do not count unless the line is nouns only and two appear in one sentence. Read the matched
+sentence before you decide. Better, foresee it at assignment time: a test job on a
 disposable machine will need uninstalls, registry writes and files outside the work folder before it ends.
 When the change is one the assignment lists under "ask first", decide it
 before you send: approve that one change in the task itself, or record it as a standing rule first. And when a report's self-audit shows a change outside the assigned paths that you
