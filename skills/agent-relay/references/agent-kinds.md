@@ -11,9 +11,9 @@ or `claude`, otherwise `generic`.
 
 | Kind | Waits | Status |
 |---|---|---|
-| `claude-code` | `background`: no limit, wakes on exit | live rooms on Windows (2026-10-10) |
-| `claude-code-headless` | `loop`, 9 min; needs 10 min limit | rehearsal room on Windows (2026-10-10) |
-| `codex` | `loop`, 15 min; draft `relay-draft-<name>.md`; requires `codex --yolo` | live room on Windows (2026-10-12) |
+| `claude-code` | `background`: `wait` runs as a background command with no limit; its exit wakes the session; asks its user before commands unless started with `--dangerously-skip-permissions` | worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10) |
+| `claude-code-headless` | `loop`, 9 minutes; needs a command time limit of 10 minutes | worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10) |
+| `codex` | `loop`, 15 minutes; draft is `relay-draft-<name>.md` in the folder it ran `join` or `start` from; **must be started with `codex --yolo`** | worked live rooms on Windows as remote agents, five in one room on one machine (2026-10-12); stopped waiting after a timed-out wait while that exited 3 (its shell showed 1), fixed by exit 0 and the prompt; a verb run from another folder looked for the draft there, fixed by one full path for every verb |
 | `gemini` | `loop`, 1 minute | untested: generic profile |
 | `cursor` | `loop`, 1 minute | untested: generic profile |
 | `copilot` | `loop`, 1 minute | untested: generic profile |
@@ -76,7 +76,7 @@ blocks the room's commands. The owner starts the agents, so say this when you ha
 | Product | Start it with | When |
 |---|---|---|
 | Codex CLI | `codex --yolo` (headless: `codex exec --yolo`) | always: without it the agent cannot work in a room |
-| Claude Code | `claude --dangerously-skip-permissions` | owner wants no questions; without it, owner answers prompts |
+| Claude Code | `claude --dangerously-skip-permissions` | when the owner wants a room without questions and interruptions; without it the room works, and the owner answers the prompts on that machine |
 
 - **The risk, in one line, when the job is risky.** These flags switch the product's own guard off: the agent
   runs every command without asking, with the rights of its account. For a job that installs, removes,
@@ -134,7 +134,8 @@ and does nothing, which is the right thing for it to do. On Windows it runs comm
 agents may share that folder. That folder is the one it ran `join` or `start` from: its tool prints the full
 path, and every verb uses that one file whatever folder it is run from.
 A long command returns control to the model after some seconds and has to be polled; the prompt tells it to
-keep waiting on the same command and not to start a second wait (a second wait exits with code 4). It
+keep waiting on the same command and not to start a second wait (a second wait exits 0 with "A wait is already
+listening for <name>; nothing to do."). It
 showed exit code 1 for a wait that timed out while that exited 3, and its agents took it for a failure (see
 above; a timed-out wait exits 0 since package 3.3.0). Its `wait_minutes` is 15, from a measurement
 (2026-10-12, codex-cli 0.162.1, Windows, started with `codex --yolo`): foreground commands of 240, 480 and
@@ -181,8 +182,10 @@ does not remove the first. A saved `providers.json` makes it ignore `COPILOT_PRO
 GitHub sign-in. Working recipe: a private `COPILOT_HOME` copy without `providers.json`, the work folder added
 to `trustedFolders`, and `--add-dir <room folder>`. Copilot cannot remember approval of a UNC path ("UNC/network
 paths cannot be approved"): every room command on a share is a new permission event that only the allow-all
-flag answers without a human. A `wait` run as a background shell command is stopped after about 20 minutes;
-the agent must start `wait` again. Window and start-up sizes are in Model and effort above.
+flag answers without a human. The host stopped a 20-minute background shell command on its own ("shellId: N was
+already stopped via stop_powershell"); no limit was shown. Give a Copilot agent long runs in pieces (one suite or
+one edition per command, output to a file, a progress line at start and end), under about 15 minutes each. Window
+and start-up sizes are in Model and effort above.
 
 **OpenCode.** Version 2.x (package `@opencode/cli`) gives the model only a JavaScript execute tool and no shell,
 so it cannot run the join line; version 1.x (package `opencode-ai`) has a bash tool and can be a room agent.
@@ -210,13 +213,13 @@ image); read the window text instead.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| "this tool does not know who you are" | tool called directly, not via wrapper | use command from `start` |
+| "this tool does not know who you are" | the tool was called directly, not through the wrapper | use the command printed by `start` |
 | "you have not introduced yourself" | a verb before `start` | run `start` |
-| wait exits with code 4 after ~30s | second wait while first alive | keep first, do not start another |
-| the agent types message text after the verb | habit | tool allows single words only; see draft location |
-| `join`/`start` rejects three words | invalid char (slash, bracket) | error names word; multi-word names -> dashes |
-| agent says draft missing | wrote to wrong folder | path from `start` is draft; error names it |
-| wait killed by time limit | `wait_minutes` too long | shorter wait or `manual` |
-| agent cannot write draft | file tool confined to workspace | draft in working folder (`draft` in kind) |
-| agent asks user/cmd blocked | product guard | restart with `codex --yolo`/`claude --dangerously-skip-permissions` |
-| "room not reachable" | sandbox/rights/path issue | see `transports.md` |
+| `wait` prints "A wait is already listening for <name>; nothing to do." and exits 0 | a second wait while the first is alive | keep the first one; do not start another |
+| the agent types message text after the verb | habit | the tool refuses anything but single words and says where the draft goes |
+| `join` or `start` refuses the agent's three words | a character that is no letter, digit, dot or dash (a slash, a bracket) | the error names the word and prints the command with an example; a name of several words needs no change, its blanks become dashes |
+| the agent says its draft is missing although it wrote one | it wrote the draft into another folder than the one the tool printed | the path printed by `start` is the draft, for every verb; the error names it in full |
+| the agent's wait is killed by its own time limit | `wait_minutes` too long for that product | shorter wait, or `manual` |
+| the agent cannot write its draft | its file tool is confined to its workspace | a draft in its working folder (`draft` in the kind or the answers) |
+| the agent keeps asking its user, or a command is blocked | the product's own guard: approvals or a sandbox | the owner starts it again: `codex --yolo`, `claude --dangerously-skip-permissions` |
+| "the room is not reachable" | sandbox, rights on the share, or a different path on that machine | see `transports.md` |
