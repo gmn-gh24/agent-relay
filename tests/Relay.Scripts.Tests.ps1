@@ -849,6 +849,103 @@ Describe 'Tamper check' -Tag 'Scripts' {
     }
 }
 
+Describe 'Add-RelayImprovement and the close check' -Tag 'Scripts' {
+
+    BeforeEach {
+        $case = New-RelayTestId
+        $root = Join-Path $TestDrive "improve-$case"
+    }
+
+    It 'appends a dated section to a new file and then to the existing one, and records where it went' {
+        $created = New-RelayTestRoom -Root $root -RoomId "improve-$case"
+        $object = Resolve-RelayRoom $created.Id
+        $project = Join-Path $root 'project'
+        $draft = Join-Path $root 'section.md'
+        [System.IO.File]::WriteAllText($draft, "The feed lost a message when the room was busy.`n")
+        $printed = @(& (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $draft -ProjectFolder $project)
+        $file = Join-Path $project 'PLUGIN-IMPROVEMENTS.md'
+        ($printed -join "`n") | Should -Match ([regex]::Escape($file))
+        Test-Path -LiteralPath $draft | Should -BeFalse
+        $text = [System.IO.File]::ReadAllText($file)
+        ($text -split "`n")[0] | Should -Be '# Plugin improvements'
+        $text | Should -Match ('(?m)^## Room ' + [regex]::Escape($created.Id) + ' \(closed \d{4}-\d{2}-\d{2}\)$')
+        $text | Should -Match 'The feed lost a message when the room was busy\.'
+        $record = Read-RelayKeyValue (Join-Path $object.Local 'improvements.txt')
+        $record['path'] | Should -Be $file
+        $record['date'] | Should -Match '^\d{4}-\d{2}-\d{2}$'
+
+        [System.IO.File]::WriteAllText($draft, "A second room found the wait slow.`n")
+        $null = & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $draft -ProjectFolder $project
+        $text = [System.IO.File]::ReadAllText($file)
+        $text | Should -Match 'The feed lost a message when the room was busy\.'
+        $text | Should -Match 'A second room found the wait slow\.'
+        @([regex]::Matches($text, '(?m)^## Room ')).Count | Should -Be 2
+        @([regex]::Matches($text, '(?m)^# Plugin improvements$')).Count | Should -Be 1
+    }
+
+    It 'takes the project folder from the room answers, and falls back to this PC with a warning' {
+        $project = Join-Path $root 'from-answers'
+        $created = New-RelayTestRoom -Root $root -RoomId "improve-$case" -Extra @{ project_folder = $project }
+        $draft = Join-Path $root 'section.md'
+        [System.IO.File]::WriteAllText($draft, "From the answers of the room.`n")
+        $null = & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $draft
+        [System.IO.File]::ReadAllText((Join-Path $project 'PLUGIN-IMPROVEMENTS.md')) | Should -Match 'From the answers of the room\.'
+
+        $other = New-RelayTestRoom -Root (Join-Path $root 'other') -RoomId "fallback-$case"
+        $object = Resolve-RelayRoom $other.Id
+        [System.IO.File]::WriteAllText($draft, "No project folder was named.`n")
+        $printed = @(& (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $other.Id -DraftFile $draft)
+        $fallback = Join-Path $object.Local 'PLUGIN-IMPROVEMENTS.md'
+        ($printed -join "`n") | Should -Match 'WARNING'
+        ($printed -join "`n") | Should -Match ([regex]::Escape($fallback))
+        [System.IO.File]::ReadAllText($fallback) | Should -Match 'No project folder was named\.'
+    }
+
+    It 'refuses an empty draft, a draft in the room folder and a secret-looking line, and writes nothing then' {
+        $created = New-RelayTestRoom -Root $root -RoomId "improve-$case"
+        $project = Join-Path $root 'project'
+        $draft = Join-Path $root 'section.md'
+        [System.IO.File]::WriteAllText($draft, "  `n`n")
+        { & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $draft -ProjectFolder $project } | Should -Throw '*missing or empty*'
+        $inRoom = Join-Path $created.Path 'section.md'
+        [System.IO.File]::WriteAllText($inRoom, "Written by anybody.`n")
+        { & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $inRoom -ProjectFolder $project } | Should -Throw '*inside the room folder*'
+        [System.IO.File]::WriteAllText($draft, "The api key: abc123 must not be kept.`n")
+        { & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $draft -ProjectFolder $project } | Should -Throw '*secret*'
+        [System.IO.File]::WriteAllText($draft, "password = hunter2`n")
+        { & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $draft -ProjectFolder $project } | Should -Throw '*secret*'
+        Test-Path -LiteralPath (Join-Path $project 'PLUGIN-IMPROVEMENTS.md') | Should -BeFalse
+        $object = Resolve-RelayRoom $created.Id
+        Test-Path -LiteralPath (Join-Path $object.Local 'improvements.txt') | Should -BeFalse
+    }
+
+    It 'refuses to close without the record, closes with -Force and says so, and names the file in its NEXT line after a section' {
+        $created = New-RelayTestRoom -Root $root -RoomId "improve-$case"
+        $object = Resolve-RelayRoom $created.Id
+        $refused = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $created.Id) -join "`n"
+        $refused | Should -Match 'NOT CLOSED'
+        $refused | Should -Match 'Add-RelayImprovement\.ps1'
+        Test-Path -LiteralPath (Join-Path $object.Canon 'CLOSED') | Should -BeFalse
+        $closed = (& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $created.Id -Force) -join "`n"
+        $closed | Should -Match "CLOSED room $($created.Id)"
+        (Read-RelayKeyValue (Join-Path $object.Canon 'CLOSED'))['improvements'] | Should -Be 'none (forced)'
+
+        $second = New-RelayTestRoom -Root (Join-Path $root 'second') -RoomId "section-$case"
+        $object2 = Resolve-RelayRoom $second.Id
+        $project = Join-Path $root 'second-project'
+        $draft = Join-Path $root 'section.md'
+        [System.IO.File]::WriteAllText($draft, "A lesson for the next room.`n")
+        $null = & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $second.Id -DraftFile $draft -ProjectFolder $project
+        $file = Join-Path $project 'PLUGIN-IMPROVEMENTS.md'
+        $closed2 = @(& (Join-Path $scripts 'Close-RelayRoom.ps1') -Room $second.Id)
+        ($closed2 -join "`n") | Should -Match "CLOSED room $($second.Id)"
+        $next = @($closed2 | Where-Object { $_ -like 'NEXT:*' })
+        $next.Count | Should -Be 1
+        $next[0] | Should -Match ([regex]::Escape($file))
+        (Read-RelayKeyValue (Join-Path $object2.Canon 'CLOSED'))['improvements'] | Should -Be $file
+    }
+}
+
 Describe 'The owner' -Tag 'Scripts' {
 
     BeforeEach {

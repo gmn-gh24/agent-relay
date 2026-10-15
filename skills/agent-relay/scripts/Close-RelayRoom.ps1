@@ -9,6 +9,12 @@
     Before this, the coordinator sends its closing note to all and waits for each agent's bye (the bye says what
     slowed that agent down). The script refuses while an agent that has started has not said bye, unless -Force.
 
+    Closing also needs the room's improvement section: Add-RelayImprovement.ps1 records it in
+    <local>\rooms\<room id>\improvements.txt, and this script refuses while that record is missing, naming
+    Add-RelayImprovement.ps1. -Force overrides that too, and the CLOSED record then says
+    "improvements: none (forced)". When a section was recorded, the CLOSED record names its file and the
+    NEXT line of a close prints that path.
+
     A room is closed when this PC says so: the CLOSED marker of its canonical copy. A CLOSED that anybody else puts into
     the room closes nothing; the tamper check, which runs first here, moves it out.
 
@@ -33,7 +39,7 @@
     Room id or room folder to close.
 
 .PARAMETER Force
-    Close although some agents have not said bye.
+    Close although some agents have not said bye, and although no improvement section was recorded.
 
 .PARAMETER ListClosed
     List closed rooms and what became of their folders.
@@ -300,6 +306,15 @@ if ($stillHere.Count -gt 0 -and -not $Force) {
     'NEXT: send your closing note to all and wait for each bye. Use -Force only for agents that cannot answer any more.'
     return
 }
+# The improvement section of the room, recorded on this PC by Add-RelayImprovement.ps1: closing needs it
+$improvementsPath = ''
+$improvementsRecord = Join-Path $roomObject.Local 'improvements.txt'
+if (Test-Path -LiteralPath $improvementsRecord -PathType Leaf) { $improvementsPath = [string](Get-RelayValue (Read-RelayKeyValue $improvementsRecord) 'path' '') }
+if (-not $improvementsPath -and -not $Force) {
+    ConvertTo-RelayPrintedLine "NOT CLOSED: room $($roomObject.Id) has no improvement section recorded on this PC ($improvementsRecord is missing). Record it with Add-RelayImprovement.ps1 -Room $($roomObject.Id) before closing, or close with -Force and the close record will say improvements: none (forced)."
+    "NEXT: write the section into the coordinator's draft file, run Add-RelayImprovement.ps1 -Room $($roomObject.Id), then run Close-RelayRoom.ps1 -Room $($roomObject.Id) again."
+    return
+}
 if ($askFirst -and -not $PSCmdlet.ShouldProcess($roomObject.Id, 'Close the room: transcript, CLOSED marker, room index, statistics and archive')) { return }
 
 $stats = Get-RelayStatistic $roomObject
@@ -393,7 +408,9 @@ if ($memory.Count -gt 0) {
 $stats | Add-Member -NotePropertyName 'memoryEntries' -NotePropertyValue $memory.Count -Force
 $transcript = ($text -join "`n") + "`n"
 Write-RelayGuardedText $roomObject 'TRANSCRIPT.md' $transcript
-Write-RelayGuardedText $roomObject 'CLOSED' ("closed_utc: $closedUtc`nby: $($roomObject.Coordinator)`n")
+$improvementsLine = 'improvements: none (forced)'
+if ($improvementsPath) { $improvementsLine = "improvements: $improvementsPath" }
+Write-RelayGuardedText $roomObject 'CLOSED' ("closed_utc: $closedUtc`nby: $($roomObject.Coordinator)`n$improvementsLine`n")
 # The index follows the marker at once: a close cut short after this point (the archive is slow) still lists the
 # room as closed, and a call on the closed room makes what is missing
 Save-ClosedStamp -Id $roomObject.Id -Stamp $closedUtc
@@ -410,5 +427,7 @@ Get-LinkLine $saved.Links
 if ($stillHere.Count -gt 0) { 'closed with -Force; no bye from: ' + ((@($stillHere | ForEach-Object { $_.name })) -join ', ') }
 # The memory review and the owner's one question come before the close (SKILL.md, workflow "Close"): what is
 # left is to carry out the owner's answer. The shared folder stays until the owner chose delete.
-if ($saved.IsMade) { "NEXT: apply the promotions the owner approved (Add-RelayLocalMemory.ps1 for local notes, the Improve procedure for project lessons). If the owner chose delete, run Close-RelayRoom.ps1 -Remove $($roomObject.Id) (the archive stays on this PC); if keep, leave the folder. Then run the retro (workflow `"Improve`"): Get-RelayStats.ps1, the byes, lessons.md." }
-else { "NEXT: run Close-RelayRoom.ps1 -Room $($roomObject.Id) again until it names an archive; the shared folder is the only copy until then, so do not remove it, even if the owner chose delete. Apply the promotions the owner approved (Add-RelayLocalMemory.ps1 for local notes, the Improve procedure for project lessons), then run the retro (workflow `"Improve`"): Get-RelayStats.ps1, the byes, lessons.md." }
+$improvementsNext = ''
+if ($improvementsPath) { $improvementsNext = " Improvements file: $improvementsPath." }
+if ($saved.IsMade) { "NEXT: apply the promotions the owner approved (Add-RelayLocalMemory.ps1 for local notes, the Improve procedure for project lessons). If the owner chose delete, run Close-RelayRoom.ps1 -Remove $($roomObject.Id) (the archive stays on this PC); if keep, leave the folder. Then run the retro (workflow `"Improve`"): Get-RelayStats.ps1, the byes, lessons.md.$improvementsNext" }
+else { "NEXT: run Close-RelayRoom.ps1 -Room $($roomObject.Id) again until it names an archive; the shared folder is the only copy until then, so do not remove it, even if the owner chose delete. Apply the promotions the owner approved (Add-RelayLocalMemory.ps1 for local notes, the Improve procedure for project lessons), then run the retro (workflow `"Improve`"): Get-RelayStats.ps1, the byes, lessons.md.$improvementsNext" }
