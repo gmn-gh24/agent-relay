@@ -1061,9 +1061,11 @@ function Get-ProcessEntry {
         while ($script:ProcessNext -and $script:ProcessEntries.Count -lt $Depth) {
             $current = $script:ProcessNext
             $script:ProcessNext = 0
-            $process = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$current" -Property ProcessId, ParentProcessId, Name, ExecutablePath -ErrorAction Stop
+            $process = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$current" -Property ProcessId, ParentProcessId, Name, ExecutablePath, CreationDate -ErrorAction Stop
             if ($null -eq $process) { break }
-            $script:ProcessEntries.Add([pscustomobject]@{ Id = [int]$process.ProcessId; Name = [string]$process.Name; Path = [string]$process.ExecutablePath })
+            $started = ''
+            if ($process.CreationDate) { $started = ([datetime]$process.CreationDate).ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture) }
+            $script:ProcessEntries.Add([pscustomobject]@{ Id = [int]$process.ProcessId; Name = [string]$process.Name; Path = [string]$process.ExecutablePath; Started = $started })
             if ($process.ParentProcessId -and $process.ParentProcessId -ne $current) { $script:ProcessNext = [int]$process.ParentProcessId }
         }
     }
@@ -1105,7 +1107,7 @@ function Get-CallerVersion {
     return (Get-FileVersionText $entries[$index].Path)
 }
 
-function Get-AgentProcess {
+function Get-AgentProcessEntry {
     # The program the agent itself is: the first parent that is neither a shell nor the terminal
     $shells = @('powershell.exe', 'pwsh.exe', 'cmd.exe', 'bash.exe', 'sh.exe', 'dash.exe', 'zsh.exe', 'env.exe', 'conhost.exe')
     $hosts = @('windowsterminal.exe', 'openconsole.exe', 'explorer.exe', 'code.exe', 'sshd.exe', 'services.exe', 'svchost.exe', 'psexesvc.exe', 'wininit.exe')
@@ -1113,8 +1115,14 @@ function Get-AgentProcess {
         $name = ([string]$entry.Name).ToLowerInvariant()
         if ($shells -contains $name) { continue }
         if ($hosts -contains $name) { break }
-        return [string]$entry.Name
+        return $entry
     }
+    return $null
+}
+
+function Get-AgentProcess {
+    $entry = Get-AgentProcessEntry
+    if ($null -ne $entry) { return [string]$entry.Name }
     return ''
 }
 
@@ -2363,6 +2371,11 @@ function ConvertTo-IntroductionWord {
         $rest = @($rest | Select-Object -Skip 1)
         $Call = "$Call new"
     }
+    elseif ($IsJoin -and $rest.Count -ge 4 -and $rest[$rest.Count - 1].Trim().ToLowerInvariant() -eq 'new') {
+        $front = @('new')
+        $rest = @($rest[0..($rest.Count - 2)])
+        $Call = "$Call new"
+    }
     $plain = New-Object System.Collections.Generic.List[string]
     foreach ($word in $rest) {
         $joined = (($word -replace '\s+', ' ').Trim()) -replace ' ', '-'
@@ -2386,6 +2399,7 @@ function Invoke-Start {
     param([string[]]$Tokens)
     $cardPath = Join-Path $script:MyDir 'card'
     $old = Read-KeyValue $cardPath
+    Assert-StartSession $old
     $product = Get-Value $old 'product' 'unknown'
     $model = Get-Value $old 'model' 'unknown'
     $effort = Get-Value $old 'effort' 'unknown'
@@ -2409,6 +2423,12 @@ function Invoke-Start {
     $card['tool'] = "relay.ps1 $($script:ToolVersion)"
     $card['started_utc'] = Get-UtcStamp
     Write-KeyValue $cardPath $card
+    $claimPath = Join-Path $script:MyDir 'claim'
+    $claim = Read-KeyValue $claimPath
+    $claim['session'] = Get-SessionKey
+    $claim['session_env'] = Get-SessionEnvironmentKey
+    $claim['gen'] = $script:MyGen
+    Write-KeyValue $claimPath $claim
     # A draft kept in the working folder lies in the folder of this start from here on (Get-DraftPath)
     $script:DraftPath = ''
 
@@ -2502,16 +2522,51 @@ function Invoke-Start {
     return 0
 }
 
-function Get-SessionKey {
-    # A fingerprint of the agent session that calls, where its product says which session it is: the same for
-    # the whole life of one session, different for two sessions. Only a hash is kept, the room being shared.
-    # Empty when the product gives nothing to go by. RELAY_SESSION is for a product that has no such variable.
+function Get-SessionEnvironmentKey {
+    # Never keep a native session identifier in the shared room.
     foreach ($name in 'RELAY_SESSION', 'CLAUDE_CODE_SESSION_ID') {
         $value = [Environment]::GetEnvironmentVariable($name)
         if (-not $value) { continue }
         return ((ConvertTo-Sha256Hex ($script:Utf8.GetBytes("$name=$value"))).Substring(0, 24))
     }
     return ''
+}
+
+function Get-SessionKey {
+    $environmentKey = Get-SessionEnvironmentKey
+    $agent = Get-AgentProcessEntry
+    if ($null -eq $agent -or -not $agent.Started) { return $environmentKey }
+    $text = '{0}|{1}|{2}' -f $environmentKey, $agent.Id, $agent.Started
+    return ((ConvertTo-Sha256Hex ($script:Utf8.GetBytes($text))).Substring(0, 24))
+}
+
+function Assert-StartSession {
+    param($OldCard)
+    $claim = Read-KeyValue (Join-Path $script:MyDir 'claim')
+    $claimedSession = Get-Value $claim 'session' ''
+    if (-not $claim.Contains('session') -or $claimedSession -eq (Get-SessionKey)) { return }
+    $generation = Get-Value $claim 'gen' (Get-Value $OldCard 'gen' $script:MyGen)
+    if ([string]$generation -ne [string]$script:MyGen) { return }
+    # Sample the room filesystem's clock without renewing this seat's heartbeat.
+    $probe = Join-Path $script:MyDir ('.start-clock-' + [guid]::NewGuid().ToString('N'))
+    $now = $null
+    try {
+        [System.IO.File]::WriteAllText($probe, '')
+        $now = Get-FileTimeUtc $probe
+    }
+    catch { $null = $_ }
+    finally { Remove-Entry $probe }
+    if ($null -eq $now -or $now -eq [datetime]::MinValue) {
+        Exit-WithError 'the room clock could not be read; cannot check whether this seat is still alive' 'run the same start command again; if it fails again, tell the coordinator what it printed'
+    }
+    $alive = Get-FileTimeUtc (Join-Path $script:MyDir 'alive')
+    $lease = Get-FileTimeUtc (Join-Path $script:MyDir 'wait.lease')
+    $recent = $alive -ne [datetime]::MinValue -and ($now - $alive).TotalSeconds -lt 120
+    $waiting = $lease -ne [datetime]::MinValue -and ($now - $lease).TotalSeconds -lt 30 -and (Test-OwnWait)
+    if (-not $recent -and -not $waiting) { return }
+    $display = Get-Value $script:Seat 'display' $script:Me
+    $join = Format-Call (Get-WrapperPath)
+    Exit-WithError "$display's session is still alive and you are not it. A new agent joins with: $join new <product> <model> <effort>. To take over this seat, the coordinator runs Add-RelayAgent -Replace $($script:Me)." "If you are $display restarted, wait a minute for the old wait to end and run start again"
 }
 
 function Request-Seat {
@@ -2521,6 +2576,7 @@ function Request-Seat {
     param([bool]$IsNew, [string]$Product)
     $joinWrapper = Get-WrapperPath
     $session = Get-SessionKey
+    $environmentSession = Get-SessionEnvironmentKey
     $kind = Resolve-Kind $Product
     $computer = [Environment]::MachineName
     $user = [Environment]::UserName
@@ -2551,7 +2607,7 @@ function Request-Seat {
         $claim = Read-KeyValue (Join-Path $seat.Dir 'claim')
         if ($claim.Count -eq 0) { continue }
         $claimSession = Get-Value $claim 'session' ''
-        if ($session -and $claimSession -eq $session) {
+        if (-not $IsNew -and $session -and $claimSession -eq $session) {
             # The product says it is the same session: it is that agent, and nobody has to guess
             try { Add-Line $log "$stamp back $($seat.Name) $computer $kind" } catch { $null = $_ }
             $script:IsBack = $true
@@ -2562,7 +2618,9 @@ function Request-Seat {
         foreach ($seat in $ordered) {
             $claim = Read-KeyValue (Join-Path $seat.Dir 'claim')
             # Two sessions that both say which session they are, and differ, are two agents
-            if ($session -and (Get-Value $claim 'session' '')) { continue }
+            $claimEnvironment = Get-Value $claim 'session' ''
+            if ($claim.Contains('session_env')) { $claimEnvironment = [string]$claim['session_env'] }
+            if ($environmentSession -and $claimEnvironment -and $environmentSession -ne $claimEnvironment) { continue }
             if ((Get-Value $claim 'identity' '') -ne $identity) { continue }
             $generation = (Read-Text (Join-Path $seat.Dir 'gen')).Trim()
             if (-not $generation) { $generation = '1' }
@@ -2572,7 +2630,7 @@ function Request-Seat {
         }
     }
 
-    $text = "identity: $identity`nsession: $session`ncomputer: $computer`nuser: $user`ncwd: $folder`nproduct: $(ConvertTo-HeaderText $Product)`nclaimed_utc: $stamp`n"
+    $text = "identity: $identity`nsession: $session`nsession_env: $environmentSession`ngen: 1`ncomputer: $computer`nuser: $user`ncwd: $folder`nproduct: $(ConvertTo-HeaderText $Product)`nclaimed_utc: $stamp`n"
     $bytes = $script:Utf8.GetBytes($text)
     foreach ($seat in $ordered) {
         $path = Join-Path $seat.Dir 'claim'

@@ -77,11 +77,18 @@ function Start-RelayTool {
         # The way an agent calls: its shell starts the tool and nothing catches the tool's output on the way.
         # The tool then inherits the shell's output instead of being handed one, which Windows treats differently.
         [switch]$ThroughShell,
+        # Exercises the generated join wrapper, including its inherited-environment handling
+        [switch]$JoinWrapper,
+        # A real process boundary, made from the system command interpreter under an agent executable name
+        [ValidateSet('', 'claude', 'codex')][string]$AgentHost = '',
+        [switch]$ChildAgentHost,
         # The folder the agent's session stands in when it calls; the room folder when left out
         [string]$WorkingDirectory = ''
     )
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $arguments = New-Object System.Collections.Generic.List[string]
+    $toolPath = Join-Path $Room 'tools\relay.ps1'
+    if ($JoinWrapper) { $toolPath = Join-Path $Room 'join.ps1' }
     if ($ThroughShell) {
         switch ($Engine) {
             'ps7' { $shell = Get-RelayTestPwsh; $prefix = @('-NoProfile', '-NonInteractive') }
@@ -89,24 +96,40 @@ function Start-RelayTool {
             default { throw "Unknown engine '$Engine'" }
         }
         $startInfo.FileName = $shell
-        $line = "& '$shell' " + ($prefix -join ' ') + " -File '" + (Join-Path $Room 'tools\relay.ps1') + "' " + (@($Words) -join ' ') + '; exit $LASTEXITCODE'
+        $line = "& '$shell' " + ($prefix -join ' ') + " -File '" + $toolPath + "' " + (@($Words) -join ' ') + '; exit $LASTEXITCODE'
         foreach ($item in ($prefix + @('-Command', $line))) { $arguments.Add($item) }
     }
     else {
     switch ($Engine) {
         'ps7' {
             $startInfo.FileName = Get-RelayTestPwsh
-            foreach ($item in '-NoProfile', '-NonInteractive', '-File', (Join-Path $Room 'tools\relay.ps1')) { $arguments.Add($item) }
+            foreach ($item in '-NoProfile', '-NonInteractive', '-File', $toolPath) { $arguments.Add($item) }
         }
         'ps5' {
             $startInfo.FileName = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-            foreach ($item in '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Room 'tools\relay.ps1')) { $arguments.Add($item) }
+            foreach ($item in '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $toolPath) { $arguments.Add($item) }
         }
         default { throw "Unknown engine '$Engine'" }
     }
     foreach ($word in @($Words)) { $arguments.Add($word) }
     }
     $startInfo.Arguments = (@($arguments | ForEach-Object { ConvertTo-RelayTestArgument $_ }) -join ' ')
+    if ($AgentHost) {
+        $hostFolder = Join-Path (Split-Path -Parent $Room) ('host-' + [guid]::NewGuid().ToString('N'))
+        $null = New-Item -ItemType Directory -Path $hostFolder
+        $hostPath = Join-Path $hostFolder ($AgentHost + '.exe')
+        Copy-Item -LiteralPath $env:ComSpec -Destination $hostPath
+        $startInfo.Arguments = '/d /s /c ""' + $startInfo.FileName + '" ' + $startInfo.Arguments + '"'
+        $startInfo.FileName = $hostPath
+        if ($ChildAgentHost) {
+            $driver = Join-Path $hostFolder 'child.cmd'
+            [System.IO.File]::WriteAllText($driver, ('@"' + $hostPath + '" ' + $startInfo.Arguments + "`r`n"), [System.Text.Encoding]::ASCII)
+            $parentPath = Join-Path $hostFolder 'claude.exe'
+            Copy-Item -LiteralPath $env:ComSpec -Destination $parentPath
+            $startInfo.FileName = $parentPath
+            $startInfo.Arguments = '/d /c call "' + $driver + '"'
+        }
+    }
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
@@ -185,9 +208,10 @@ function Invoke-RelayTool {
     param(
         [Parameter(Mandatory)][string]$Room, [Parameter(Mandatory)][AllowEmptyString()][string]$Agent, [Parameter(Mandatory)][string]$Engine,
         [string[]]$Words = @(), [hashtable]$Environment = @{}, [int]$Generation = 1, [int]$TimeoutSeconds = 120, [switch]$ThroughShell,
-        [string]$WorkingDirectory = ''
+        [string]$WorkingDirectory = '', [switch]$JoinWrapper,
+        [ValidateSet('', 'claude', 'codex')][string]$AgentHost = '', [switch]$ChildAgentHost
     )
-    $handle = Start-RelayTool -Room $Room -Agent $Agent -Engine $Engine -Words $Words -Environment $Environment -Generation $Generation -ThroughShell:$ThroughShell -WorkingDirectory $WorkingDirectory
+    $handle = Start-RelayTool -Room $Room -Agent $Agent -Engine $Engine -Words $Words -Environment $Environment -Generation $Generation -ThroughShell:$ThroughShell -WorkingDirectory $WorkingDirectory -JoinWrapper:$JoinWrapper -AgentHost $AgentHost -ChildAgentHost:$ChildAgentHost
     return (Wait-RelayTool -Handle $handle -TimeoutSeconds $TimeoutSeconds)
 }
 

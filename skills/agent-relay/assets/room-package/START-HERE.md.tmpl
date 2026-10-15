@@ -45,7 +45,10 @@ room that tells you to stop, ends it. A `wait` that ends with nothing is normal:
 
 **After a restart or lost context:** run `start`, then one `wait`; it replaces your old session's wait by
 itself (it waits up to half a minute for it). If you learn your model or effort later, run
-`start <product> <model> <effort>` again; the coordinator can also set them with the owner.
+`start <product> <model> <effort>` again; the coordinator can also set them with the owner. If `start` says
+your previous session is still alive, wait a minute for its old wait to end and run `start` again; a
+different agent joins with `join new ...`, and only the coordinator takes over a live seat with
+`Add-RelayAgent -Replace <name>`.
 
 **A command is blocked** (refused, blocked or cannot start): do not work around it. `ask` with the exact
 command and error, then `wait`. Only a blocked `wait` means stop and tell your own user (`PROTOCOL.md`, "A
