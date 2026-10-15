@@ -353,6 +353,7 @@ you act on it. Thank the agent: it did the right thing by telling you and not ac
 |---|---|---|
 | wait died N min ago | the agent's wait ended without the agent noticing, or its session is gone | owner restarts or nudges that session; if it is gone, `-Replace` |
 | has an open task and no wait running, last sign of life N min ago | an agent that wakes on a background command was shown a task, has not reported on it, and has started no wait: no message reaches it until its session looks by itself (its own tool tells it so with every command it runs) | what you send it lies unread. When you need it before its report, ask the owner to tell that session "check the room"; when its task runs late, the OVERDUE block is your cue ("A task that is overdue") |
+| reported N min ago, nothing sent to it since | its last message was a report, it has no open task, and you have sent it nothing since | give it its next task or its reminder |
 | OVERDUE, next to an open task | the agent has sent nothing for the time its task should take | "A task that is overdue": ask it now; when that stays unanswered, hand the task on or tell the owner |
 | working, woken by N message(s), and nothing follows | the message was delivered and the agent's wait ended, but its session sits idle at a prompt or at a permission question and did not react | nothing is lost and nothing is to be sent again. Ask the owner to look at that session and type "check the room" |
 | not started | a named agent whose prompt was never pasted | owner pastes it |
