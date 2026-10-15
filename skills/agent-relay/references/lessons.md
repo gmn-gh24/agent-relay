@@ -848,3 +848,36 @@ changes the same room caused in the tools and the skill follow in the next secti
   skill and `coordinating.md` say every question is asked through the question tool with options, and the
   Improve step triages per group the same way (`self-improvement.md`); `-Replace` names the prompt to paste and
   `Add-RelayAgent.ps1 -Clipboard <name>` puts a named one on the clipboard.
+
+## 2026-10-14/15: the plugin-improvements room (0.11.0)
+
+One job, done as a room: the improvement list of the rooms before it, worked item by item. Eight agents of
+five products; twelve branches were accepted in two and a half hours, eighteen merged in four.
+
+- **Review as a step of its own paid for itself.** Every branch was read by the coordinator before its pull
+  request, and that pass caught what the agents' own green runs had not: a rewritten history, suites that
+  were claimed but never run, text that was not wrapped, and an upgrade replayed on a room that already had
+  it. None of those needed a second agent to find; they needed a reader whose job was only to read.
+- **The agents' design questions corrected the coordinator twice.** Twice an agent stopped and asked about
+  a point the task had settled too quickly, and the answer changed the build. A task that names what to do
+  when a point is unclear gets those questions; one that does not gets silence and the quick settlement.
+- **The record let branches be rebuilt.** When work had to be redone, the room's messages, the drafts and
+  the attached logs said what the first attempt had done and where it had stopped, so the rebuild started
+  from evidence, not from a summary nobody could check.
+- **One coordinator is the bottleneck.** Every message cost about a turn of the coordinator, so the room's
+  speed was the coordinator's speed of reading, however many agents worked at once. Splitting the reading
+  (a reviewer seat) is the obvious next step and is not built.
+- **Eight Pester runs on one PC at once run 2 to 3 times slower, and some do not survive it.** Child
+  processes timed out at their limits in suites that pass cleanly one after another, and one whole gate was
+  killed. On one machine, run the suites in sequence; parallel runs belong on several machines.
+- **Two coder seats on a local model were retired for silence, and the local runner seat earned its keep:**
+  it caught a merge error the stronger seats had all read past. A weak seat is a risk as a coder and worth
+  having as a checker, which is a different assignment, not a smaller one.
+- **Two cloud sessions ran out of credit in the middle of a task.** Their work stood frozen where it was;
+  the coordinator committed it as it stood and the branch went on. Work that is committed early survives
+  its session; work that is only in a session does not.
+- **A seat was retired by mistake twice, once on a wrong premise.** Retirement is quick and its record
+  looks final, so it is the step to say out loud before it is done; one of the two was read back from the
+  board in time.
+- Changed by this room: the three standing rules in `coordinating.md`, the owner's priorities at the head
+  of `ROADMAP.md`, and an un-retire item on the roadmap for the seat that cannot be brought back.

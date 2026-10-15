@@ -158,6 +158,10 @@ Effort goes from low (shown as Light) over medium, high and xhigh (Extra High) t
 model or plan has every step: Luna has no ultra, and some plans leave out Extra High. The owner sets it with
 `/model` in the session or `model_reasoning_effort` in Codex's configuration.
 
+**OpenCode.** Its host dropped a background shell command of 20 minutes on its own, and no result was
+written; a foreground command died at a 10-minute ceiling. Give it long runs in pieces of under about
+10 minutes, each writing its result to a file, instead of one long command of either kind.
+
 **Everything else.** Starts on the generic profile. Watch the first waits: if the agent's commands are cut
 off before a minute, lower `wait_minutes` for its seat (answers field) or switch it to `manual`.
 
