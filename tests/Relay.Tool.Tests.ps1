@@ -1353,6 +1353,54 @@ Describe 'Self-audit on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $audit | Should -Match '(?m)^  ok       A  two\.txt$'
     }
 
+    It 'counts no file inside a root with the pattern * as OUTSIDE, however deep, with a space or in a dot folder' {
+        # The reported shape: the project folder as a bare (read-only) root and "<folder>\tester-work" as a root
+        # with the pattern *; 213 files inside the second were counted as outside in one report
+        $tester = Join-Path $work 'tester-work'
+        $null = New-Item -ItemType Directory -Path (Join-Path $tester 'sub\deep') -Force
+        $nested = @([ordered]@{ name = 'emma'; role = 'reviewer'; kind = 'generic'; transport = 'same-pc'; work = 'review'; roots = @(@{ root = $work }, @{ root = $tester; may = @('*') }) })
+        $room = (New-RelayTestRoom -Root (Join-Path $root "r$number") -RoomId "audit-$engine-$number" -Agents $nested).Path
+        foreach ($agent in 'olivia', 'emma') { (Invoke-RelayTool -Room $room -Agent $agent -Engine $engine -Words @('start', 'p', 'm', 'e')).ExitCode | Should -Be 0 }
+        $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Review`n`nWork in tester-work."
+        $null = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+        Start-Sleep -Milliseconds 1200
+        $null = New-Item -ItemType Directory -Path (Join-Path $tester '.cache\inner') -Force
+        [System.IO.File]::WriteAllText((Join-Path $tester 'top.txt'), "top`n")
+        [System.IO.File]::WriteAllText((Join-Path $tester 'sub\deep\a file with spaces.txt'), "deep`n")
+        [System.IO.File]::WriteAllText((Join-Path $tester '.cache\inner\x.log'), "dot`n")
+        $report = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('report') -Text "Done`n`n1. Result: done."
+        $report.ExitCode | Should -Be 0
+        $report.Output | Should -Match 'self-audit: \d+ changed since start, 0 OUTSIDE the assigned paths'
+        $audit = (Get-Content -LiteralPath (Join-Path $room 'files\emma-olivia-0002\self-audit.txt') -Raw) -replace "`r", ''
+        $audit | Should -Not -Match '(?m)^  OUTSIDE'
+        $audit | Should -Match '(?m)^  ok       A  sub/deep/a file with spaces\.txt$'
+        $audit | Should -Match '(?m)^  ok       A  \.cache/inner/x\.log$'
+        $audit | Should -Match '(?m)^  ok       A  top\.txt$'
+    }
+
+    It 'still counts a change under a read-only root, and a folder that only starts with a root''s name, as OUTSIDE' {
+        $tester = Join-Path $work 'tester-work'
+        $other = Join-Path $work 'tester-work-2'
+        $null = New-Item -ItemType Directory -Path $tester, $other -Force
+        $nested = @([ordered]@{ name = 'emma'; role = 'reviewer'; kind = 'generic'; transport = 'same-pc'; work = 'review'; roots = @(@{ root = $work }, @{ root = $tester; may = @('*') }) })
+        $room = (New-RelayTestRoom -Root (Join-Path $root "r$number") -RoomId "audit-$engine-$number" -Agents $nested).Path
+        foreach ($agent in 'olivia', 'emma') { (Invoke-RelayTool -Room $room -Agent $agent -Engine $engine -Words @('start', 'p', 'm', 'e')).ExitCode | Should -Be 0 }
+        $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Review`n`nWork in tester-work."
+        $null = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+        Start-Sleep -Milliseconds 1200
+        [System.IO.File]::WriteAllText((Join-Path $tester 'inside.txt'), "inside`n")
+        [System.IO.File]::WriteAllText((Join-Path $work 'docs\readme.txt'), "changed under the read-only root`n")
+        [System.IO.File]::WriteAllText((Join-Path $other 'sibling.txt'), "a folder that only starts with the name`n")
+        $report = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('report') -Text "Done`n`n1. Result: done."
+        $report.ExitCode | Should -Be 0
+        $audit = (Get-Content -LiteralPath (Join-Path $room 'files\emma-olivia-0002\self-audit.txt') -Raw) -replace "`r", ''
+        $audit | Should -Match '(?m)^  OUTSIDE  M  docs/readme\.txt$'
+        $audit | Should -Match '(?m)^  OUTSIDE  A  tester-work-2/sibling\.txt$'
+        $audit | Should -Not -Match '(?m)^  OUTSIDE  A  tester-work/inside\.txt$'
+        $audit | Should -Match '(?m)^  ok       A  inside\.txt$'
+        $report.Output | Should -Match 'self-audit: \d+ changed since start, 2 OUTSIDE the assigned paths'
+    }
+
     It 'reports nothing changed when nothing changed' {
         $room = (New-RelayTestRoom -Root (Join-Path $root "r$number") -RoomId "audit-$engine-$number" -Agents $agents).Path
         foreach ($agent in 'olivia', 'emma') { $null = Invoke-RelayTool -Room $room -Agent $agent -Engine $engine -Words @('start', 'p', 'm', 'e') }
