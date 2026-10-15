@@ -41,14 +41,16 @@ of the retro.
 ## Model and effort
 
 The three words of an introduction are product, model and effort. Many agents cannot see their own model or
-effort setting; their user can. The join prompt and every start prompt therefore tell an agent that does not
-know one of them to ask the user of its own session before it runs the command: through its host's question
-tool when it has one, with the choices its own product offers (its models, its effort levels) and "other"
-for typing; as a typed question only when it has no such tool. The answer is taken as given: a model name of
-several words, in quotes or as several words, becomes one word with dashes (`join codex gpt 6 sol medium`
-gives the model `gpt-6-sol`). You never ask the owner for an agent's model or effort in your own session:
-when an introduction came with `unknown` and a task depends on it, tell that agent to ask its user and to run
-its `start <product> <model> <effort>` again.
+effort setting; their user can. The join prompt tells an agent to write `unknown` for a model or effort it
+cannot see, without guessing or asking anyone before joining. The coordinator settles it with the owner
+after the agent is in. A named agent's start prompt still tells it to ask the user of its own session before
+it runs the command: through its host's question tool when it has one, with the choices its own product
+offers (its models, its effort levels) and "other" for typing; as a typed question only when it has no such
+tool. The answer is taken as given: a model name of several words, in quotes or as several words, becomes
+one word with dashes (`join codex gpt 6 sol medium` gives the model `gpt-6-sol`). For named agents, do not ask
+the owner for their model or effort in your own session: when an introduction came with `unknown` and a
+task depends on it, tell that agent to ask its
+user and to run its `start <product> <model> <effort>` again.
 
 Choose the longest wait the agent's command time limit allows. A wait must return before that limit, or the
 agent sees a killed command instead of "nothing arrived".

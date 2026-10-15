@@ -1587,6 +1587,31 @@ Describe 'Open seats' -Tag 'Scripts' {
         $root = Join-Path $TestDrive ('open-' + (New-RelayTestId))
     }
 
+    It 'keeps the join prompt short with the instructions needed before joining' {
+        $reach = '\\server\share\short-prompt'
+        $fallback = '\\192.0.2.10\share\short-prompt'
+        $created = New-RelayTestRoom -Root $root -RoomId 'short-prompt' -Extra @{
+            open_seats = 1; reach_path = $reach; reach_fallback = $fallback
+        }
+        $prompt = [System.IO.File]::ReadAllText((Join-Path $created.Path 'PROMPT-JOIN.txt'))
+        $prompt.Length | Should -BeLessThan 1800
+        $prompt | Should -Match '^Owner''s request: this session becomes an agent of a work room\.'
+        $prompt | Should -Match 'They are all you need; do not read plugin or skill files\.'
+        $prompt | Should -Match ([regex]::Escape($reach))
+        $prompt | Should -Match ([regex]::Escape($fallback))
+        $prompt | Should -Match ([regex]::Escape("powershell -NoProfile -ExecutionPolicy Bypass -File '//server/share/short-prompt/join.ps1' <product> <model> <effort>"))
+        $prompt | Should -Match ([regex]::Escape('"\\server\share\short-prompt\join.cmd" <product> <model> <effort>'))
+        $prompt | Should -Match '(?i)product.*model.*effort'
+        $prompt | Should -Match 'claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent, copilot-cli, or its name as one word'
+        $prompt | Should -Match '(?i)do not guess'
+        $prompt | Should -Match 'Write unknown for a model or an effort you cannot see'
+        $prompt | Should -Match 'do not ask anyone before joining: the coordinator settles it with the owner after you are in'
+        $prompt | Should -Not -Match 'question tool|ask your own user|Wait for the answer'
+        $prompt | Should -Match '(?i)refused.*try (it )?once.*check once.*folder exists'
+        $prompt | Should -Match '(?i)guard off'
+        $prompt | Should -Match '(?i)(owner|themselves).*run.*join line'
+    }
+
     It 'builds seats nobody is named for, the join wrappers and one prompt for every agent' {
         $created = New-RelayTestRoom -Root $root -RoomId 'open' -Extra @{ open_seats = 2 }
         $room = $created.Path
@@ -1633,27 +1658,21 @@ Describe 'Open seats' -Tag 'Scripts' {
         $kinds['generic.hint'] | Should -Match 'run it again'
 
         $created.JoinPrompt | Should -Be ([System.IO.File]::ReadAllText((Join-Path $room 'PROMPT-JOIN.txt')))
-        $created.JoinPrompt | Should -Match ('PowerShell \(Windows PowerShell or pwsh\) or Git Bash:\s+' + [regex]::Escape("powershell -NoProfile -ExecutionPolicy Bypass -File '" + ($room -replace '\\', '/') + "/join.ps1' <product> <model> <effort>"))
+        $created.JoinPrompt | Should -Match ('PowerShell/pwsh/Git Bash:\s+' + [regex]::Escape("powershell -NoProfile -ExecutionPolicy Bypass -File '" + ($room -replace '\\', '/') + "/join.ps1' <product> <model> <effort>"))
         $created.JoinPrompt | Should -Match ('cmd:\s+' + [regex]::Escape("`"$room\join.cmd`" <product> <model> <effort>"))
-        $created.JoinPrompt | Should -Match 'without the angle brackets, for example: claude-code-cli sonnet-5\.5 medium'
-        $created.JoinPrompt | Should -Match 'your agent product as exactly as you know it \(claude-code-cli, codex-cli, codex-app,'
-        $created.JoinPrompt | Should -Match 'your reasoning effort setting if your session or its configuration shows one'
-        $created.JoinPrompt | Should -Match 'what kind of agent you are, the computer and its address, the user, whether you run elevated, and your shell'
-        $created.JoinPrompt | Should -Match 'Do not work around it and do not try other paths unless your owner gives you one'
-        # Agents guessed their model and effort at join: the prompt says to ask the user of the session. With choices
-        # to pick from where the agent's host has a tool for that; a typed answer only where it has none
-        $created.JoinPrompt | Should -Match 'When you do not know your model or your effort setting, ask the user of your own session before you run it, and wait for the answer'
-        $created.JoinPrompt | Should -Match 'Ask through your question tool when you have one \(the one that shows choices to pick from\): offer the models and the effort levels your own product has, and "other" for typing'
-        $created.JoinPrompt | Should -Match 'Ask as a question the user answers by typing only when you have no such tool'
-        # The answer is taken as it is given, a name of several words too
-        $created.JoinPrompt | Should -Match 'Take the answer as it is given: a name of several words is fine, the command turns its blanks into dashes'
-        # Agents worked inside the room folder and on the share: the prompt says where to work
-        $created.JoinPrompt | Should -Match 'Work from a local folder of your own on this machine, never from the room folder and never from a folder on a share'
+        $created.JoinPrompt | Should -Match 'exact product name \(claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent, copilot-cli, or its name as one word\), model and reasoning effort, without brackets'
+        $created.JoinPrompt | Should -Match 'No workarounds or other paths without the owner'
+        # Unknown model or effort must not delay joining: the coordinator settles it with the owner afterwards
+        $created.JoinPrompt | Should -Match 'Write unknown for a model or an effort you cannot see; do not guess'
+        $created.JoinPrompt | Should -Match 'do not ask anyone before joining: the coordinator settles it with the owner after you are in'
+        $created.JoinPrompt | Should -Not -Match 'question tool|ask your own user|Wait for the answer'
+        $created.JoinPrompt | Should -Match 'Blanks become dashes'
+        # After-join rules belong in START-HERE.md, not the join prompt
+        $created.JoinPrompt | Should -Not -Match 'local folder|own disk|message text|Never run a script|blocked command is reported'
         # An agent in a sandbox cannot run join at all: the prompt itself says what to do then, and names no product
-        $created.JoinPrompt | Should -Match 'If the join command above is refused, blocked or cannot start, or cannot reach the room folder: try it once, check once whether the folder exists, then change nothing, stop and tell your owner the exact error'
-        # The stop is for joining only: an agent in the room that read it as a standing rule went silent after one
-        # blocked command instead of asking the coordinator. The prompt says so, and the instructions say what to do.
-        $created.JoinPrompt | Should -Match 'This applies to joining only: once you are in the room, a blocked command is reported to the coordinator'
+        $created.JoinPrompt | Should -Match 'If join is refused, blocked, cannot start or cannot reach the room: try once, check once whether the folder exists, change nothing, stop and tell the owner the exact error'
+        # An agent in the room that read the join rule as a standing rule went silent after one blocked command.
+        # The protocol says what to do after joining.
         $protocol = [System.IO.File]::ReadAllText((Join-Path $room 'PROTOCOL.md'))
         $protocol | Should -Match '## A command is blocked'
         $protocol | Should -Match 'do not stop watching the room\. `ask` the\s+coordinator with the exact command and the exact error, then `wait`'
@@ -1661,12 +1680,12 @@ Describe 'Open seats' -Tag 'Scripts' {
         # The risk of a start without the product's guard is told to the owner, never to an agent
         $created.JoinPrompt | Should -Not -Match 'virtual machine|throwaway|\brisk|yolo|dangerously'
         # Two ways to join, both on Windows: no line for Linux or macOS, no sh
-        @($created.JoinPrompt -split "`n" | Where-Object { $_ -match '^   Windows, ' }).Count | Should -Be 2
+        @($created.JoinPrompt -split "`n" | Where-Object { $_ -match '^(PowerShell/pwsh/Git Bash|cmd):' }).Count | Should -Be 2
         $created.JoinPrompt | Should -Not -Match 'Linux|macOS|\bsh\b'
         $ps = [System.IO.File]::ReadAllText((Join-Path $room 'join.ps1'))
         $ps | Should -Match "\`$env:RELAY_ROOM_ID = 'open'"
         $ps | Should -Match 'tools\\relay\.ps1''\) join @args'
-        $created.JoinPrompt | Should -Match 'change nothing on this machine: it is in use, not a test machine'
+        $created.JoinPrompt | Should -Match 'change nothing until a task arrives'
         $created.JoinPrompt | Should -Not -Match "`r"
         @(Test-RelayTamper (Resolve-RelayRoom $room)).Count | Should -Be 0
     }
@@ -1905,7 +1924,7 @@ Describe 'Open seats' -Tag 'Scripts' {
         (Read-RelayKeyValue (Join-Path $room 'tools\kinds'))['codex.wake'] | Should -Be 'loop'
         # The next taker of the free seat reads the current instructions, and the owner pastes the current prompt
         (Get-Content -LiteralPath (Join-Path $room "agents\$seatName\START-HERE.md") -Raw) | Should -Match 'copied into this folder\s+before you send: `\{\{ATTACH\}\}`'
-        (Get-Content -LiteralPath (Join-Path $room 'PROMPT-JOIN.txt') -Raw) | Should -Match 'your agent product as exactly as you know it'
+        (Get-Content -LiteralPath (Join-Path $room 'PROMPT-JOIN.txt') -Raw) | Should -Match 'Fill product/model/effort with your exact product name'
         Test-Path -LiteralPath (Join-Path $room 'tools\tab-title.ps1') | Should -BeTrue
         @(Test-RelayTamper (Resolve-RelayRoom 'update')).Count | Should -Be 0
         ((& (Join-Path $scripts 'Update-RelayRoom.ps1') -Room 'update') -join "`n") | Should -Match 'UP TO DATE'

@@ -848,3 +848,9 @@ changes the same room caused in the tools and the skill follow in the next secti
   skill and `coordinating.md` say every question is asked through the question tool with options, and the
   Improve step triages per group the same way (`self-improvement.md`); `-Replace` names the prompt to paste and
   `Add-RelayAgent.ps1 -Clipboard <name>` puts a named one on the clipboard.
+- **The join prompt spent a small agent's context before work began.** An agent with a 16K-token window
+  compacted after reading a 4,160-character join prompt. Changed: the prompt holds only the pre-join steps
+  and opens with the owner's request to join. The join prints the after-join rules in `START-HERE.md`;
+  the blocked-command rule remains in `PROTOCOL.md`, with its after-join summary belonging in `START-HERE.md`.
+  An unknown model or effort no longer delays joining: the agent writes `unknown`, and the coordinator
+  settles it with the owner after the agent is in.
