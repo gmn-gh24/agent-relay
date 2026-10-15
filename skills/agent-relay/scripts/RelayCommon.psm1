@@ -1610,6 +1610,15 @@ function Get-RelayAgentState {
                 $hasWait = ($leaseAt -ne [DateTime]::MinValue -and ($now - $leaseAt).TotalSeconds -lt 60)
                 if ($tasks.Count -gt 0 -and -not $hasWait) { $attention = "has an open task and no wait running, last sign of life $silent min ago: no message reaches it; ask the owner to tell that session to check the room" }
             }
+            # Idle (no open task) with no wait for more than 3 minutes: nothing reaches it; tell its session to wait
+            if (-not $attention -and $card.Count -gt 0 -and $silent -ge 3) {
+                $openTasks = @($open | Where-Object { $_.To -eq $name -and $_.Type -ceq 'task' })
+                $leaseAt = Get-RelayFileTimeUtc (Join-Path $dir 'wait.lease')
+                $hasWait = ($leaseAt -ne [DateTime]::MinValue -and ($now - $leaseAt).TotalSeconds -lt 60)
+                if ($openTasks.Count -eq 0 -and -not $hasWait) {
+                    $attention = "idle with no wait running for $silent min: it reads nothing; tell its session to run wait"
+                }
+            }
         }
         $owes = @($open | Where-Object { $_.To -eq $name })
         # Where it says it stands (the verb progress): the last record, cut at the first separator

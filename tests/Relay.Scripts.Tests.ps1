@@ -128,7 +128,7 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $process.WaitForExit()
         $process.ExitCode | Should -Be 0 -Because "$output $errors"
         $output | Should -Match ([regex]::Escape("your command: powershell -NoProfile -ExecutionPolicy Bypass -File '" + (Join-Path $room 'agents\emma\g1\relay.ps1') + "' <verb>"))
-        $output | Should -Match 'NEXT: run: powershell -NoProfile -ExecutionPolicy Bypass -File .*relay\.ps1'' wait'
+        $output | Should -Match '(?m)^NEXT: run wait now'
         (Read-RelayKeyValue (Join-Path $room 'agents\emma\card'))['cwd'] | Should -Be $folder
         (Read-RelayKeyValue (Join-Path $room 'agents\emma\card'))['shell'] | Should -Match '; the tool runs in Windows PowerShell 5\.1'
     }
@@ -1015,6 +1015,23 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         ((& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow') -join "`n") | Should -Not -Match 'nudge'
     }
 
+    It 'marks an idle agent with no wait running for more than 3 minutes' {
+        # Emma has a card, owes no task, and has no lease: after 3 minutes without a wait she needs ATTENTION
+        $seat = Join-Path $room 'agents\emma\seat'
+        Write-RelayGuardedText $object 'agents/emma/seat' ([System.IO.File]::ReadAllText($seat) -replace 'expect_computer: .*', 'expect_computer: ')
+        $alive = Join-Path $room 'agents\emma\alive'
+        $lease = Join-Path $room 'agents\emma\wait.lease'
+        Test-Path -LiteralPath $lease | Should -BeFalse
+        (Get-Item -LiteralPath $alive).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-1)
+        @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'emma' })[0].attention | Should -Be ''
+        (Get-Item -LiteralPath $alive).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-4)
+        $emma = @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'emma' })[0]
+        $emma.attention | Should -Match '^idle with no wait running for [45] min: it reads nothing; tell its session to run wait$'
+        ((& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow') -join "`n") | Should -Match 'ATTENTION: idle with no wait running for [45] min'
+        [System.IO.File]::WriteAllText($lease, "token: abc`ngen: 1`nhost: elsewhere`npid: 1`n")
+        @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'emma' })[0].attention | Should -Be ''
+    }
+
     It 'marks an agent that wakes on a background command, has a task it was shown and no wait running' {
         # Jack is shown its task and starts no wait: no message reaches it until its session looks by itself
         $null = Invoke-RelayTool -Room $room -Agent 'jack' -Engine $engine -Words @('check')
@@ -1052,7 +1069,8 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         Remove-Item -LiteralPath $lease -Force
         $null = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('report', 'olivia-jack-0001') -Text "Reviewed`n`n1. Result: fine."
         (Get-Item -LiteralPath $alive).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-7)
-        @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Be ''
+        # Idle with no open task and no wait: ATTENTION so the coordinator tells the session to wait again
+        @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Match '^idle with no wait running for [78] min: it reads nothing; tell its session to run wait$'
     }
 
     It 'shows what a task should take next to it, and OVERDUE when its agent has sent nothing for that long' {

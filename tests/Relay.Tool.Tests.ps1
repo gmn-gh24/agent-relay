@@ -153,7 +153,8 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $result.Output | Should -Match '=== ASSIGNMENT.md ==='
             $result.Output | Should -Match 'is a machine in use\. It is not a test machine'
             $result.Output | Should -Match '=== standing rules and owner decisions \(0\) ==='
-            $result.Output | Should -Match '(?m)^NEXT: run: .* wait'
+            $result.Output | Should -Match '(?m)^Mandatory: after every task, report, then run wait at once\.$'
+            $result.Output | Should -Match '(?m)^NEXT: run wait now'
         }
 
         It 'shows every card and how each machine is to be treated' {
@@ -272,6 +273,8 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $report = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('report') -Text "Seven files`n`n1. Result: seven files."
             $report.ExitCode | Should -Be 0
             $report.Output | Should -Match 'SENT emma-olivia-0002 \(result of olivia-emma-0001\)'
+            $report.Output | Should -Match '(?m)^WARNING: no wait of yours is running; nothing reaches you until it does\.$'
+            $report.Output | Should -Match '(?m)^NEXT: run wait now$'
             $result = Read-RelayTestMessage (Join-Path $room 'agents\olivia\inbox\emma-0002.md')
             $result['type'] | Should -Be 'result'
             $result['re'] | Should -Be 'olivia-emma-0001'
@@ -283,6 +286,19 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $seen = Invoke-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('check')
             $seen.Output | Should -Match '--- emma-olivia-0002 \| result from Emma \| re: olivia-emma-0001'
             $seen.Output | Should -Match 'files: .*emma-olivia-0002 \(1\)'
+        }
+
+        It 'keeps the usual report NEXT when a wait lease is already alive' {
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "One more`n`nDo it."
+            $null = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+            # A fresh lease of this process counts as a live wait (no need to leave a wait process running)
+            $lease = Join-Path $room 'agents\emma\wait.lease'
+            [System.IO.File]::WriteAllText($lease, ("token: test`ngen: 1`nhost: {0}`npid: {1}`n" -f [Environment]::MachineName, $PID))
+            $report = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('report', 'olivia-emma-0001') -Text "Done`n`n1. Result: done."
+            $report.ExitCode | Should -Be 0
+            $report.Output | Should -Not -Match 'WARNING: no wait of yours is running'
+            $report.Output | Should -Not -Match '(?m)^NEXT: run wait now$'
+            $report.Output | Should -Match '(?m)^NEXT: run: .+ wait'
         }
 
         It 'carries text that every shell would mangle on a command line' {
@@ -482,22 +498,26 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $task = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Work for an agent`n`nDo it."
             $task.ExitCode | Should -Be 0
             $lines = @($task.Output -split "`n" | Where-Object { $_ })
-            $lines.Count | Should -Be 3
+            $lines.Count | Should -Be 4
             $lines[0] | Should -BeExactly 'SENT olivia-emma-0001 (task) to Emma'
             $lines[1] | Should -Match '^expected: 15 minutes\. '
-            $lines[2] | Should -Match '^NEXT: '
+            $lines[2] | Should -Match '^WARNING: no wait of yours is running'
+            # task is not one of the verbs that force "run wait now"; it keeps its usual NEXT
+            $lines[3] | Should -Match '^NEXT: carry on; when you have nothing to do, run: '
             @(Get-RelayTestInbox -Room $room -Agent 'emma').Count | Should -Be 1
-            # To everybody: one SENT line, then the next step
+            # note: SENT, warning, then run wait now
             [System.IO.File]::WriteAllText((Join-Path $room 'agents\henry\status'), $old)
             $all = @((Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'all') -Text "For all`n`nRead it.").Output -split "`n" | Where-Object { $_ })
-            $all.Count | Should -Be 2
+            $all.Count | Should -Be 3
             $all[0] | Should -Match '^SENT .* \(note\) to Emma, Henry, Jack$'
-            $all[1] | Should -Match '^NEXT: '
-            # A colleague with a direct line: the same two lines
+            $all[1] | Should -Match '^WARNING: no wait of yours is running'
+            $all[2] | Should -Match '^NEXT: run wait now$'
+            # A colleague with a direct line: SENT, warning, run wait now
             [System.IO.File]::WriteAllText((Join-Path $room 'agents\jack\lines'), "henry`n")
             $colleague = @((Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('note', 'henry') -Text "From a colleague`n`nRead it.").Output -split "`n" | Where-Object { $_ })
-            $colleague.Count | Should -Be 2
-            $colleague[1] | Should -Match '^NEXT: '
+            $colleague.Count | Should -Be 3
+            $colleague[1] | Should -Match '^WARNING: no wait of yours is running'
+            $colleague[2] | Should -Match '^NEXT: run wait now$'
             foreach ($said in $task.Output, ($all -join "`n"), ($colleague -join "`n")) { $said | Should -Not -Match 'parked|NOTE: ' }
         }
 
@@ -1075,7 +1095,8 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $restarted = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('start')
             $restarted.Output | Should -Match 'open requests: you owe a reply to 1'
             $restarted.Output | Should -Match 'This text must come back\.'
-            $restarted.Output | Should -Match 'NEXT: work on the open request'
+            $restarted.Output | Should -Match '(?m)^NEXT: run wait now'
+            $restarted.Output | Should -Match 'work on the open request'
         }
 
         It 'delivers again when the receiver died between reading and recording' {
@@ -1410,7 +1431,10 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $first.Output | Should -Match '^JOINED: you have a seat'
         Get-RelayTestJoinedName $first | Should -Be $openSeats[0]
         $first.Output | Should -Match "INTRODUCED: $($openSeats[0])-olivia-0001"
-        $first.Output | Should -Match 'NEXT: run: .* wait   as a background command'
+        $first.Output | Should -Match '(?m)^Mandatory: after every task, report, then run wait at once\.$'
+        $first.Output | Should -Match '(?m)^Never end your turn without a running wait\.$'
+        $first.Output | Should -Match '(?m)^You stop only when retired or the room is closed\. With nothing to do, run wait\.$'
+        $first.Output | Should -Match '(?m)^NEXT: run wait now'
         $hello = Read-RelayTestMessage (Join-Path $room "agents\olivia\inbox\$($openSeats[0])-0001.md")
         $hello['type'] | Should -Be 'hello'
         $hello['Body'] | Should -Match 'product:\s+claude-code'
@@ -1433,7 +1457,7 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $card = Get-Content -LiteralPath (Join-Path $room "agents\$($openSeats[0])\card") -Raw
         $card | Should -Match '(?m)^kind: codex$'
         $card | Should -Match '(?m)^wake: loop$'
-        $codex.Output | Should -Match 'returns within 15 minutes'
+        $codex.Output | Should -Match '(?m)^NEXT: run wait now\. .*returns within 15 minutes'
         $codex.Output | Should -Match 'keep waiting on that same running command'
         $codex.Output | Should -Match 'when it says nothing arrived, run it again'
         # A draft kept in the working folder carries the agent's name: two agents may share that folder
@@ -1445,12 +1469,12 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $card = Get-Content -LiteralPath (Join-Path $room "agents\$($openSeats[1])\card") -Raw
         $card | Should -Match '(?m)^kind: generic$'
         $card | Should -Match '(?m)^product: some-new-agent$'
-        $other.Output | Should -Match 'returns within 1 minutes'
+        $other.Output | Should -Match '(?m)^NEXT: run wait now\. .*returns within 1 minutes'
 
         # The same answers hold for every later command of that agent, not only for its start
         $again = Invoke-RelayTool -Room $room -Agent $openSeats[0] -Engine $engine -Words @('start')
         $again.ExitCode | Should -Be 0
-        $again.Output | Should -Match 'returns within 15 minutes'
+        $again.Output | Should -Match '(?m)^NEXT: run wait now\. .*returns within 15 minutes'
         $again.Output | Should -Match "your draft file: \S*relay-draft-$($openSeats[0])\.md"
     }
 
