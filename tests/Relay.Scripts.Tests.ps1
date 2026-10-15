@@ -1169,6 +1169,21 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' })[0].attention | Should -Be ''
     }
 
+    It 'marks an agent that reported and has had nothing from the coordinator since' {
+        $age = { param([string]$Path, [double]$Minutes) [System.IO.File]::SetLastWriteTimeUtc($Path, [DateTime]::UtcNow.AddMinutes(-$Minutes - 0.2)) }
+        $null = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('report', 'olivia-jack-0001') -Text "Reviewed`n`n1. Result: fine."
+        $result = @(Get-RelayMessage $object | Where-Object { $_.From -ceq 'jack' -and $_.Type -ceq 'result' } | Sort-Object Time, Id | Select-Object -Last 1)[0].Path
+        $jackLine = { @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq 'jack' })[0].attention }
+        & $age $result 6.2
+        (& $jackLine) | Should -Match '^reported [56] min ago, nothing sent to it since: give it its next task or its reminder$'
+        ((& (Join-Path $scripts 'Get-RelayBoard.ps1') -Room 'flow') -join "`n") | Should -Match 'ATTENTION: reported [56] min ago, nothing sent to it since'
+        $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'jack') -Text "Thanks`n`nStand by."
+        (& $jackLine) | Should -Not -Match 'nothing sent to it since'
+        $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'jack') -Text "Review again`n`nReview again."
+        & $age $result 6.2
+        (& $jackLine) | Should -Not -Match 'nothing sent to it since'
+    }
+
     It 'shows what a task should take next to it, and OVERDUE when its agent has sent nothing for that long' {
         # The board's clock is a probe file's time, which can read a few ms behind UtcNow: age a little past the whole
         # minute so that the floored count is not one short

@@ -1615,6 +1615,22 @@ function Get-RelayAgentState {
                 $hasWait = ($leaseAt -ne [DateTime]::MinValue -and ($now - $leaseAt).TotalSeconds -lt 60)
                 if ($tasks.Count -gt 0 -and -not $hasWait) { $attention = "has an open task and no wait running, last sign of life $silent min ago: no message reaches it; ask the owner to tell that session to check the room" }
             }
+            # Reported on its last task and the coordinator has sent nothing since: the owner must not be the one
+            # who notices it sitting idle
+            if (-not $attention -and @($open | Where-Object { $_.To -ceq $name }).Count -eq 0) {
+                $lastResult = $null
+                foreach ($message in @($Messages | Where-Object { $_.From -ceq $name -and $_.Type -ceq 'result' } | Sort-Object Time, Id)) { $lastResult = $message }
+                if ($null -ne $lastResult) {
+                    $since = @($Messages | Where-Object {
+                            $_.To -ceq $name -and $_.From -ceq $Room.Coordinator -and $_.Time -gt $lastResult.Time -and
+                            -not ($lastResult.Re -and $_.Id -ceq $lastResult.Re)
+                        })
+                    if ($since.Count -eq 0) {
+                        $reportedMin = [int][Math]::Max(0, ($now - $lastResult.Time).TotalMinutes)
+                        if ($reportedMin -gt 5) { $attention = "reported $reportedMin min ago, nothing sent to it since: give it its next task or its reminder" }
+                    }
+                }
+            }
         }
         $owes = @($open | Where-Object { $_.To -eq $name })
         # Where it says it stands (the verb progress): the last record, cut at the first separator
