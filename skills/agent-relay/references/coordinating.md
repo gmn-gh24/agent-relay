@@ -109,6 +109,12 @@ offers, and to run its `start <product> <model> <effort>` again with the answer.
 in your session, do not guess it, and do not have the agent guess. When the owner said what would join
 ("codex luna medium") and the introduction says something else, tell the owner before that agent gets work.
 
+The owner's answer for an agent that joined with `unknown` goes on its seat, where the board reads it:
+`scripts/Add-RelayAgent.ps1 -Room <id> -Seat <name> -SetModel <model> -SetEffort <effort>` (one or both; an
+empty value hands it back to what the agent says). The board prints the values with `(owner)`, the tier and
+FIT lines use them, and a later start of the agent does not replace them. `scripts/Add-RelayAgent.ps1
+-ListModels` prints the models this PC has seen in introductions: the choices to offer the owner.
+
 ## Every agent keeps waiting
 
 An agent waits until it is retired (its own `bye`, or your `-Retire`) or the room is closed. Its instructions
