@@ -165,6 +165,108 @@ Each is minutes of work with a test or a text change. Not done in 0.10.0; the ow
   quotes; an exact-spec PowerShell function with a self-test) as a reusable benchmark with the room's own
   timings. The results are in the room's `model-comparison.md` in its archive.
 
+## From the Ollama room and the plugin-improvements room (2026-10-14)
+
+Items the owner deferred on the day the two rooms ran. Each says what happened, the evidence, the direction
+and what is open, so that a later session can start cold. The text and script items of the same day (a shorter
+START-HERE, the welcome and reminder in the skill, incremental assignment edits, the owner's model and effort
+on a seat) are not listed: they ship, or are in the CHANGELOG.
+
+### D1. A help verb in `relay.ps1`
+
+- **What happened.** After a join the tool printed `START-HERE.md` (about 2,090 tokens) and `ASSIGNMENT.md`
+  (about 780). With a client window of 16K tokens that filled the window before the first task arrived. The
+  text rewrite of that day brought `START-HERE.md` to about 6,700 characters, which is a cut, not a fix.
+- **Direction.** The join prints only the short rules; the details sit behind `help <topic>`. Target: an
+  agent's first output is under 2,000 tokens.
+- **Open.** Which rules are the short ones (the minimum that keeps the safety rules: the introduction, never
+  typing text on the command line, the exit steps); which topics there are; whether the help text is a guarded
+  file of the room package. This is the first step of R3 (compact mode).
+
+### D2. Launching an agent from inside a room, with a launcher per product
+
+- **What happened.** Proven by hand: a running agent started a Copilot agent, which joined in 21 seconds.
+- **Direction.** One launcher template per product (`Start-Relay<Product>.ps1` for Copilot, Claude Code,
+  Codex, OpenCode and aider). A launcher opens a seat first, starts a fresh process (the identity fix is
+  done), detects which name the child took, and stops and retires the child. It is visible or headless as the
+  product allows, passes the product's approval flag, and writes a prompt that states product, model and
+  effort. Optional `-JoinPrompt <text|file>` and `-Configure`; it passes the product's minimal-mode switches
+  (Claude Code: `--disable-slash-commands --strict-mcp-config --tools ...`). A custom API key disables the
+  claude.ai connectors for that session. The per-product facts are in `references/agent-kinds.md`.
+- **Risks.** A window on the owner's desktop; orphan processes; prompt injection through the join prompt file
+  for a child started with its guard off; the child inherits tokens from the environment; Copilot cannot
+  remember the approval of a UNC path.
+- **Open.** Which products first; how the coordinator learns that a child is gone; whether the owner approves
+  each launch or once per room.
+
+### D3. Keep-waiting, the strongest layer
+
+- **What happened.** An agent without a running wait cannot be reached from the room: the slowest reply of the
+  Ollama room (56 minutes) was from one. Layers 1 to 3 are in work.
+- **Direction.** A Claude Code `Stop` hook in the plugin that blocks ending the turn while no wait lease is
+  alive; and the launcher adding the rule to the client's system prompt (`--append-system-prompt`) where the
+  product has a switch for it.
+- **Open.** What the hook reads to know the lease is alive (the room's lease file is room text); products
+  without hooks; what the hook does when the room is closed or the agent is retired.
+
+### D4. The tool sends the welcome and the reminder
+
+- **What happened.** The coordinator sends the welcome (name, role, first task) and the keep-waiting reminder
+  by hand; the skill text says so (`SKILL.md` workflow 2, `coordinating.md` "Introductions" and "Results").
+- **Direction.** The room tool sends the welcome on the first introduction, from a template, and appends the
+  keep-waiting reminder to every accepted result.
+- **Open.** Where the template lives (a guarded file); how the tool knows a result was accepted (a message
+  type, or a verb of the coordinator's); that the text of both stays the coordinator's to change.
+
+### D5. Live check of elevation inheritance
+
+- **What happened.** Documented as not verified: whether an agent started from an elevated agent is elevated,
+  and whether the room share opens by UNC from that window.
+- **Direction.** Start one elevated agent through UAC, have it run a launcher, and check that the child's
+  introduction says `elevated` and that the share opens by UNC from the elevated window.
+- **Open.** A machine where the owner can answer the UAC prompt; the result goes into `agent-kinds.md` and the
+  elevation lines of `coordinating.md`.
+
+### D6. An un-retire
+
+- **What happened.** A seat was force-retired while its agent was working without running room commands. Only
+  a hand edit of the `retired` marker, in canon and in the room, brought it back; it is recorded in
+  `exits.log`.
+- **Direction.** `Add-RelayAgent.ps1 -Unretire <name>` brings back a seat retired by mistake with its name,
+  assignment and worktree, writes the exit record, and tells the agent in a note.
+- **Open.** Until when a seat can come back (the generation, the open requests it left); whether the earlier
+  rule that a retire asks first makes this rare enough to leave to the hand edit.
+
+### D7. A second wait that joins the first
+
+- **What happened.** A second `wait` is today a calm exit 0 ("a wait is already listening"); some hosts show a
+  non-zero exit as a failure, which is why that fix was chosen.
+- **Direction.** The second wait joins the first and reports its result when the first ends, so a wait started
+  twice still delivers.
+- **Open.** The lease holds one owner; what two waiters reading one delivery record do.
+
+### D8. An owner flag for the stated model and effort in the feed and the pane
+
+- **What happened.** The board prints `(owner)` for a model or an effort the owner stated for a seat; the feed
+  JSON and the pane carry the effective values and no flag.
+- **Direction.** Add the flag to `Watch-RelayFeed.ps1`, the `to*` functions in `hooks/feed.ts`,
+  `types/index.d.ts` and `hooks/feed.test.ts`.
+- **Open.** How the pane shows it (next to the model, as on the board).
+
+### D9. A wait that batches
+
+- **What happened.** The coordinator's wait ends at the first message: one wake, and one turn, per message.
+- **Direction.** Hold for several messages, or for a short quiet period, before ending.
+- **Open.** The hold time and the cap, so an urgent message is not held; a limit that stays: a `wait` whose
+  output is read and then discarded cannot be told from a legitimate file reader.
+
+### D10. The known-models list offers a fake name
+
+- **What happened.** `models.json` on this PC holds each model name an agent's card gave, after a check of the
+  characters. A name an agent made up can appear as a choice offered to the owner.
+- **Direction.** Decide whether only names the owner stated are offered, or the card names with a mark.
+- **Open.** What the owner needs more: a short list of real models, or all the names that were seen.
+
 ## Next: supply chain
 
 A checksum manifest (`MANIFEST.sha256`) for what a room is built from: `assets/room-package/`, `scripts/*.ps1`,
