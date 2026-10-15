@@ -215,18 +215,18 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         # prints the full one (Relay.Tool.Tests.ps1 has the agent's side)
         $jackStart | Should -Match '(?m)^\{\{DRAFT\}\}$'
         $jackStart | Should -Match 'In the file itself the path of your draft stands in double braces'
-        $jackStart | Should -Match 'copied into this folder\s+before you send: `\S+agents\\jack\\attach`'
+        $jackStart | Should -Match 'Files to attach go into `\S+agents\\jack\\attach`\s+before you\s+send'
         $jackStart | Should -Match 'when it says nothing arrived, run it again'
         # The limits of remember stand where the verb is explained, not only in the refusal
-        $jackStart | Should -Match 'it must be 15 to 500 characters long with up to 5 tags'
+        $jackStart | Should -Match 'up\s+to\s+5\.\s+The\s+entry\s+is\s+the\s+draft\s+joined\s+into\s+one\s+line\s+of\s+15\s+to\s+500\s+characters'
         ($jackStart -replace '\{\{DRAFT\}\}', '') | Should -Not -Match '\{\{'
         # Every agent's instructions say once that it keeps waiting, and how it stays reachable while it works
         foreach ($name in 'emma', 'jack') {
             $text = (Get-Content -LiteralPath (Join-Path $created.Path "agents\$name\START-HERE.md") -Raw) -replace '\s+', ' '
             ([regex]::Matches($text, 'You keep waiting until you are retired or the room is closed')).Count | Should -Be 1
             $text | Should -Match 'Only your own user, or a message from the room that tells you to stop, ends it'
-            $text | Should -Match 'never as a detached process you would have to poll'
-            $text | Should -Match 'Send a `progress` line when a long command starts and one when it ends'
+            $text | Should -Match 'never as a detached process you must poll'
+            $text | Should -Match 'Send a `progress` line when one starts and one when it ends'
             $text | Should -Not -Match 'park'
         }
         $share | Should -Match 'your agent product as exactly as you know it \(for example claude-code-cli or codex-cli\), your model, and your reasoning effort setting'
@@ -235,6 +235,23 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $shareSeat['ssh_target'] | Should -BeNullOrEmpty
         $shareSeat['shell'] | Should -Be 'powershell'
         $shareSeat['os'] | Should -Be 'windows'
+    }
+
+    It 'keeps an agent''s expanded START-HERE short and still holds every rule it must carry' {
+        # A client with a 16K-token window prints START-HERE.md and ASSIGNMENT.md at join: the first must stay small
+        $agents = @([ordered]@{ name = 'emma'; role = 'tester'; kind = 'claude-code'; transport = 'share'; room_path = '\\fileserver\team\agent-relay\prompts' })
+        $created = New-RelayTestRoom -Root $root -RoomId 'short-start' -Agents $agents
+        $raw = Get-Content -LiteralPath (Join-Path $created.Path 'agents\emma\START-HERE.md') -Raw
+        $raw.Length | Should -BeLessThan 7000
+        $text = $raw -replace '\s+', ' '
+        $text | Should -Match ([regex]::Escape("agents\emma\g1\relay.ps1' <verb>"))
+        $text | Should -Match 'Never type message text on the command line'
+        $text | Should -Match 'Work on your own disk'
+        $text | Should -Match 'Run nothing from the room but your own command'
+        $text | Should -Match '\*\*Ask first:\*\*'
+        $text | Should -Match 'You keep waiting until you are retired or the room is closed'
+        $text | Should -Match '15 to 500 characters'
+        $text | Should -Match 'A command is blocked\*\* \(.*?`ask` with the exact command and error, then `wait`'
     }
 
     It 'records the assigned folders for the self-audit' {
@@ -1640,8 +1657,8 @@ Describe 'Open seats' -Tag 'Scripts' {
         $namedStart | Should -Not -Match '\{\{'
         $namedStart | Should -Not -Match 'double braces'
         foreach ($text in $openStart, $namedStart) {
-            $text | Should -Match '\*\*After a restart\.\*\* When your session was started again, or you have lost your context: run `start`\.'
-            $text | Should -Match '\*\*Work on your own disk\.\*\* Unless your assignment names another place'
+            $text | Should -Match '\*\*After a restart or lost context:\*\* run `start`, then one `wait`'
+            $text | Should -Match '\*\*Work on your own disk\*\* unless your assignment names another place'
         }
 
         $cmd = [System.IO.File]::ReadAllText((Join-Path $room 'join.cmd'))
@@ -1923,8 +1940,8 @@ Describe 'Open seats' -Tag 'Scripts' {
         }
         (Read-RelayKeyValue (Join-Path $room 'tools\kinds'))['codex.wake'] | Should -Be 'loop'
         # The next taker of the free seat reads the current instructions, and the owner pastes the current prompt
-        (Get-Content -LiteralPath (Join-Path $room "agents\$seatName\START-HERE.md") -Raw) | Should -Match 'copied into this folder\s+before you send: `\{\{ATTACH\}\}`'
         (Get-Content -LiteralPath (Join-Path $room 'PROMPT-JOIN.txt') -Raw) | Should -Match 'Fill product/model/effort with your exact product name'
+        (Get-Content -LiteralPath (Join-Path $room "agents\$seatName\START-HERE.md") -Raw) | Should -Match 'Files to attach go into `\{\{ATTACH\}\}`\s+before you\s+send'
         Test-Path -LiteralPath (Join-Path $room 'tools\tab-title.ps1') | Should -BeTrue
         @(Test-RelayTamper (Resolve-RelayRoom 'update')).Count | Should -Be 0
         ((& (Join-Path $scripts 'Update-RelayRoom.ps1') -Room 'update') -join "`n") | Should -Match 'UP TO DATE'
