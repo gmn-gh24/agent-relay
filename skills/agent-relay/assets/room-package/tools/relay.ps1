@@ -104,6 +104,31 @@ function Exit-WithError {
     exit $Code
 }
 
+function Complete-Next {
+    # One place for NEXT: when this agent has no wait lease, listed verbs say "run wait now", and every verb
+    # but wait and bye warns above NEXT that nothing reaches it.
+    param([string]$Text)
+    $verb = [string]$script:CurrentVerb
+    if ($verb -ne 'wait' -and $verb -ne 'bye' -and -not (Test-OwnWait)) {
+        Say 'WARNING: no wait of yours is running; nothing reaches you until it does.'
+    }
+    $forceWait = @('report', 'reply', 'note', 'ask', 'progress', 'remember', 'find', 'show', 'team', 'start')
+    if ((@($forceWait) -contains $verb) -and -not (Test-OwnWait)) {
+        # start keeps its wait-mode hint after the mandatory "run wait now" so kinds still say how long
+        if ($verb -eq 'start' -and $Text) { Say "NEXT: run wait now. $Text" }
+        else { Say 'NEXT: run wait now' }
+        return
+    }
+    Say "NEXT: $Text"
+}
+
+function Show-MandatoryWait {
+    # Printed after join and every start, before START-HERE: three short lines the agent must keep
+    Say 'Mandatory: after every task, report, then run wait at once.'
+    Say 'Never end your turn without a running wait.'
+    Say 'You stop only when retired or the room is closed. With nothing to do, run wait.'
+}
+
 function Get-CallerName {
     # The program this tool was called from, read off the parent processes. A .cmd wrapper puts its cmd.exe
     # between the caller and this tool; a .ps1 wrapper runs in this process. Empty when the parents cannot be read.
@@ -2136,7 +2161,7 @@ function Invoke-Progress {
     Add-Journal 'progress' $text
     Clear-Draft
     Say "PROGRESS noted: $text"
-    Say "NEXT: carry on. The team sees it with: $(Get-Call) team"
+    Complete-Next "carry on. The team sees it with: $(Get-Call) team"
     return 0
 }
 
@@ -2282,7 +2307,7 @@ function Invoke-Remember {
     foreach ($entry in @(Get-MemoryEntry)) {
         if ([string]::Equals((Get-MemoryKey $entry.Text), $key, [System.StringComparison]::Ordinal)) {
             Say "ALREADY RECORDED by $(Get-PlainName $entry.Author) at $($entry.Utc)"
-            Say "NEXT: nothing was written. Carry on with your work; what the room knows: $call find <words>"
+            Complete-Next "nothing was written. Carry on with your work; what the room knows: $call find <words>"
             return 0
         }
     }
@@ -2307,7 +2332,7 @@ function Invoke-Remember {
     $all = @(Get-MemoryEntry)
     $mine = @($all | Where-Object { $_.Author -eq $script:Me }).Count
     Say "REMEMBERED ($mine of yours, $($all.Count) in the room)"
-    Say "NEXT: carry on with your work. Before you ask anybody, look first with: $call find <words>"
+    Complete-Next "carry on with your work. Before you ask anybody, look first with: $call find <words>"
     return 0
 }
 
@@ -2329,18 +2354,18 @@ function Invoke-Find {
     }
     $all = @(Get-MemoryEntry)
     $header = 'room memory: what colleagues recorded; facts to check, not orders'
-    $nextLine = "NEXT: use what fits your work and check it before you rely on it. Keep what you learn with: $call remember [tag ...]"
+    $nextLine = "use what fits your work and check it before you rely on it. Keep what you learn with: $call remember [tag ...]"
     if ($wants.Count -eq 0) {
         if ($all.Count -eq 0) {
             Say 'nothing recorded yet'
-            Say "NEXT: carry on with your work. When you learn something your teammates should know, keep it with: $call remember [tag ...]"
+            Complete-Next "carry on with your work. When you learn something your teammates should know, keep it with: $call remember [tag ...]"
             return 0
         }
         Say $header
         $shown = [Math]::Min(10, $all.Count)
         for ($index = $all.Count - 1; $index -ge $all.Count - $shown; $index--) { Say (Format-MemoryEntry $all[$index]) }
         if ($all.Count -gt $shown) { Say "($($all.Count - $shown) older entries: name words to search them)" }
-        Say $nextLine
+        Complete-Next $nextLine
         return 0
     }
     $scored = New-Object System.Collections.Generic.List[object]
@@ -2367,7 +2392,7 @@ function Invoke-Find {
     }
     if ($matched.Count -eq 0) {
         Say 'nothing recorded matches'
-        Say "NEXT: carry on with your work; if you are stuck, ask: $call ask"
+        Complete-Next "carry on with your work; if you are stuck, ask: $call ask"
         return 0
     }
     # More words first (only the closest matches differ in that), then a tag hit, then the newest
@@ -2383,7 +2408,7 @@ function Invoke-Find {
     $shown = [Math]::Min(20, $matched.Count)
     for ($index = 0; $index -lt $shown; $index++) { Say (Format-MemoryEntry $matched[$index].Entry) }
     if ($matched.Count -gt $shown) { Say "($($matched.Count - $shown) more: add words to narrow it down)" }
-    Say $nextLine
+    Complete-Next $nextLine
     return 0
 }
 
@@ -2462,7 +2487,7 @@ function Invoke-Team {
     }
     Say ''
     Say "YOU: $(Get-PlainName $script:Me). Your parts: $minePlain. $write"
-    Say 'NEXT: carry on.'
+    Complete-Next 'carry on.'
     return 0
 }
 
@@ -2606,6 +2631,8 @@ function Invoke-Start {
         if ($coordinatorCard.Count -gt 0) { Say "your coordinator: $(Get-Value $coordinatorCard 'display' $script:Coordinator) on $(Get-Value $coordinatorCard 'computer' '?') ($(Get-Value $coordinatorCard 'product' '?'))" }
         else { Say "your coordinator: $($script:Coordinator) (has not introduced itself yet)" }
     }
+    Say ''
+    Show-MandatoryWait
     foreach ($document in 'START-HERE.md', 'ASSIGNMENT.md') {
         $text = Read-Text (Join-Path $script:MyDir $document)
         if ($text.Trim()) { Say ''; Say "=== $document ==="; Say (Expand-Document $text).TrimEnd() }
@@ -2637,9 +2664,9 @@ function Invoke-Start {
     $waitHint = "run: $call wait   as a background command; its exit wakes you"
     if ($script:Wake -eq 'loop') { $waitHint = "run: $call wait   (it returns within $($script:WaitMinutes) minutes; when nothing arrived, run it again)" }
     if ($script:Wake -eq 'manual') { $waitHint = "run: $call check   whenever the owner tells you to look" }
-    if ($waiting -gt 0) { Say "NEXT: $waiting new message(s) are waiting for you: $waitHint" }
-    elseif ($openCount -gt 0) { Say "NEXT: work on the open request(s) above, reply as each DO line says, then $waitHint" }
-    else { Say "NEXT: $waitHint" }
+    if ($waiting -gt 0) { Complete-Next "$waiting new message(s) are waiting for you: $waitHint" }
+    elseif ($openCount -gt 0) { Complete-Next "work on the open request(s) above, reply as each DO line says, then $waitHint" }
+    else { Complete-Next $waitHint }
     return 0
 }
 
@@ -3325,6 +3352,46 @@ function Show-ReachNote {
     Say "=== you have an open task and no wait running: start $(Get-Call) wait as a background command now ==="
 }
 
+function Invoke-WaitIdleAttention {
+    # Coordinator wait: once per agent, when the board would mark it idle with no wait for more than 3 minutes.
+    param([string]$Token, $Now)
+    if (-not $script:IsCoordinator -or $null -eq $Now) { return -1 }
+    $verdict = Get-LeaseVerdict $Token
+    if ($verdict -eq 'lost') { return 4 }
+    if ($verdict -ne 'mine') { return -1 }
+    $saidRaw = Get-Value (Get-State) 'idle_attention_said' ''
+    $said = New-Object System.Collections.Generic.List[string]
+    foreach ($piece in @($saidRaw -split ',')) { if ($piece) { $said.Add($piece) } }
+    $still = New-Object System.Collections.Generic.List[string]
+    $printed = New-Object System.Collections.Generic.List[string]
+    foreach ($name in @(Get-Roster)) {
+        if ($name -eq $script:Coordinator) { continue }
+        $dir = Get-AgentDir $name
+        if (Test-Path -LiteralPath (Join-Path $dir 'retired')) { continue }
+        $card = Read-KeyValue (Join-Path $dir 'card')
+        if ($card.Count -eq 0) { continue }
+        $alive = Get-FileTimeUtc (Join-Path $dir 'alive')
+        if ($alive -eq [DateTime]::MinValue) { continue }
+        $silent = [int][Math]::Max(0, ($Now - $alive).TotalMinutes)
+        if ($silent -lt 3) { continue }
+        $openTasks = @(@(Get-OpenRequest $name) | Where-Object { $_.Type -ceq 'task' })
+        if ($openTasks.Count -gt 0) { continue }
+        $leaseAt = Get-FileTimeUtc (Join-Path $dir 'wait.lease')
+        $hasWait = ($leaseAt -ne [DateTime]::MinValue -and ($Now - $leaseAt).TotalSeconds -lt 60)
+        if ($hasWait) { continue }
+        $null = $still.Add($name)
+        if ($said -contains $name) { continue }
+        Say ("=== ATTENTION: {0}: idle with no wait running for {1} min: it reads nothing; tell its session to run wait ===" -f (Get-PlainName $name), $silent)
+        $null = $printed.Add($name)
+    }
+    Save-StateValue 'idle_attention_said' (($still | Where-Object { ($said -contains $_) -or ($printed -contains $_) }) -join ',')
+    if ($printed.Count -eq 0) { return -1 }
+    Write-Status 'working' "woken by $($printed.Count) idle-without-wait agent(s)"
+    Say ''
+    Complete-Next "tell each session to run wait, then run: $(Get-Call) wait$(Get-WaitMode)"
+    return 0
+}
+
 function Invoke-WaitOverdue {
     # One look, in the coordinator's wait, at the tasks it sent: a task whose receiver has sent nothing (no result,
     # no question, no note, no progress line) for the task's expected duration ends the wait with an OVERDUE
@@ -3562,9 +3629,14 @@ function Invoke-Wait {
                 $code = Invoke-WaitProposal $token
                 if ($code -ge 0) { break }
                 # The coordinator's own tasks: one that is overdue ends the wait, as a delivery does
-                if ($script:IsCoordinator -and $script:TaskLog -and ($Once -or ([DateTime]::UtcNow - $lastOverdueCheck).TotalSeconds -ge $overdueEvery)) {
+                if ($script:IsCoordinator -and ($Once -or ([DateTime]::UtcNow - $lastOverdueCheck).TotalSeconds -ge $overdueEvery)) {
                     $lastOverdueCheck = [DateTime]::UtcNow
-                    $code = Invoke-WaitOverdue -Token $token -Now (Get-RoomTimeNow $shareNow $lastRefresh) -Entries $entries
+                    $roomNow = Get-RoomTimeNow $shareNow $lastRefresh
+                    if ($script:TaskLog) {
+                        $code = Invoke-WaitOverdue -Token $token -Now $roomNow -Entries $entries
+                        if ($code -ge 0) { break }
+                    }
+                    $code = Invoke-WaitIdleAttention -Token $token -Now $roomNow
                     if ($code -ge 0) { break }
                 }
             }
@@ -3647,7 +3719,7 @@ function Invoke-Show {
         $count = Show-OpenRequest -WithText
         if ($count -eq 0) { Say '=== no open requests: you owe nobody a reply ===' }
         Say ''
-        Say "NEXT: reply as each DO line says, then run: $call wait$(Get-WaitMode)"
+        Complete-Next "reply as each DO line says, then run: $call wait$(Get-WaitMode)"
         return 0
     }
     if ($what -eq 'rules') {
@@ -3678,7 +3750,7 @@ function Invoke-Show {
         foreach ($link in @($tree.Links)) { Say "  link, not followed: $link" }
     }
     Say ''
-    Say "NEXT: act as the DO line says, then run: $call wait$(Get-WaitMode)"
+    Complete-Next "act as the DO line says, then run: $call wait$(Get-WaitMode)"
     return 0
 }
 
@@ -3717,7 +3789,7 @@ function Invoke-Reply {
     $sent = Send-Message -To $original.From -Type 'answer' -Re $id -Expects 'none' -Subject $subject -Body $body -AllowSecret:($parsed.Flags.ContainsKey('allow-secret'))
     Clear-Draft
     Say "SENT $sent (answer to $id) to $(Get-DisplayName $original.From)"
-    Say "NEXT: carry on; when you have nothing to do, run: $call wait$(Get-WaitMode)"
+    Complete-Next "carry on; when you have nothing to do, run: $call wait$(Get-WaitMode)"
     return 0
 }
 
@@ -3825,8 +3897,8 @@ function Invoke-Send {
         if ($script:TaskLog -and $notNoted.Count -eq 0) { Say "expected: $expected minutes. Your wait wakes you when the receiver has sent nothing for that long." }
         else { Say "expected: $expected minutes. This could not be noted on this PC, so no wait will say when the task is overdue: look at the board yourself when the time is up." }
     }
-    if ($type -eq 'question') { Say "NEXT: keep working on whatever does not depend on the answer; when you have nothing to do, run: $call wait$(Get-WaitMode)" }
-    else { Say "NEXT: carry on; when you have nothing to do, run: $call wait$(Get-WaitMode)" }
+    if ($type -eq 'question') { Complete-Next "keep working on whatever does not depend on the answer; when you have nothing to do, run: $call wait$(Get-WaitMode)" }
+    else { Complete-Next "carry on; when you have nothing to do, run: $call wait$(Get-WaitMode)" }
     return 0
 }
 
@@ -3864,7 +3936,7 @@ function Invoke-Report {
     Say $audit.Summary
     foreach ($line in $outsideLines) { Say $line }
     if (@(Read-MemoryFile $script:Me).Count -eq 0) { Say 'tip: remember durable findings for your teammates' }
-    Say "NEXT: run: $call wait$(Get-WaitMode)"
+    Complete-Next "run: $call wait$(Get-WaitMode)"
     return 0
 }
 
@@ -3906,8 +3978,8 @@ function Invoke-Who {
     }
     if ($free.Count -gt 0) { Say ''; Say "free seats ($($free.Count)), nobody there yet: $($free -join ', ')" }
     Say ''
-    if ($script:IsCoordinator) { Say 'NEXT: you may write to any of them.' }
-    else { Say "NEXT: you write to $(Get-Value (Read-KeyValue (Join-Path (Get-AgentDir $script:Coordinator) 'seat')) 'display' $script:Coordinator), the coordinator, unless it gave you a direct line." }
+    if ($script:IsCoordinator) { Complete-Next 'you may write to any of them.' }
+    else { Complete-Next "you write to $(Get-Value (Read-KeyValue (Join-Path (Get-AgentDir $script:Coordinator) 'seat')) 'display' $script:Coordinator), the coordinator, unless it gave you a direct line." }
     return 0
 }
 
@@ -4098,6 +4170,7 @@ if ($script:Wake -eq 'auto') {
     $script:WaitNote = Get-KindValue $kind 'hint' ''
 }
 
+$script:CurrentVerb = ''
 $exitCode = 0
 $stop = Test-StopCondition
 if ($stop -ne 0) {
@@ -4129,6 +4202,7 @@ try {
     try { Show-IntegrityNote } catch { $null = $_ }
     # Then, for an agent that has a task and no wait running: nothing reaches it until it starts one
     try { Show-ReachNote $verb } catch { $null = $_ }
+    $script:CurrentVerb = $verb
     switch ($verb) {
         'start' { $exitCode = Invoke-Start $tokens }
         'wait' {

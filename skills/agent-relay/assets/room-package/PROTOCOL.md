@@ -202,7 +202,10 @@ interrupted print can be recovered.
 
 You keep waiting until you are retired or the room is closed. Only your own user, or a message from the room
 that tells you to stop, ends it. A `wait` that ends with nothing is normal, in every mode and however often it
-happens: run it again.
+happens: run it again. After join and every `start`, the tool prints three mandatory lines: report then wait
+after every task; never end a turn without a running wait; stop only when retired or the room is closed. When
+no wait of yours is alive, verbs warn and their `NEXT:` says `run wait now`. The board marks an idle agent
+(no open task) with no wait for more than 3 minutes as ATTENTION.
 
 When a delivery brings a task: if you wake on a background command, start `wait` as a background command now,
 before the work, and then handle the messages; if your `wait` runs in the foreground, run `check` after every

@@ -199,7 +199,7 @@ try {
         $text = $progressText[$name]
         $noted = Invoke-Seat $name @('progress') "$text`n`nThe rest of the draft is ignored."
         $outLines = @($noted.Output -split "`r?`n" | Where-Object { $_ -ne '' })
-        Assert-That ($noted.ExitCode -eq 0 -and $outLines.Count -eq 2 -and $outLines[0] -ceq "PROGRESS noted: $text" -and $outLines[1] -match '^NEXT: carry on\. The team sees it with: .+ team$') "$name ($($engineOf[$name])) progress prints its two lines"
+        Assert-That ($noted.ExitCode -eq 0 -and $outLines.Count -eq 3 -and $outLines[0] -ceq "PROGRESS noted: $text" -and $outLines[1] -match '^WARNING: no wait of yours is running' -and $outLines[2] -eq 'NEXT: run wait now') "$name ($($engineOf[$name])) progress prints its three lines"
         $progressFile = Join-Path $room "agents\$name\progress"
         $recorded = @()
         if (Test-Path -LiteralPath $progressFile) { $recorded = @(Get-Content -LiteralPath $progressFile -Encoding UTF8) }
