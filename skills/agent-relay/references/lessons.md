@@ -876,3 +876,7 @@ these numbers and the changes they led to:
 - **No tamper alarm fired, no question was asked twice and nothing was delivered twice.** Nothing to change.
 - **One useful leaving remark: a product has two package names on the registry,** and the task notes named
   only one. Changed: `agent-kinds.md` records such naming traps per product.
+- **A second wait exited 4 and hosts painted it as a failure.** Five times in one session: nothing was wrong
+  (the first wait still listened), but exit code 4 made the host show a failed background command. Changed: that
+  path prints "A wait is already listening for <name>; nothing to do." and exits 0; exit 4 remains only for a
+  lease lost while a wait already held it.

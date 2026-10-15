@@ -14,10 +14,10 @@
     it. Every output ends with a NEXT: line that says what to do now. PROTOCOL.md in the room is the reference.
 
 .NOTES
-    Exit codes: 0 done, or something for you (a wait that timed out too: nothing arrived, run it again);
-    1 usage or error; 2 room unreachable; 3 nothing new (check only); 4 another wait already runs for you;
-    5 stop (room closed, or you were stopped, replaced or retired); 7 on hold (check only: start nothing new
-    until the coordinator lifts it).
+    Exit codes: 0 done, or something for you (a wait that timed out too: nothing arrived, run it again; a
+    second wait while yours already listens too); 1 usage or error; 2 room unreachable; 3 nothing new (check
+    only); 4 another wait took the lease while this one ran; 5 stop (room closed, or you were stopped,
+    replaced or retired); 7 on hold (check only: start nothing new until the coordinator lifts it).
 
     No param block on purpose: arguments are plain words, and the tool reads them itself. ASCII only.
 #>
@@ -3301,10 +3301,12 @@ function Invoke-Wait {
         $holderText = "its lease was refreshed $holder s ago"
         if ((Get-Value $lease 'pid' '') -and (Get-Value $lease 'host' '')) { $holderText += " by process $(Get-Value $lease 'pid' '') on $(Get-Value $lease 'host' '')" }
         Add-Journal 'second-wait' $holderText
-        Say "=== another wait is already running for $($script:Me) ($holderText) ==="
+        # Exit 0: nothing is wrong (the first wait still listens). A non-zero code here made hosts show a failed
+        # background command. Exit 4 stays for a lease lost while this wait already held it (Get-LeaseVerdict).
+        Say "A wait is already listening for $($script:Me); nothing to do."
         if ($Once) { Say "NEXT: that wait delivers what arrives; nothing to do now. If no wait of yours is running, run: $(Get-Call) wait$(Get-WaitMode)" }
         else { Say "NEXT: that wait stayed alive while this one waited for it, so it is yours and it listens for you: do nothing, its exit wakes you. If it ends without printing anything, run: $(Get-Call) wait$(Get-WaitMode)" }
-        return 4
+        return 0
     }
     $pollSeconds = 5
     $custom = 0

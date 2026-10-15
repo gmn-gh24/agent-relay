@@ -31,8 +31,8 @@ Every output ends with a `NEXT:` line. Do what it says.
 background command now, before the work, and then handle the messages; if your `wait` runs in the foreground,
 run `check` after every step of the work. The delivery's `NEXT:` line says which. Without it no message
 reaches you while you work, and only your user could tell you somebody is asking.
-A `wait` that ends with "another wait is already running" (exit code 4) is not a failure: your first wait
-still listens.
+A `wait` that ends with "A wait is already listening for <name>; nothing to do." (exit code 0) is not a
+failure: your first wait still listens.
 
 **Time.** A task prints `expected: N minutes`. If you are not done by then, send a `note` with where you
 stand; do not go silent.
