@@ -2759,7 +2759,13 @@ function Request-Seat {
         $wantedClaim = Read-KeyValue (Join-Path $wanted[0].Dir 'claim')
         if ($wantedClaim.Count -gt 0) {
             $wantedSession = Get-Value $wantedClaim 'session' ''
-            if (-not ($session -and $wantedSession -eq $session)) { Exit-WithError "Seat $SeatName is not free; run join without a name for the next free seat" "run it as: $(Format-Call $joinWrapper) <product> <model> <effort>" }
+            if (-not $IsNew -and $environmentSession -and $session -and $wantedSession -eq $session) {
+                # The session that holds this seat, asking for it by name: it is that agent, nobody new
+                try { Add-Line $log "$stamp back $($wanted[0].Name) $computer $kind" } catch { $null = $_ }
+                $script:IsBack = $true
+                return $wanted[0].Name
+            }
+            Exit-WithError "Seat $SeatName is not free; run join without a name for the next free seat" "run it as: $(Format-Call $joinWrapper) <product> <model> <effort>"
         }
         $ordered = $wanted
     }
@@ -2768,8 +2774,10 @@ function Request-Seat {
         $claim = Read-KeyValue (Join-Path $seat.Dir 'claim')
         if ($claim.Count -eq 0) { continue }
         $claimSession = Get-Value $claim 'session' ''
-        if (-not $IsNew -and $session -and $claimSession -eq $session) {
-            # The product says it is the same session: it is that agent, and nobody has to guess
+        if (-not $IsNew -and $environmentSession -and $session -and $claimSession -eq $session) {
+            # The product says it is the same session: it is that agent, and nobody has to guess. The agent
+            # process alone does not say it: several sessions share one ancestor process (a test host, a
+            # coordinator), so with no session id from the product the identity check below must decide.
             try { Add-Line $log "$stamp back $($seat.Name) $computer $kind" } catch { $null = $_ }
             $script:IsBack = $true
             return $seat.Name

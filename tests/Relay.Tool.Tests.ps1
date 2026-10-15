@@ -2065,7 +2065,7 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $agentFolder = Join-Path $room "agents\$name"
         $generation = 1
         if ($Recovery -eq 'replacement generation') {
-            & (Join-Path (Get-RelayTestPath scripts) 'Add-RelayAgent.ps1') -Room $room -Replace $name -NoClipboard -WaitMinutes 0 -Force -Reason 'test session replacement' | Out-Null
+            & (Join-Path (Get-RelayTestPath scripts) 'Add-RelayAgent.ps1') -Room $room -Replace $name -WaitMinutes 0 -Force -Reason 'test session replacement' | Out-Null
             $generation = 2
         }
         else {
