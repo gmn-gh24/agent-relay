@@ -1633,9 +1633,13 @@ function Get-RelayAgentState {
                 $hasWait = ($leaseAt -ne [DateTime]::MinValue -and ($now - $leaseAt).TotalSeconds -lt 60)
                 if ($tasks.Count -gt 0 -and -not $hasWait) { $attention = "has an open task and no wait running, last sign of life $silent min ago: no message reaches it; ask the owner to tell that session to check the room" }
             }
+            # A seat that said bye (offline) was told to stop: nothing below asks for it to be given work or to wait.
+            # A seat that wakes by hand (manual) is told not to wait, so no wait is missing there.
+            $isOffline = ($state -ceq 'offline')
+            $isManual = ((Get-RelayValue $card 'wake' (Get-RelayValue $seat 'wake' '')) -ceq 'manual')
             # Reported on its last task and the coordinator has sent nothing since: the owner must not be the one
             # who notices it sitting idle
-            if (-not $attention -and @($open | Where-Object { $_.To -ceq $name }).Count -eq 0) {
+            if (-not $attention -and -not $isOffline -and @($open | Where-Object { $_.To -ceq $name }).Count -eq 0) {
                 $lastResult = $null
                 foreach ($message in @($Messages | Where-Object { $_.From -ceq $name -and $_.Type -ceq 'result' } | Sort-Object Time, Id)) { $lastResult = $message }
                 if ($null -ne $lastResult) {
@@ -1650,7 +1654,7 @@ function Get-RelayAgentState {
                 }
             }
             # Idle (no open task) with no wait for more than 3 minutes: nothing reaches it; tell its session to wait
-            if (-not $attention -and $card.Count -gt 0 -and $silent -ge 3) {
+            if (-not $attention -and -not $isOffline -and -not $isManual -and $card.Count -gt 0 -and $silent -ge 3) {
                 $openTasks = @($open | Where-Object { $_.To -eq $name -and $_.Type -ceq 'task' })
                 $leaseAt = Get-RelayFileTimeUtc (Join-Path $dir 'wait.lease')
                 $hasWait = ($leaseAt -ne [DateTime]::MinValue -and ($now - $leaseAt).TotalSeconds -lt 60)
@@ -1716,6 +1720,16 @@ function Get-RelayAgentState {
             })
     }
     return @($agents.ToArray())
+}
+
+function Get-RelayAgentSignature {
+    # What the feed compares between two looks to decide whether the agents changed and the pane gets them
+    # again: every field the pane shows that can change while a seat keeps its state, the owner's model and
+    # effort for a seat among them (Add-RelayAgent.ps1 -Seat -SetModel/-SetEffort)
+    param([AllowEmptyCollection()][object[]]$Agents = @())
+    return (@(@($Agents) | ForEach-Object {
+                "$($_.name)|$($_.state)|$($_.detail)|$($_.gen)|$($_.control)|$($_.attention)|$($_.isIntroduced)|$($_.owes)|$($_.progressUtc)|$(@($_.parts) -join ',')|$($_.model)|$($_.modelOwner)|$($_.tier)|$($_.effort)|$($_.effortOwner)"
+            }) -join ';')
 }
 
 function Get-RelayRightsKind {
@@ -3022,6 +3036,19 @@ function Resolve-RelayDraftPath {
     $default = Join-Path $Room.Local 'draft.md'
     if (-not $File) { return $default }
     $full = Get-RelayNormalPath $File
+    if ((Test-RelayLinkedPath -Root ([System.IO.Path]::GetPathRoot($full)) -Path $full) -and -not (Get-RelayRealPath $full)) {
+        throw "The file $full is reached through a link that cannot be followed: give the path of the file itself"
+    }
+    if (Test-RelayPathInRoom -Room $Room -Path $full) { throw "The file $full lies inside the room folder, where any agent can write: no $What is made from it. Put the text outside the room (default: $default)" }
+    return $full
+}
+
+function Test-RelayPathInRoom {
+    # True when a path lies inside the room folder, also when the way to it, or to the room, goes through a link:
+    # where a link really leads decides. A link on the way that cannot be followed counts as inside, since nobody
+    # can say where it leads. For what this PC reads from or writes to outside the room.
+    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Path)
+    $full = Get-RelayNormalPath $Path
     $roomPath = Get-RelayNormalPath $Room.Path
     $paths = New-Object System.Collections.Generic.List[string]
     $paths.Add($full)
@@ -3029,19 +3056,19 @@ function Resolve-RelayDraftPath {
     $folders.Add($roomPath)
     if (Test-RelayLinkedPath -Root ([System.IO.Path]::GetPathRoot($full)) -Path $full) {
         $real = Get-RelayRealPath $full
-        if (-not $real) { throw "The file $full is reached through a link that cannot be followed: give the path of the file itself" }
+        if (-not $real) { return $true }
         $paths.Add($real)
     }
     if (Test-RelayLinkedPath -Root ([System.IO.Path]::GetPathRoot($roomPath)) -Path $roomPath) {
         $realRoom = Get-RelayRealPath $roomPath
         if ($realRoom) { $folders.Add($realRoom) }
     }
-    foreach ($path in $paths) {
+    foreach ($candidate in $paths) {
         foreach ($folder in $folders) {
-            if (Test-RelayPathWithin -Path $path -Folder $folder) { throw "The file $full lies inside the room folder, where any agent can write: no $What is made from it. Put the text outside the room (default: $default)" }
+            if (Test-RelayPathWithin -Path $candidate -Folder $folder) { return $true }
         }
     }
-    return $full
+    return $false
 }
 
 function Set-RelayClipboard {

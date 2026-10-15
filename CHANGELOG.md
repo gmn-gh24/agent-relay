@@ -47,6 +47,14 @@ branch reviewed before its pull request (room package 3.6.1; running rooms:
 - **`agent-kinds.md` has measured facts for more products:** Copilot CLI, OpenCode, aider, the DeepSeek
   Harness, Claude Code and Codex CLI, and the window and start-up sizes that were measured.
 - **`ROADMAP.md` now opens with the owner's priorities** and holds ten deferred items with their reasons.
+- **Review fixes before the release.** `Add-RelayImprovement.ps1` refuses a project folder inside the room
+  (also through a link), a file that is a link and a draft that is the file itself, and writes through a
+  handle no other writer may open, so two rooms closing into one project keep both sections. The board asks
+  a seat that said bye for no task and no wait, and a seat that wakes by hand for no wait. The feed sends the
+  agents again when the owner sets or clears a seat's model or effort. The send guard judges negation per
+  clause ("Do not commit on main; push the branch" still asks for the push). An upgraded room shows an open
+  request again whose old delivery receipt may never have been printed. The close step in the skill names
+  the helper.
 
 ## 0.10.0 (2026-10-14)
 

@@ -944,6 +944,59 @@ Describe 'Add-RelayImprovement and the close check' -Tag 'Scripts' {
         $next[0] | Should -Match ([regex]::Escape($file))
         (Read-RelayKeyValue (Join-Path $object2.Canon 'CLOSED'))['improvements'] | Should -Be $file
     }
+
+    It 'refuses a project folder inside the room, also by way of a junction, and a draft that is the file itself' {
+        $created = New-RelayTestRoom -Root $root -RoomId "improve-$case"
+        $object = Resolve-RelayRoom $created.Id
+        $draft = Join-Path $root 'section.md'
+        [System.IO.File]::WriteAllText($draft, "Kept for the next try.`n")
+        $inside = Join-Path $created.Path 'work'
+        $null = New-Item -ItemType Directory -Path $inside -Force
+        { & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $draft -ProjectFolder $inside } | Should -Throw '*inside the room folder*'
+        # A folder outside the room that is a junction into it: where the link leads decides
+        $link = Join-Path $root 'project-link'
+        $null = New-Item -ItemType Junction -Path $link -Target $inside
+        try {
+            { & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $draft -ProjectFolder $link } | Should -Throw '*inside the room folder*'
+        }
+        finally { [System.IO.Directory]::Delete($link) }
+        Test-Path -LiteralPath (Join-Path $inside 'PLUGIN-IMPROVEMENTS.md') | Should -BeFalse
+        # The improvements file named as its own draft would be removed after use
+        $project = Join-Path $root 'project'
+        $null = New-Item -ItemType Directory -Path $project -Force
+        $file = Join-Path $project 'PLUGIN-IMPROVEMENTS.md'
+        [System.IO.File]::WriteAllText($file, "# Plugin improvements`n`n## Room earlier (closed 2026-10-01)`n`nAn earlier section.`n")
+        { & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $file -ProjectFolder $project } | Should -Throw '*is the improvements file itself*'
+        [System.IO.File]::ReadAllText($file) | Should -Be "# Plugin improvements`n`n## Room earlier (closed 2026-10-01)`n`nAn earlier section.`n"
+        Test-Path -LiteralPath $draft | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $object.Local 'improvements.txt') | Should -BeFalse
+    }
+
+    It 'refuses while another writer holds the file, keeps the draft and records nothing, and appends once the file is free' {
+        $created = New-RelayTestRoom -Root $root -RoomId "improve-$case"
+        $object = Resolve-RelayRoom $created.Id
+        $project = Join-Path $root 'project'
+        $null = New-Item -ItemType Directory -Path $project -Force
+        $file = Join-Path $project 'PLUGIN-IMPROVEMENTS.md'
+        $before = "# Plugin improvements`n`n## Room other (closed 2026-10-01)`n`nThe other room's section.`n"
+        [System.IO.File]::WriteAllText($file, $before)
+        $draft = Join-Path $root 'section.md'
+        [System.IO.File]::WriteAllText($draft, "This room's section.`n")
+        $held = [System.IO.File]::Open($file, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+        try {
+            { & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $draft -ProjectFolder $project } | Should -Throw '*another room may be recording*'
+        }
+        finally { $held.Dispose() }
+        [System.IO.File]::ReadAllText($file) | Should -Be $before
+        Test-Path -LiteralPath $draft | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $object.Local 'improvements.txt') | Should -BeFalse
+        $null = & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $draft -ProjectFolder $project
+        $text = [System.IO.File]::ReadAllText($file)
+        $text | Should -Match "The other room's section\."
+        $text | Should -Match "This room's section\."
+        @([regex]::Matches($text, '(?m)^## Room ')).Count | Should -Be 2
+        Test-Path -LiteralPath (Join-Path $object.Local 'improvements.txt') | Should -BeTrue
+    }
 }
 
 Describe 'The owner' -Tag 'Scripts' {
@@ -1243,6 +1296,30 @@ Describe 'Board, feed, statistics and closing' -Tag 'Scripts' {
         $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'jack') -Text "Review again`n`nReview again."
         & $age $result 6.2
         (& $jackLine) | Should -Not -Match 'nothing sent to it since'
+    }
+
+    It 'asks for no task and no wait from a seat that said bye, and for no wait from a seat that wakes by hand' {
+        $age = { param([string]$Path, [double]$Minutes) [System.IO.File]::SetLastWriteTimeUtc($Path, [DateTime]::UtcNow.AddMinutes(-$Minutes - 0.2)) }
+        $line = { param([string]$Name) @((Get-RelayBoard $object).agents | Where-Object { $_.name -eq $Name })[0].attention }
+        # Jack reported, then said bye: nothing more is to be given to it, and it is not to wait
+        $null = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('report', 'olivia-jack-0001') -Text "Reviewed`n`n1. Result: fine."
+        $result = @(Get-RelayMessage $object | Where-Object { $_.From -ceq 'jack' -and $_.Type -ceq 'result' } | Sort-Object Time, Id | Select-Object -Last 1)[0].Path
+        & $age $result 6.2
+        (& $line 'jack') | Should -Match '^reported [56] min ago, nothing sent to it since'
+        [System.IO.File]::WriteAllText((Join-Path $room 'agents\jack\status'), "state: offline`ndetail: said bye`nsince_utc: 2026-10-10T08:00:00Z`ngen: 1`n")
+        (& $line 'jack') | Should -Be ''
+        & $age (Join-Path $room 'agents\jack\alive') 7
+        (& $line 'jack') | Should -Be ''
+        # Emma owes nothing and runs no wait: marked while she waits by the loop, not once she wakes by hand
+        $seat = Join-Path $room 'agents\emma\seat'
+        Write-RelayGuardedText $object 'agents/emma/seat' ([System.IO.File]::ReadAllText($seat) -replace 'expect_computer: .*', 'expect_computer: ')
+        & $age (Join-Path $room 'agents\emma\alive') 4
+        (& $line 'emma') | Should -Match '^idle with no wait running for [45] min'
+        $card = Join-Path $room 'agents\emma\card'
+        $text = [System.IO.File]::ReadAllText($card)
+        $text | Should -Match '(?m)^wake: '
+        [System.IO.File]::WriteAllText($card, ($text -replace '(?m)^wake: .*$', 'wake: manual'))
+        (& $line 'emma') | Should -Be ''
     }
 
     It 'shows what a task should take next to it, and OVERDUE when its agent has sent nothing for that long' {
@@ -2215,6 +2292,40 @@ Describe 'Open seats' -Tag 'Scripts' {
         $list = (& $add -ListModels) -join "`n"
         $list | Should -Match 'gpt-6\.1-mini\s+codex\s+\d{4}-\d{2}-\d{2}'
         $list | Should -Match 'gpt-6\.1\s+codex'
+    }
+
+    It 'sends the agents again from a running feed when the owner sets or clears a model while the seat keeps listening' {
+        $room = (New-RelayTestRoom -Root $root -RoomId 'restated' -Extra @{ open_seats = 1 }).Path
+        $object = Resolve-RelayRoom 'restated'
+        $seat = @(Get-RelayTestOpenSeat $room)[0]
+        $add = Join-Path $scripts 'Add-RelayAgent.ps1'
+        (Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'unknown', 'unknown')).ExitCode | Should -Be 0
+        # The seat listens; while the feed runs nothing about it changes but the owner's values
+        [System.IO.File]::WriteAllText((Join-Path $room "agents\$seat\status"), "state: listening`ndetail: `nsince_utc: 2026-10-10T08:00:00Z`ngen: 1`n")
+        $stamp = Get-RelayFeedStatePath $object
+        if (Test-Path -LiteralPath $stamp) { Remove-Item -LiteralPath $stamp -Force }
+        $feed = Start-RelayTestScript -Script 'Watch-RelayFeed.ps1' -Arguments @('-Room', 'restated', '-Json', '-IntervalSeconds', '1', '-MaxSeconds', '20', '-NoHeartbeat', '-NoTamperCheck')
+        # The feed stamps its state just before its first look: the owner's answer comes after the snapshot
+        $until = [DateTime]::UtcNow.AddSeconds(30)
+        while ([DateTime]::UtcNow -lt $until -and -not (Test-Path -LiteralPath $stamp)) { Start-Sleep -Milliseconds 200 }
+        Test-Path -LiteralPath $stamp | Should -BeTrue
+        Start-Sleep -Seconds 3
+        $null = & $add -Room 'restated' -Seat $seat -SetModel 'gpt-6.1-mini' -SetEffort 'medium'
+        Start-Sleep -Seconds 3
+        $null = & $add -Room 'restated' -Seat $seat -SetModel ''
+        $null = & $add -Room 'restated' -Seat $seat -SetEffort ''
+        $result = Wait-RelayTool -Handle $feed -TimeoutSeconds 60
+        $result.ExitCode | Should -Be 0 -Because $result.Error
+        $events = @($result.Output -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { ConvertFrom-Json -InputObject $_ })
+        $events[0].type | Should -Be 'snapshot'
+        @($events[0].agents | Where-Object { $_.name -eq $seat })[0].modelOwner | Should -BeFalse
+        $rows = @($events | Where-Object { $_.type -eq 'agents' } | ForEach-Object { @($_.agents | Where-Object { $_.name -eq $seat })[0] })
+        $set = @($rows | Where-Object { $_.model -eq 'gpt-6.1-mini' -and $_.modelOwner -and $_.effort -eq 'medium' -and $_.effortOwner })
+        $set.Count | Should -BeGreaterThan 0
+        $set[0].tier | Should -Be 'light'
+        $rows[$rows.Count - 1].modelOwner | Should -BeFalse
+        $rows[$rows.Count - 1].effortOwner | Should -BeFalse
+        $rows[$rows.Count - 1].model | Should -Be 'unknown'
     }
 
     It 'keeps a room working whose ROOM, seats, saved answers and kinds still carry park_after: nothing reads the number' {

@@ -269,6 +269,16 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $push = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Release`n`nPush the branch."
             $push.ExitCode | Should -Be 1
             $push.Output | Should -Match 'matched: Push the branch'
+
+            # A negated clause beside an active one: the active request still counts, in either order
+            foreach ($mixed in @('Do not commit on main; push the branch.', 'Push the branch; do not commit on main.', 'Push the branch, do not commit on main.')) {
+                $sent = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Release`n`n$mixed"
+                $sent.ExitCode | Should -Be 1 -Because $mixed
+                $sent.Output | Should -Match '(?i)matched: push the branch' -Because $mixed
+            }
+            # and a list after a negation stays negated
+            $list = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Scope`n`nDo not push, commit, or merge."
+            $list.ExitCode | Should -Be 0
         }
 
         It 'reads the receiver''s assignment from this PC''s copy when the coordinator''s launcher runs the tool, not from the room, which any agent can edit' {
@@ -849,6 +859,26 @@ exit $code
             (Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')).ExitCode | Should -Be 3
             $journal = [System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\journal'))
             @([regex]::Matches($journal, '(?m)^\S+ shown seeded from 2 delivered records$')).Count | Should -Be 1
+        }
+
+        It 'delivery output: an upgrade shows an open task again whose legacy receipt may not have been printed' {
+            # An older tool recorded both deliveries; the note may stay behind, the task nobody answered may not
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Legacy note`n`nRead long ago."
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Legacy task`n`nLost in a buffered print."
+            [System.IO.File]::WriteAllText((Join-Path $room 'agents\emma\delivered'), "olivia-emma-0001 2026-10-10T08:00:00Z`nolivia-emma-0002 2026-10-10T08:00:00Z`n")
+            $shown = Join-Path $room 'agents\emma\shown'
+            Test-Path -LiteralPath $shown | Should -BeFalse
+            $first = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')
+            $first.ExitCode | Should -Be 0
+            $first.Output | Should -Match '(?m)^delivered but not shown: olivia-emma-0002$'
+            $first.Output | Should -Match 'subject: Legacy task'
+            $first.Output | Should -Not -Match 'Legacy note'
+            $stamps = [System.IO.File]::ReadAllText($shown)
+            $stamps | Should -Match '(?m)^olivia-emma-0001 '
+            $stamps | Should -Match '(?m)^olivia-emma-0002 '
+            (Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')).ExitCode | Should -Be 3
+            $journal = [System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\journal'))
+            $journal | Should -Match '(?m)^\S+ shown seeded from 1 delivered records; 1 open request\(s\) to be shown again$'
         }
 
         It 'wakes when a message arrives' {

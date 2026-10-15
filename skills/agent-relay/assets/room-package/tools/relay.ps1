@@ -1782,21 +1782,26 @@ function Test-NegatedTaskClause {
 }
 
 function Split-ActiveTaskClause {
-    # Task text with negated sentences and clauses removed (comma or semicolon boundaries)
+    # Task text with its negated clauses removed. Negation is judged per clause, never for a whole sentence: in
+    # "Do not commit on main; push the branch" the push is asked for. A semicolon starts a clause of its own. After
+    # a comma a clause continues the list of the clause before it, so it is negated when that one was: "Do not
+    # push, commit, or merge" asks for none of the three. A clause before a negated one keeps its own sense:
+    # "Push the branch, do not commit on main" asks for the push.
     param([string]$Text)
     $active = New-Object System.Collections.Generic.List[string]
     foreach ($line in ($Text -split "`n")) {
         $line = $line.Trim()
         if (-not $line) { continue }
         foreach ($sentence in ($line -split '[.!?]+')) {
-            $sentence = $sentence.Trim()
-            if (-not $sentence) { continue }
-            if (Test-NegatedTaskClause $sentence) { continue }
-            foreach ($clause in ($sentence -split '[,;]')) {
-                $clause = $clause.Trim()
-                if (-not $clause) { continue }
-                if (Test-NegatedTaskClause $clause) { continue }
-                $active.Add($clause)
+            foreach ($part in ($sentence -split ';')) {
+                $isNegated = $false
+                foreach ($clause in ($part -split ',')) {
+                    $clause = $clause.Trim()
+                    if (-not $clause) { continue }
+                    if (Test-NegatedTaskClause $clause) { $isNegated = $true }
+                    if ($isNegated) { continue }
+                    $active.Add($clause)
+                }
             }
         }
     }
@@ -3084,11 +3089,16 @@ function Show-Placeholder {
 function Get-ShownSet {
     # An absent file belongs to an older room: preserve its delivery history once. Once initialized,
     # missing ids are unshown deliveries and must be replayed. Even an empty history gets its marker file.
+    # An older tool could record a delivery it never printed, so a receipt of that time proves nothing on its
+    # own: a request (task, question, proposal) that no result or answer names yet is left out of the seed and
+    # is shown once more, as "delivered but not shown". Notes and answered requests are not replayed.
     param([hashtable]$Delivered)
     $path = Join-Path $script:MyDir 'shown'
     if (-not [System.IO.File]::Exists($path)) {
+        $uncertain = @{}
+        if ($Delivered.Count -gt 0) { foreach ($request in @(Get-OpenRequest $script:Me)) { $uncertain[[string]$request.Id] = $true } }
         $ids = New-Object System.Collections.Generic.List[string]
-        foreach ($id in $Delivered.Keys) { $ids.Add([string]$id) }
+        foreach ($id in $Delivered.Keys) { if (-not $uncertain.ContainsKey([string]$id)) { $ids.Add([string]$id) } }
         $ids.Sort([System.StringComparer]::Ordinal)
         $stamp = Get-UtcStamp
         $lines = New-Object System.Collections.Generic.List[string]
@@ -3096,7 +3106,10 @@ function Get-ShownSet {
         $text = ''
         if ($lines.Count -gt 0) { $text = ($lines.ToArray() -join "`n") + "`n" }
         Write-Text $path $text
-        Add-Journal 'shown' "seeded from $($ids.Count) delivered records"
+        $left = ''
+        $leftCount = @($Delivered.Keys | Where-Object { $uncertain.ContainsKey([string]$_) }).Count
+        if ($leftCount -gt 0) { $left = "; $leftCount open request(s) to be shown again" }
+        Add-Journal 'shown' "seeded from $($ids.Count) delivered records$left"
     }
     $set = @{}
     foreach ($line in ((Read-Text $path) -split "`n")) {

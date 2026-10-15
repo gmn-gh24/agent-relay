@@ -13,11 +13,12 @@ working copy it falls back to local memory (`scripts/Add-RelayLocalMemory.ps1`).
 ## The room's improvements file
 
 Closing a room includes writing its dated section into `PLUGIN-IMPROVEMENTS.md`, in the job's project folder
-(SKILL.md, "6. Close", a mandatory step before `Close-RelayRoom.ps1`). The Improve procedure reads that file
-first, before the retro below: every item in it is a finding with its evidence and a proposed change. After
-the owner's choice, mark each item **done**, **roadmap** or **discarded**, and what was done points at the
-commit. The helper script that appends a section and the check that `Close-RelayRoom.ps1` makes are coming
-(another task builds them); until then the coordinator writes the section by hand.
+(SKILL.md, "6. Close", a mandatory step before `Close-RelayRoom.ps1`). The coordinator writes the section into
+its draft on this PC and runs `scripts/Add-RelayImprovement.ps1 -Room <id>` (with `-ProjectFolder <folder>`
+when the room's answers name none): it appends the section and records it on this PC, and
+`Close-RelayRoom.ps1` refuses to close without that record. The Improve procedure reads that file first,
+before the retro below: every item in it is a finding with its evidence and a proposed change. After the
+owner's choice, mark each item **done**, **roadmap** or **discarded**, and what was done points at the commit.
 
 ## The retro
 

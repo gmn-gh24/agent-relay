@@ -123,7 +123,7 @@ headers are for reading only: who is alive is judged from file times on the room
 
 A request stays open until a `result` or `answer` names it in `re`. `show open` lists what you owe. Nothing is
 lost when a session dies between reading a message and acting on it.
-On the first read in an older room, a missing `shown` file is seeded from `delivered`; later shown/delivered acknowledgements follow successful print and flush, while messages remain in the inbox.
+On the first read in an older room, a missing `shown` file is seeded from `delivered`, except for open requests (a task, question or proposal no result or answer names yet), which are shown once more; later shown/delivered acknowledgements follow successful print and flush, while messages remain in the inbox.
 
 A `task` may carry one more header line, `expected_minutes: 15`: how long the coordinator expects it to take.
 The tool prints it with the task (`expected: 15 minutes`). If you are not done by then, send a `note` that says

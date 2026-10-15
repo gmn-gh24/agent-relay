@@ -419,7 +419,7 @@ try {
                 # fields the chat window knows
                 if (-not $Json -and $null -ne $plan) { $plan | Add-Member -NotePropertyName differs -NotePropertyValue ([bool](Test-RelayPlanDifference $roomObject)) }
                 $agents = @(Get-RelayAgentState -Room $roomObject -Now (Get-RelayRoomNow $roomObject) -Open $waiting.Open -Plan $plan -Messages $script:messages.ToArray())
-                $newAgentSignature = (@($agents | ForEach-Object { "$($_.name)|$($_.state)|$($_.detail)|$($_.gen)|$($_.control)|$($_.attention)|$($_.isIntroduced)|$($_.owes)|$($_.progressUtc)|$(@($_.parts) -join ',')" }) -join ';')
+                $newAgentSignature = Get-RelayAgentSignature $agents
                 $newPlanSignature = ''
                 if ($null -ne $plan) {
                     $newPlanSignature = "$($plan.revision)|$($plan.isComplete)"
