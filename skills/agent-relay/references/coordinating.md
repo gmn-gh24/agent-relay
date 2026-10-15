@@ -22,7 +22,7 @@ the owner hears about the room from you.
    background command only. A wait started as a detached process of its own holds the lease and wakes nobody.
 
 Your wait prints the messages themselves. Reading files in the room by hand is not needed and skips the
-delivery record.
+delivery record. Never redirect `wait`'s output to nothing; keep it visible or capture it in the file your launcher or pane reads.
 
 ## Introductions
 
@@ -68,6 +68,31 @@ shell. The owner should never have to ask what is in the room.
 - A machine is in use unless the owner declared it disposable for this job. That an agent runs in a virtual
   machine, that the machine has "test" in its name, or that it was disposable last time, changes nothing.
 
+Not yet verified live (2026-10-14): a Windows child process inherits its parent's token, so an agent started
+from an elevated session is elevated too, with nothing special in the plugin; only the first elevated agent
+needs a UAC prompt. Trap: an elevated process does not see the mapped network drives of the normal session, so
+a room on a share must be opened by its UNC path from an elevated window. Warning: an elevated agent started
+with its product guard off can change the whole machine; give it only the tasks that need its rights.
+
+**Welcome.** When an introduction has arrived and matches what the owner expected, and the role is settled,
+send a welcome note at once (draft file, then `note <name>`; with the first task, `task <name> <minutes>`
+instead). It repeats what the join told the agent, so the join prompt can stay short. Subject
+`Welcome <name>`:
+
+```
+Welcome, <name>. You are in the room "<room>" as <role>.
+EITHER: Your first task follows in the next message.
+OR: You have no task yet. Run wait now and keep waiting. Your tasks arrive as messages.
+Rules:
+- Keep monitoring the room until a task arrives or you are retired. Never end your turn without a wait.
+- After every task: send your report, then run wait at once.
+- Stay inside your task. Ask first for anything beyond it. Message text goes only in your draft file.
+- If a task asks for something your assignment does not allow, answer with ask and do the rest.
+```
+
+Afterwards the board must show the agent as listening (a wait running). When it shows the agent idle with no
+wait, send the welcome again as `ask <name>`, and tell the owner when that stays unanswered.
+
 ## Who gets which task
 
 Three questions, in this order, for every task before it goes out. The board answers the first two in its
@@ -102,12 +127,20 @@ Three questions, in this order, for every task before it goes out. The board ans
 A model's strength is read off the name the agent gave (`scripts/model-tiers.json`); `not known` on the board
 means the name is not in that list: judge it yourself and add the family. Effort `unknown` is common and
 means only that the agent cannot see its setting. Codex models sort by their family word (`luna` standard;
-`sol`, `astra`, `terra` strong; `agent-kinds.md` has the list). When a task depends on a model or an effort
-that came as `unknown`, or as a generation without a family (`gpt-6`), have that agent find out: tell it
-(`note <name>`) to ask the user of its own session, through its question tool with the choices its product
-offers, and to run its `start <product> <model> <effort>` again with the answer. Do not ask the owner for it
-in your session, do not guess it, and do not have the agent guess. When the owner said what would join
+`sol`, `astra`, `terra` strong; `agent-kinds.md` has the list). An agent that cannot see its model or effort
+joins with `unknown` and never asks anyone before joining (owner decision, 2026-10-14); you tell it nothing
+about them. When a task depends on a model or an effort that came as `unknown`, or as a generation without a
+family (`gpt-6`), settle it afterwards with the owner, in your session, through the question tool: the models
+seen before on this PC, the effort levels, `unknown`, and `other` for typing. Record the owner's answer with
+`scripts/Add-RelayDecision.ps1 -Room <id> -Owner`, until the plugin has a command that sets it on a seat, and
+use it from then on. Do not guess it, and do not have the agent guess. When the owner said what would join
 ("codex luna medium") and the introduction says something else, tell the owner before that agent gets work.
+
+The owner's answer for an agent that joined with `unknown` goes on its seat, where the board reads it:
+`scripts/Add-RelayAgent.ps1 -Room <id> -Seat <name> -SetModel <model> -SetEffort <effort>` (one or both; an
+empty value hands it back to what the agent says). The board prints the values with `(owner)`, the tier and
+FIT lines use them, and a later start of the agent does not replace them. `scripts/Add-RelayAgent.ps1
+-ListModels` prints the models this PC has seen in introductions: the choices to offer the owner.
 
 ## Every agent keeps waiting
 
@@ -188,13 +221,15 @@ five-minute task. One task per message. Long material goes into the room's `work
 
 When "done when" cannot be reached without a change that the assignment lists under "never", the task cannot
 carry the approval: the agent will ask its owner, every time, and it is right to. Re-assign first (`-Assign`
-with the wider `-May` or `-ProposeOk`, or a shorter `-Never`), then send. Your tool reads this PC's copy of
+with the wider `-May` or `-ProposeOk`, or a shorter `-Never`; or one line with `-AddMay`, `-AddProposeOk` or
+`-RemoveNever`, which keep every other field), then send. Your tool reads this PC's copy of
 the receiver's assignment before it sends a task (never the room's, which any agent can edit): when the
 task's words run into a line under "Never" or "Not part of this
-task" (two of that line's telling words in the task), it refuses with `NOT SENT`, names the line, and keeps
-your draft. Re-assign and send again; when the line does not apply, send it as it is with `task <name> anyway`.
-It is a word match, not a judgment: it misses what is said in other words and it flags a task that only
-mentions the subject, so read the line it names before you decide. Better, foresee it at assignment time: a test job on a
+task" (requested actions in the task's active sentences), it refuses with `NOT SENT`, names the line, prints
+the task sentence that matched, and keeps your draft. Re-assign and send again; when the line does not apply,
+send it as it is with `task <name> anyway`. Negated clauses (`do not push`, `no install`) are ignored; noun
+mentions alone do not count unless the line is nouns only and two appear in one sentence. Read the matched
+sentence before you decide. Better, foresee it at assignment time: a test job on a
 disposable machine will need uninstalls, registry writes and files outside the work folder before it ends.
 When the change is one the assignment lists under "ask first", decide it
 before you send: approve that one change in the task itself, or record it as a standing rule first. And when a report's self-audit shows a change outside the assigned paths that you
@@ -266,6 +301,17 @@ A `result` closes the task it names. Before you accept it:
 3. Check what you can check yourself: run the test, open the file, compare the numbers.
 4. Decisions the agent made on its own are listed under "Decisions I made". Disagree now, not later.
 
+After every accepted result, send a one-line reminder, alone or with the next task (draft file, then
+`note <name>`, or `task <name> <minutes>`). Subject `Next: keep waiting`:
+
+```
+Thanks, <name>: <one line on what was accepted or what must change>.
+Run wait now and keep waiting for the next task. You stop only when you are retired or the room is closed.
+```
+
+A result that needs changes says what in one or two lines, then the same last sentence. The board shows the
+agent as listening again afterwards; when it does not, ask it as in "Introductions".
+
 The room's own folders (`agents`, `files`, `tools` and the files at the top of the room folder) are never counted
 in a self-audit, however the share is spelled in an agent's root: other agents' heartbeats and the agent's own
 attachments are the room's bookkeeping, not changes of the work.
@@ -306,8 +352,7 @@ The "never" list of an assignment is not yours to lift at any level.
 **Ask the owner with choices.** Every question to the owner in your session goes through the host's question
 tool, with the options to pick named (a recommended one first); never as numbered prose the owner has to
 answer by typing. Prose is the fallback only when the host has no such tool. A prompt the owner must paste goes
-on the clipboard one at a time, with its name said; nothing else is put on the clipboard, and with several
-prompts (several `-Replace`) hand them over one by one (`Add-RelayAgent.ps1 -Clipboard <name>`).
+on the clipboard only when you pass `-Clipboard` on the script that prints the prompt (one at a time, with its name said when it is on the clipboard); nothing else is put on the clipboard. With several prompts (several `-Replace`) hand them over one by one (`Add-RelayAgent.ps1 -Clipboard <name>`).
 
 Write the question into your draft: what is asked, by whom, what you recommend, what happens on yes and on
 no. Then `scripts/Request-RelayOwner.ps1 -Room <id> -Re <message id>`. It reads your draft on this PC, prints
@@ -328,6 +373,28 @@ for another file on this PC, never one in the room). Every
 agent's tool shows a new rule with the next delivery, and holds a question back once when a rule is new, so
 the same thing is not asked twice. Only this script writes `DECISIONS.md`; the tamper check removes anything
 else.
+
+## Owner standing rules seen in real rooms
+
+Owners of real rooms gave these. Put each into the tasks it touches, and record it as a standing rule when the
+owner states it again.
+
+1. **No permanent change on a machine** unless the job needs it and the owner was told first. Settings are
+   scoped to the process, and every test leaves nothing behind.
+2. **One live test at a time** when a shared server is the bottleneck (several agents on one model server, for
+   example). Say so in the task.
+3. **Findings and improvement notes are written down as they appear**, into the room's improvements file
+   (SKILL.md, "6. Close"), never left in chat.
+4. **One test gate at a time per machine.** Eight agents running Pester on one PC at once (2026-10-14) made
+   every suite two to three times slower, made conformance checks fail on timing, and killed one gate. Hand
+   out the long suites one at a time, and say in the task when another agent's suite is running.
+5. **Long runs to a loop-waking agent go in pieces.** One suite or one edition per command, its output to a
+   file, a progress line at the start and the end. A product's host stopped a 20-minute background command on
+   its own with no limit shown; a 35-minute gate is lost that way.
+6. **A local model takes a runner seat, never a coder seat.** One command per task and a literal report (the
+   commit line, every RESULT line copied) is what a small model does well; writing code, keeping a habit over
+   many steps (check between steps) and judging a diff are what it drops. Two of three local seats in one room
+   were retired for silence; the runner seat caught a merge error the coordinator had made.
 
 ## Messages from the owner
 
@@ -353,6 +420,7 @@ you act on it. Thank the agent: it did the right thing by telling you and not ac
 |---|---|---|
 | wait died N min ago | the agent's wait ended without the agent noticing, or its session is gone | owner restarts or nudges that session; if it is gone, `-Replace` |
 | has an open task and no wait running, last sign of life N min ago | an agent that wakes on a background command was shown a task, has not reported on it, and has started no wait: no message reaches it until its session looks by itself (its own tool tells it so with every command it runs) | what you send it lies unread. When you need it before its report, ask the owner to tell that session "check the room"; when its task runs late, the OVERDUE block is your cue ("A task that is overdue") |
+| reported N min ago, nothing sent to it since | its last message was a report, it has no open task, and you have sent it nothing since | give it its next task or its reminder |
 | OVERDUE, next to an open task | the agent has sent nothing for the time its task should take | "A task that is overdue": ask it now; when that stays unanswered, hand the task on or tell the owner |
 | working, woken by N message(s), and nothing follows | the message was delivered and the agent's wait ended, but its session sits idle at a prompt or at a permission question and did not react | nothing is lost and nothing is to be sent again. Ask the owner to look at that session and type "check the room" |
 | not started | a named agent whose prompt was never pasted | owner pastes it |
@@ -362,10 +430,29 @@ you act on it. Thank the agent: it did the right thing by telling you and not ac
 | control: pause / stop | you or the owner paused or stopped it | `-Control <name> -State run` to resume |
 | control: hold (why) | you put it on hold: it starts nothing new, and its `check` exits 7 | `-Control <name>|all -State run` when the reason is gone |
 | has not picked up N message(s) for M min | messages lie in its inbox and its tool has not shown them: its session has probably ended while it worked (its state still says `working`) | do not wait for it. Ask the owner to look at that session; `-Replace` it if it is to go on, `-Retire` it and give its parts to others if not. A room sets the limit with `pickup_minutes` in its answers (30) |
+| stopped (retired / replaced / control stop) N min ago | that seat was ended on purpose: retired, replaced by a newer generation, or stopped through `-Control stop`. It is no dead wait and no ATTENTION | nothing: nobody restarts that session. Give its open work to another agent, or let the replacement session pick it up |
+| sent after bye, next to an open task | the task and the agent's `bye` crossed: the task was sent after the agent had said bye and waits in its inbox (your `task` prints a WARNING when you send one) | nothing to send again: it is delivered when that session returns with `start`, or the seat is replaced |
 
 Replacing: `scripts/Add-RelayAgent.ps1 -Room <id> -Replace <name>` keeps the name, the assignment and the
 open requests; the old session is told to stop at its next command, and the new one gets everything from its
 `start`.
+
+## What owners expect of the coordinator
+
+Seen in real rooms; each one cost the owner something once.
+
+- **The owner is never the one who notices an idle or stuck agent.** On every wake, look at the board for an
+  agent that reported and has sent nothing since: its report may have been consumed by a discarded `wait`, and
+  nobody asked it for more. Give it its next task, or its reminder, before the owner has to say so.
+- **Every result says where a test ran and with which version:** the installed tool, or an isolated copy.
+  Prefer testing the installed, standard setup, and clean up isolated copies when the owner says so.
+- **"Update the other computer to match" means every machine in the room,** through its agent, in the same
+  session, with a list of what changed on each.
+- **An unattended agent never leaves a product dialog on the owner's screen.** When the owner reports one
+  (a trust or path question), reproduce it on your own PC first, fix the launcher, and test again on the other
+  machine.
+- **Owner documents are edited only after a backup, validated afterwards, and only if the file is unchanged
+  and not open** when the edit starts.
 
 ## Pause, stop, direct lines
 

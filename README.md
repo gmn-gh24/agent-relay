@@ -8,7 +8,7 @@
 approve or deny what goes beyond an assignment, and keep a record of all of it.</p>
 
 <p>
-<a href="CHANGELOG.md"><img alt="Version 0.10.0" src="https://img.shields.io/badge/version-0.10.0-blue"></a>
+<a href="CHANGELOG.md"><img alt="Version 0.11.0" src="https://img.shields.io/badge/version-0.11.0-blue"></a>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 <a href="https://github.com/gmn-gh24/agent-relay/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/gmn-gh24/agent-relay/actions/workflows/ci.yml/badge.svg"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-orange">
@@ -125,6 +125,13 @@ command line: it is written into a draft file, and the verbs take single plain w
 
 The full protocol is in [`skills/agent-relay/references/protocol.md`](skills/agent-relay/references/protocol.md).
 
+**When a room pays for itself.** A room is worth its overhead when the work comes as a batch of
+independent, well-specified changes behind a slow test gate, when it should run on another machine
+unattended, or when you want other vendors' models working on your own terms: then several agents work in
+parallel, each change is tested and reviewed on its own, and the record is already written. For a single
+change, for exploration where the next step depends on what the last one shows, or for a small local model
+as the coder, it does not pay: one session, working directly, is faster and cheaper.
+
 ---
 
 ## Requirements
@@ -194,7 +201,8 @@ claude plugin uninstall agent-relay@agent-relay
 
 2. **Paste the prompt.** The coordinator hands you a join prompt and puts it on the clipboard. Paste it into
    every agent that is to take part. Each one runs one command, takes a seat, gets a name and introduces
-   itself.
+   itself. The prompt opens with the owner's request to join and covers only the join step; the command
+   prints `START-HERE.md` with the rules for working in the room.
 
    Codex CLI must be started with `codex --yolo`: without it the agent keeps asking its user and its sandbox
    blocks the room's commands. Claude Code works as it is; start it with
@@ -455,7 +463,7 @@ coordinator says this to you when a job calls for it; it is never written into w
 | A script from a share is refused | The machine's execution policy is set by Group Policy | Put the room where that machine trusts scripts |
 | `/relay <id>` says "Not bound" | The id is not a room of this PC, or the look at the room was interrupted | `Get-RelayRooms.ps1` lists the rooms; run the command again |
 | The pane says the feed has ended | The feed stopped three times in a row | `/relay <id>` starts it again; its message names the reason |
-| "another wait is already running" (after about half a minute) | The agent's own background wait is alive: the line names its process | Do nothing; if that wait ends without printing anything, run `wait` again. A wait of a session that ended is taken over by itself |
+| "A wait is already listening for <name>; nothing to do." (exit 0) | The agent's own background wait is alive | Do nothing; if that wait ends without printing anything, run `wait` again. A wait of a session that ended is taken over by itself |
 | "your wait was stopped before anything arrived" | Its host or a Ctrl+C stopped the wait; nothing listens for that agent | Run `wait` again, as the line says |
 | An agent "has not picked up" its messages | Its session ended while it worked | Look at that session; replace or retire the agent |
 | An agent lost its context | Its session was restarted or compacted | It runs `start`, then `wait`: everything it needs is printed again |

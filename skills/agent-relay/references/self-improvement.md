@@ -10,6 +10,16 @@ An installed copy cannot improve itself: tell the owner that the lesson is waiti
 room's retro notes on this PC instead. The same holds for a promotion to project lessons: without a git
 working copy it falls back to local memory (`scripts/Add-RelayLocalMemory.ps1`).
 
+## The room's improvements file
+
+Closing a room includes writing its dated section into `PLUGIN-IMPROVEMENTS.md`, in the job's project folder
+(SKILL.md, "6. Close", a mandatory step before `Close-RelayRoom.ps1`). The coordinator writes the section into
+its draft on this PC and runs `scripts/Add-RelayImprovement.ps1 -Room <id>` (with `-ProjectFolder <folder>`
+when the room's answers name none): it appends the section and records it on this PC, and
+`Close-RelayRoom.ps1` refuses to close without that record. The Improve procedure reads that file first,
+before the retro below: every item in it is a finding with its evidence and a proposed change. After the
+owner's choice, mark each item **done**, **roadmap** or **discarded**, and what was done points at the commit.
+
 ## The retro
 
 1. `scripts/Get-RelayStats.ps1 -Room <id>`: reply times, requests never answered, questions asked twice,

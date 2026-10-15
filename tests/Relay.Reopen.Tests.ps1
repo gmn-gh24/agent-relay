@@ -163,8 +163,8 @@ Describe 'Reopen-RelayRoom' -Tag 'Scripts' {
     }
 
     It 'leaves an open seat that nobody took running, so that the first agent to join the reopened room is not told it was stopped' {
-        $added = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -OpenSeats 2 -NoClipboard) -join "`n"
-        $added | Should -Match 'OPEN SEATS added'
+        $added = (& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -OpenSeats 2) -join "`n"
+        $added | Should -Match 'free seats added'
         $open = @(Get-RelayTestOpenSeat $room)
         $open.Count | Should -Be 2
         # The first open seat is taken before the close; the second stays free
@@ -351,11 +351,11 @@ Describe 'Reopen-RelayRoom' -Tag 'Scripts' {
     It 'lets Update-RelayRoom and Add-RelayAgent work again, which refuse the closed room' {
         Close-TestRoom
         { & (Join-Path $scripts 'Update-RelayRoom.ps1') -Room 'reo' } | Should -Throw '*is closed*'
-        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -Replace 'jack' -NoClipboard } | Should -Throw '*is closed*'
+        { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -Replace 'jack' } | Should -Throw '*is closed*'
         $null = & $reopen -Room 'reo'
         ((& (Join-Path $scripts 'Update-RelayRoom.ps1') -Room 'reo') -join "`n") | Should -Match 'UP TO DATE|UPDATED'
-        ((& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -Replace 'jack' -NoClipboard -Force -Reason 'the old session stays stopped after the reopen') -join "`n") | Should -Match 'REPLACED jack: generation 2'
-        ((& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -OpenSeats 1 -NoClipboard) -join "`n") | Should -Match 'OPEN SEATS added'
+        ((& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -Replace 'jack' -Force -Reason 'the old session stays stopped after the reopen') -join "`n") | Should -Match 'REPLACED jack: generation 2'
+        ((& (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'reo' -OpenSeats 1) -join "`n") | Should -Match '1 free seat added'
         (Invoke-RelayTool -Room $room -Agent 'jack' -Engine $engine -Generation 2 -Words @('start', 'product', 'model', 'low')).ExitCode | Should -Be 0
         $old = Invoke-RelayTool -Room $room -Agent 'jack' -Engine $engine -Words @('check')
         $old.ExitCode | Should -Be 5

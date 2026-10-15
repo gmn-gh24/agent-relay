@@ -41,14 +41,16 @@ of the retro.
 ## Model and effort
 
 The three words of an introduction are product, model and effort. Many agents cannot see their own model or
-effort setting; their user can. The join prompt and every start prompt therefore tell an agent that does not
-know one of them to ask the user of its own session before it runs the command: through its host's question
-tool when it has one, with the choices its own product offers (its models, its effort levels) and "other"
-for typing; as a typed question only when it has no such tool. The answer is taken as given: a model name of
-several words, in quotes or as several words, becomes one word with dashes (`join codex gpt 6 sol medium`
-gives the model `gpt-6-sol`). You never ask the owner for an agent's model or effort in your own session:
-when an introduction came with `unknown` and a task depends on it, tell that agent to ask its user and to run
-its `start <product> <model> <effort>` again.
+effort setting; their user can. The join prompt tells an agent to write `unknown` for a model or effort it
+cannot see, without guessing or asking anyone before joining. The coordinator settles it with the owner
+after the agent is in. A named agent's start prompt still tells it to ask the user of its own session before
+it runs the command: through its host's question tool when it has one, with the choices its own product
+offers (its models, its effort levels) and "other" for typing; as a typed question only when it has no such
+tool. The answer is taken as given: a model name of several words, in quotes or as several words, becomes
+one word with dashes (`join codex gpt 6 sol medium` gives the model `gpt-6-sol`). For named agents, do not ask
+the owner for their model or effort in your own session: when an introduction came with `unknown` and a
+task depends on it, tell that agent to ask its
+user and to run its `start <product> <model> <effort>` again.
 
 Choose the longest wait the agent's command time limit allows. A wait must return before that limit, or the
 agent sees a killed command instead of "nothing arrived".
@@ -59,6 +61,13 @@ through `powershell -Command` hands back 1 for every code that is not 0 (seen wi
 hand): a product that shows every such code as a failed command had its agents stop waiting after the first
 quiet wait, several of them in one room. Only `check` keeps 3 for "nothing new", so a script can test it. The
 prompts still tell an agent to go by the text ("nothing arrived") and the `NEXT:` line, never by the number.
+
+Before you seat an agent, give it enough context window: Copilot CLI at least 32,768 (16,384 compacts right
+after the first prompt), Claude Code at least 65,536, Codex CLI enough for about 30,000 tokens of its own
+start-up context (it keeps answering past the limit). Start-up context seen in rooms: Claude Code about 25,200
+tokens untrimmed, about 5,700 with `--disable-slash-commands --strict-mcp-config --tools Bash,Read,Write,Edit`,
+about 1,100 with `--bare` (needs an API key); Copilot CLI about 11,700; Codex CLI about 30,000. Keep an
+agent's first room output under about 2,000 tokens.
 
 ## Starting an agent without its own guard
 
@@ -98,6 +107,13 @@ tab), or start it with the environment variable `CLAUDE_CODE_DISABLE_TERMINAL_TI
 Its command tool shows every exit code but 0 as an error: `robocopy` returns 1 for "files were copied", and
 an agent that copies a kit with it reports a failed copy, or copies again, until it reads the code. A task
 that has it copy files says so (`robocopy` codes below 8 are success), or has it copy with `Copy-Item`.
+A relay window loads the user's plugins and hooks (a memory plugin wrote files into the temp folder and made a
+model call at exit): start relay windows with plugins and hooks off where the client allows it. It reserves
+about 33,000 tokens before compacting (window minimum above). Effort is not in an environment variable:
+`~/.claude/settings.json` has `modelSettings.<model>.effortLevel` and a top-level `effortLevel`, and a
+`--effort` launch flag overrides both and cannot be read from inside. A session started with a custom
+Anthropic API key (instead of claude.ai sign-in) has no claude.ai connectors for that session; expected
+behaviour, worth knowing before a launcher sets one.
 
 **Claude Code, headless (`claude -p`).** No background wake: the wait runs in the foreground under the
 command time limit. It needs its shell and file tools allowed and the room folder added (`--allowedTools`,
@@ -120,7 +136,8 @@ and does nothing, which is the right thing for it to do. On Windows it runs comm
 agents may share that folder. That folder is the one it ran `join` or `start` from: its tool prints the full
 path, and every verb uses that one file whatever folder it is run from.
 A long command returns control to the model after some seconds and has to be polled; the prompt tells it to
-keep waiting on the same command and not to start a second wait (a second one waits about half a minute for the first and then exits with code 4). It
+keep waiting on the same command and not to start a second wait (a second wait exits 0 with "A wait is already
+listening for <name>; nothing to do."). It
 showed exit code 1 for a wait that timed out while that exited 3, and its agents took it for a failure (see
 above; a timed-out wait exits 0 since package 3.3.0). Its `wait_minutes` is 15, from a measurement
 (2026-10-12, codex-cli 0.162.1, Windows, started with `codex --yolo`): foreground commands of 240, 480 and
@@ -138,6 +155,9 @@ folder in the room, not next to the draft: the instructions name the folder in f
 an `attach` folder in its working folder, which was the root of a share other jobs use.
 When the owner says "codex luna medium", that is the three words of an introduction: product, model, effort.
 It is never the name of an agent: names come from the room's pool.
+Codex CLI cannot be a room agent on an Ollama-served model (web search breaks the Responses stream; no shell
+tool without model metadata; tool items rejected). Against its normal provider it works. It needs
+`wire_api = "responses"` for a local provider.
 
 Codex models have names that do not say Codex (OpenAI's Codex models page, read 2026-10-11; check it again
 when a name here is not what an agent reports, and add a new family word to `scripts/model-tiers.json`):
@@ -158,8 +178,41 @@ Effort goes from low (shown as Light) over medium, high and xhigh (Extra High) t
 model or plan has every step: Luna has no ultra, and some plans leave out Extra High. The owner sets it with
 `/model` in the session or `model_reasoning_effort` in Codex's configuration.
 
+**Copilot CLI.** An unattended Copilot stops at "Confirm folder trust" when the work folder is not in
+`trustedFolders` of its `config.json`, then at an "Allow path access" question for the room folder; `--allow-all`
+does not remove the first. A saved `providers.json` makes it ignore `COPILOT_PROVIDER_*` variables and ask for a
+GitHub sign-in. Working recipe: a private `COPILOT_HOME` copy without `providers.json`, the work folder added
+to `trustedFolders`, and `--add-dir <room folder>`. Copilot cannot remember approval of a UNC path ("UNC/network
+paths cannot be approved"): every room command on a share is a new permission event that only the allow-all
+flag answers without a human. The host stopped a 20-minute background shell command on its own ("shellId: N was
+already stopped via stop_powershell"); no limit was shown. Give a Copilot agent long runs in pieces (one suite or
+one edition per command, output to a file, a progress line at start and end), under about 15 minutes each. Window
+and start-up sizes are in Model and effort above.
+
+**OpenCode.** Version 2.x (package `@opencode/cli`) gives the model only a JavaScript execute tool and no shell,
+so it cannot run the join line; version 1.x (package `opencode-ai`) has a bash tool and can be a room agent.
+`--standalone` goes after `run`; `OPENCODE_CONFIG_CONTENT` carries the provider. Name both packages: the two
+names were a trap in a real room. Even on 1.x the product has no built-in `wait` or `check` habit: the room
+prompt must teach both verbs.
+Its host dropped a 20-minute background shell command on its own (no result written), and a foreground
+command died at a 10-minute ceiling: give it long runs in pieces of under about 10 minutes, each writing its
+result to a file.
+
+**aider.** aider has no shell tool; `--load` runs only `/commands`; use `/ask`. Cannot be a room agent.
+
+**DeepSeek Harness (dsh).** Joins through `dsh headless --patch <overlay>` with
+`DSH_PERMISSION_MODE=danger-full-access` and a work folder on the local disk (its sandbox refuses shares and a
+Dev Drive). A plain `dsh headless` defaults to a cloud provider and must never be run for a local-model room.
+
 **Everything else.** Starts on the generic profile. Watch the first waits: if the agent's commands are cut
-off before a minute, lower `wait_minutes` for its seat (answers field) or switch it to `manual`.
+off before a minute, lower `wait_minutes` for its seat (answers field) or switch it to `manual`. For a local
+loop agent whose commands finish in seconds, retire or hold other seats before you lower `wait_minutes` to one
+or two minutes for the room.
+
+**All products.** Stopping an agent window by force skips its launcher's cleanup (temporary settings folders
+stay): retire the seat first so the agent exits by itself, then close the window. Never ask an agent for a
+screenshot of another machine (a screen-capture attempt raised a Microsoft Defender alert and produced a blank
+image); read the window text instead.
 
 ## When an agent has trouble
 
@@ -167,7 +220,7 @@ off before a minute, lower `wait_minutes` for its seat (answers field) or switch
 |---|---|---|
 | "this tool does not know who you are" | the tool was called directly, not through the wrapper | use the command printed by `start` |
 | "you have not introduced yourself" | a verb before `start` | run `start` |
-| wait exits with code 4 after about half a minute | a second wait while the first is alive (the output names its process) | keep the first one; do not start another |
+| `wait` prints "A wait is already listening for <name>; nothing to do." and exits 0 | a second wait while the first is alive | keep the first one; do not start another |
 | the agent types message text after the verb | habit | the tool refuses anything but single words and says where the draft goes |
 | `join` or `start` refuses the agent's three words | a character that is no letter, digit, dot or dash (a slash, a bracket) | the error names the word and prints the command with an example; a name of several words needs no change, its blanks become dashes |
 | the agent says its draft is missing although it wrote one | it wrote the draft into another folder than the one the tool printed | the path printed by `start` is the draft, for every verb; the error names it in full |

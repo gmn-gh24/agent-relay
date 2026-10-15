@@ -217,8 +217,9 @@ An entry identical to one anybody already recorded prints `ALREADY RECORDED by <
 the process is gone). A `wait` that finds the lease held waits for it for up to 35 seconds (the life of a lease
 plus a margin) and takes it over when the holder ends, is killed or stops refreshing: a second wait that gave up
 at once left its agent without one whenever the holder (a wait or a `check` that was ending) ended a moment later.
-Only a holder that stays alive all that time ends the second wait with code 4, which names the holder's process
-and host. `check` does not wait for the lease. A wait that ends with no answer (stopped by Ctrl+C or by its host,
+Only a holder that stays alive all that time ends the second wait with exit 0 and the line "A wait is already
+listening for <name>; nothing to do." (exit 4 is for a lease lost while a wait already held it). `check` does
+not wait for the lease. A wait that ends with no answer (stopped by Ctrl+C or by its host,
 which lets its cleanup run and remove the lease, or broken by an error) prints that nothing listens now and a
 `NEXT:` line to wait again; the journal records each wait's process (`wait`) and how it ended (`wait-end`). It uses change events on the inbox plus a rescan every five seconds, and rebuilds the
 watcher every ten minutes. It returns on: new messages, a proposal's time running out, pause or resume, a hold

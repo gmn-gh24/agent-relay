@@ -14,10 +14,10 @@
     it. Every output ends with a NEXT: line that says what to do now. PROTOCOL.md in the room is the reference.
 
 .NOTES
-    Exit codes: 0 done, or something for you (a wait that timed out too: nothing arrived, run it again);
-    1 usage or error; 2 room unreachable; 3 nothing new (check only); 4 another wait already runs for you;
-    5 stop (room closed, or you were stopped, replaced or retired); 7 on hold (check only: start nothing new
-    until the coordinator lifts it).
+    Exit codes: 0 done, or something for you (a wait that timed out too: nothing arrived, run it again; a
+    second wait while yours already listens too); 1 usage or error; 2 room unreachable; 3 nothing new (check
+    only); 4 another wait took the lease while this one ran; 5 stop (room closed, or you were stopped,
+    replaced or retired); 7 on hold (check only: start nothing new until the coordinator lifts it).
 
     No param block on purpose: arguments are plain words, and the tool reads them itself. ASCII only.
 #>
@@ -31,7 +31,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.6.0'
+$script:ToolVersion = '3.6.1'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -102,6 +102,31 @@ function Exit-WithError {
     Say "ERROR: $Message"
     if ($NextStep) { Say "NEXT: $NextStep" }
     exit $Code
+}
+
+function Complete-Next {
+    # One place for NEXT: when this agent has no wait lease, listed verbs say "run wait now", and every verb
+    # but wait and bye warns above NEXT that nothing reaches it.
+    param([string]$Text)
+    $verb = [string]$script:CurrentVerb
+    if ($verb -ne 'wait' -and $verb -ne 'bye' -and -not (Test-OwnWait)) {
+        Say 'WARNING: no wait of yours is running; nothing reaches you until it does.'
+    }
+    $forceWait = @('report', 'reply', 'note', 'ask', 'progress', 'remember', 'find', 'show', 'team', 'start')
+    if ((@($forceWait) -contains $verb) -and -not (Test-OwnWait)) {
+        # start keeps its wait-mode hint after the mandatory "run wait now" so kinds still say how long
+        if ($verb -eq 'start' -and $Text) { Say "NEXT: run wait now. $Text" }
+        else { Say 'NEXT: run wait now' }
+        return
+    }
+    Say "NEXT: $Text"
+}
+
+function Show-MandatoryWait {
+    # Printed after join and every start, before START-HERE: three short lines the agent must keep
+    Say 'Mandatory: after every task, report, then run wait at once.'
+    Say 'Never end your turn without a running wait.'
+    Say 'You stop only when retired or the room is closed. With nothing to do, run wait.'
 }
 
 function Get-CallerName {
@@ -1061,9 +1086,11 @@ function Get-ProcessEntry {
         while ($script:ProcessNext -and $script:ProcessEntries.Count -lt $Depth) {
             $current = $script:ProcessNext
             $script:ProcessNext = 0
-            $process = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$current" -Property ProcessId, ParentProcessId, Name, ExecutablePath -ErrorAction Stop
+            $process = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$current" -Property ProcessId, ParentProcessId, Name, ExecutablePath, CreationDate -ErrorAction Stop
             if ($null -eq $process) { break }
-            $script:ProcessEntries.Add([pscustomobject]@{ Id = [int]$process.ProcessId; Name = [string]$process.Name; Path = [string]$process.ExecutablePath })
+            $started = ''
+            if ($process.CreationDate) { $started = ([datetime]$process.CreationDate).ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture) }
+            $script:ProcessEntries.Add([pscustomobject]@{ Id = [int]$process.ProcessId; Name = [string]$process.Name; Path = [string]$process.ExecutablePath; Started = $started })
             if ($process.ParentProcessId -and $process.ParentProcessId -ne $current) { $script:ProcessNext = [int]$process.ParentProcessId }
         }
     }
@@ -1105,7 +1132,7 @@ function Get-CallerVersion {
     return (Get-FileVersionText $entries[$index].Path)
 }
 
-function Get-AgentProcess {
+function Get-AgentProcessEntry {
     # The program the agent itself is: the first parent that is neither a shell nor the terminal
     $shells = @('powershell.exe', 'pwsh.exe', 'cmd.exe', 'bash.exe', 'sh.exe', 'dash.exe', 'zsh.exe', 'env.exe', 'conhost.exe')
     $hosts = @('windowsterminal.exe', 'openconsole.exe', 'explorer.exe', 'code.exe', 'sshd.exe', 'services.exe', 'svchost.exe', 'psexesvc.exe', 'wininit.exe')
@@ -1113,8 +1140,14 @@ function Get-AgentProcess {
         $name = ([string]$entry.Name).ToLowerInvariant()
         if ($shells -contains $name) { continue }
         if ($hosts -contains $name) { break }
-        return [string]$entry.Name
+        return $entry
     }
+    return $null
+}
+
+function Get-AgentProcess {
+    $entry = Get-AgentProcessEntry
+    if ($null -ne $entry) { return [string]$entry.Name }
     return ''
 }
 
@@ -1433,6 +1466,23 @@ function Test-InScope {
     return $false
 }
 
+function Test-InOtherScope {
+    # True when a changed file lies inside another assigned root and that root's own patterns allow it. A bare root
+    # (the project folder) with a root below it that has the pattern * must not make the files of that inner root
+    # look like changes outside the assignment: they are judged where a pattern allows them. A folder that only
+    # starts with the name of the root (work-2 next to work) is not inside it.
+    param([string]$FullPath, [Parameter(Mandatory)]$Scope, [object[]]$Scopes)
+    $full = ($FullPath -replace '/', '\')
+    foreach ($other in @($Scopes)) {
+        if ([object]::ReferenceEquals($other, $Scope)) { continue }
+        $marker = (([string]$other.Root -replace '/', '\').TrimEnd('\')) + '\'
+        if (-not $full.StartsWith($marker, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        $relative = $full.Substring($marker.Length) -replace '\\', '/'
+        if (Test-InScope $relative @($other.May)) { return $true }
+    }
+    return $false
+}
+
 function Test-RoomBookkeeping {
     # True when a path lies in this room's own bookkeeping: under agents\, files\ or tools\ of the room folder, or
     # a file at its top. Found by the room folder's name, not by the whole path: the same share is reached by its
@@ -1582,7 +1632,7 @@ function Get-Audit {
                 if (Test-RoomBookkeeping ([System.IO.Path]::Combine($scope.Root, $path))) { $bookkeeping++; continue }
                 $listed++
                 $changed++
-                if (Test-InScope $path @($scope.May)) { $lines.Add("  ok       $entry") }
+                if ((Test-InScope $path @($scope.May)) -or (Test-InOtherScope ([System.IO.Path]::Combine($scope.Root, $path)) $scope $scopes)) { $lines.Add("  ok       $entry") }
                 else {
                     $outside++
                     $lines.Add("  OUTSIDE  $entry")
@@ -1711,12 +1761,100 @@ function Get-TextWord {
     return @(($Text.ToLowerInvariant() -split '[^a-z0-9]+') | Where-Object { $_ })
 }
 
+function Test-NegatedTaskClause {
+    param([string]$Clause)
+    $c = $Clause.Trim().ToLowerInvariant()
+    if ($c.StartsWith('do not ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith("don't ", [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('never ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('no ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('not part', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('without ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('except ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('avoid ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.IndexOf(' do not ', [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    if ($c.IndexOf(" don't ", [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    if ($c.IndexOf(' never ', [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    if ($c.IndexOf(' without ', [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    if ($c.IndexOf(' except ', [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    if ($c.IndexOf(' avoid ', [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    return $false
+}
+
+function Split-ActiveTaskClause {
+    # Task text with its negated clauses removed. Negation is judged per clause, never for a whole sentence: in
+    # "Do not commit on main; push the branch" the push is asked for. A semicolon starts a clause of its own. After
+    # a comma a clause continues the list of the clause before it, so it is negated when that one was: "Do not
+    # push, commit, or merge" asks for none of the three. A clause before a negated one keeps its own sense:
+    # "Push the branch, do not commit on main" asks for the push.
+    param([string]$Text)
+    $active = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($Text -split "`n")) {
+        $line = $line.Trim()
+        if (-not $line) { continue }
+        foreach ($sentence in ($line -split '[.!?]+')) {
+            foreach ($part in ($sentence -split ';')) {
+                $isNegated = $false
+                foreach ($clause in ($part -split ',')) {
+                    $clause = $clause.Trim()
+                    if (-not $clause) { continue }
+                    if (Test-NegatedTaskClause $clause) { $isNegated = $true }
+                    if ($isNegated) { continue }
+                    $active.Add($clause)
+                }
+            }
+        }
+    }
+    return @($active.ToArray())
+}
+
+function Test-WordIsVerbLike {
+    # Imperative, infinitive or participle stems for matching requested actions
+    param([string]$Word)
+    if ($Word.Length -lt 2) { return $false }
+    if ($Word.Length -gt 4) {
+        if ($Word.EndsWith('ing', [System.StringComparison]::Ordinal)) { return $true }
+        if ($Word.EndsWith('ed', [System.StringComparison]::Ordinal)) { return $true }
+    }
+    $stems = @('push', 'pull', 'commit', 'install', 'restart', 'publish', 'deploy', 'send', 'run', 'delete', 'remove', 'rename', 'change', 'launch', 'stop', 'start', 'write', 'read', 'copy', 'move', 'list', 'build', 'test', 'merge', 'reboot', 'shutdown', 'update', 'upgrade', 'download', 'upload', 'execute', 'kill', 'uninstall', 'shutdown')
+    foreach ($stem in $stems) {
+        if ($Word -ceq $stem) { return $true }
+        if ($Word.Length -gt $stem.Length -and $Word.StartsWith($stem, [System.StringComparison]::Ordinal) -and (Test-WordMatch $stem $Word)) { return $true }
+    }
+    return $false
+}
+
+function Test-TellingWordsAreNounsOnly {
+    param([string[]]$Telling)
+    foreach ($word in $Telling) { if (Test-WordIsVerbLike $word) { return $false } }
+    return $true
+}
+
+function Get-TellingWordHitsInClause {
+    param([string[]]$Telling, [string]$Clause, [bool]$NounsOnlyLine)
+    $hits = New-Object System.Collections.Generic.List[string]
+    $words = @(Get-TextWord $Clause)
+    if ($words.Count -eq 0) { return @() }
+    foreach ($tell in $Telling) {
+        $matched = $false
+        foreach ($w in $words) {
+            if (-not (Test-WordMatch $tell $w)) { continue }
+            if ($NounsOnlyLine) { $matched = $true; break }
+            if (Test-WordIsVerbLike $tell) { $matched = $true; break }
+            if (Test-WordIsVerbLike $w) { $matched = $true; break }
+        }
+        if ($matched) { $hits.Add($tell) }
+    }
+    return @($hits.ToArray())
+}
+
 function Get-AssignmentConflict {
-    # The lines of the receiver's "Never" and "Not part of this task" that a task's text runs into: a line
-    # counts when two of its telling words (one, when it has only one) are in the text. A warning for the
-    # coordinator; nothing is decided by it. The assignment is read from this tool's own copy of the room
-    # (the coordinator's launcher runs this PC's canonical copy, where only this PC writes), never from the
-    # room folder, where any agent could take a line out or put one in.
+    # The lines of the receiver's "Never" and "Not part of this task" that a task's active text requests
+    # against: negated clauses are ignored; a telling word counts when it appears as a requested action
+    # (verb stem) in a remaining clause, or when the line's telling words are nouns only, two of them in one
+    # clause. A warning for the coordinator; nothing is decided by it. The assignment is read from this
+    # tool's own copy of the room (the coordinator's launcher runs this PC's canonical copy, where only this
+    # PC writes), never from the room folder, where any agent could take a line out or put one in.
     param([string]$To, [string]$Text)
     $found = New-Object System.Collections.Generic.List[object]
     $ownCopy = [System.IO.Path]::GetFullPath((Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'agents') $To) 'ASSIGNMENT.md'))
@@ -1725,8 +1863,8 @@ function Get-AssignmentConflict {
     if (-not $assignment.Trim()) { return @($found.ToArray()) }
     # Words every assignment and every task hold, which tell nothing
     $plain = @('a', 'an', 'the', 'and', 'or', 'nor', 'but', 'so', 'if', 'of', 'to', 'in', 'on', 'at', 'by', 'as', 'is', 'it', 'its', 'be', 'am', 'are', 'was', 'has', 'had', 'did', 'do', 'go', 'no', 'not', 'up', 'we', 'he', 'me', 'my', 'our', 'you', 'can', 'may', 'own', 'one', 'two', 'any', 'all', 'yet', 'via', 'per', 'for', 'off', 'out', 'let', 'get', 'put', 'see', 'how', 'why', 'who', 'new', 'old', 'this', 'that', 'with', 'from', 'your', 'into', 'onto', 'what', 'when', 'then', 'than', 'them', 'they', 'there', 'their', 'have', 'will', 'would', 'could', 'should', 'which', 'while', 'where', 'every', 'each', 'only', 'also', 'more', 'most', 'some', 'such', 'other', 'another', 'outside', 'inside', 'room', 'agent', 'agents', 'file', 'files', 'folder', 'folders', 'anything', 'nothing', 'something', 'task', 'tasks', 'message', 'messages', 'send', 'sends', 'read', 'reads', 'write', 'writes', 'change', 'changes', 'assignment', 'except', 'unless', 'draft', 'attach', 'without', 'after', 'before', 'does', 'done', 'under', 'over', 'these', 'those', 'here', 'about', 'part', 'never', 'first', 'whatever', 'says', 'said', 'line', 'list', 'lists', 'make', 'makes', 'take', 'takes', 'tell', 'tells', 'work', 'working', 'report', 'result', 'results', 'coordinator', 'owner', 'machine', 'need', 'needs', 'want', 'wants', 'must', 'being', 'were', 'been', 'because', 'through', 'again', 'same', 'thing', 'things', 'come', 'comes', 'back')
-    $textWords = @(Get-TextWord $Text | Where-Object { $plain -notcontains $_ } | Select-Object -Unique)
-    if ($textWords.Count -eq 0) { return @($found.ToArray()) }
+    $activeClauses = @(Split-ActiveTaskClause $Text)
+    if ($activeClauses.Count -eq 0) { return @($found.ToArray()) }
     $section = ''
     foreach ($line in ($assignment -split "`n")) {
         if ($line.StartsWith('## ', [System.StringComparison]::Ordinal)) { $section = $line.Substring(3).Trim(); continue }
@@ -1736,13 +1874,26 @@ function Get-AssignmentConflict {
         # A short word (npm, git, acl) tells as much as a long one: it has to match whole (Test-WordMatch)
         $telling = @(Get-TextWord $bullet | Where-Object { $_.Length -ge 2 -and $plain -notcontains $_ } | Select-Object -Unique)
         if ($telling.Count -eq 0) { continue }
-        $hits = New-Object System.Collections.Generic.List[string]
-        foreach ($word in $telling) {
-            foreach ($candidate in $textWords) { if (Test-WordMatch $word $candidate) { $hits.Add($word); break } }
+        $nounsOnly = Test-TellingWordsAreNounsOnly $telling
+        $bestHits = @()
+        $matchedSentence = ''
+        foreach ($clause in $activeClauses) {
+            $hits = @(Get-TellingWordHitsInClause -Telling $telling -Clause $clause -NounsOnlyLine:$nounsOnly)
+            if ($hits.Count -gt $bestHits.Count -or ($hits.Count -eq $bestHits.Count -and $hits.Count -gt 0 -and $clause.Length -gt $matchedSentence.Length)) {
+                $bestHits = $hits; $matchedSentence = $clause
+            }
+            if ($nounsOnly -and $hits.Count -ge 2) { $bestHits = $hits; $matchedSentence = $clause; break }
         }
         $needed = 2
         if ($telling.Count -eq 1) { $needed = 1 }
-        if ($hits.Count -ge $needed) { $found.Add([pscustomobject]@{ Section = $section; Bullet = $bullet; Words = @($hits.ToArray()) }) }
+        if ($nounsOnly) { $needed = 2 }
+        else {
+            $verbHits = @($bestHits | Where-Object { Test-WordIsVerbLike $_ })
+            if ($verbHits.Count -ge 1) { $needed = 1 }
+        }
+        if ($bestHits.Count -ge $needed) {
+            $found.Add([pscustomobject]@{ Section = $section; Bullet = $bullet; Words = $bestHits; MatchedSentence = $matchedSentence })
+        }
     }
     return @($found.ToArray())
 }
@@ -2015,7 +2166,7 @@ function Invoke-Progress {
     Add-Journal 'progress' $text
     Clear-Draft
     Say "PROGRESS noted: $text"
-    Say "NEXT: carry on. The team sees it with: $(Get-Call) team"
+    Complete-Next "carry on. The team sees it with: $(Get-Call) team"
     return 0
 }
 
@@ -2148,20 +2299,20 @@ function Invoke-Remember {
     $text = (($parts -join ' ') -replace '[ \t]+', ' ').Trim(' ', "`t")
     # " | " separates the fields of the memory file: inside the text it becomes " / "
     while ($text.Contains(' | ')) { $text = $text.Replace(' | ', ' / ') }
-    if (-not $text) { Exit-WithError "there is nothing to remember: $path is missing or empty" 'write what you learned into that file with your file tool (15 to 500 characters) and run the same command again' }
+    if (-not $text) { Exit-WithError "there is nothing to remember: $path is missing or empty" 'write what you learned into that file with your file tool (15 to 500 characters, up to 5 tags) and run the same command again' }
     # Every agent reads the memory: the same patterns as for a message, no override
     $found = Find-Secret $text
     if ($found) { Exit-WithError "the text looks like it contains $found; nothing was remembered" 'take the secret out of the text and run the same command again' }
     $length = Get-CharCount $text
     if ($length -lt 15) { Exit-WithError "the text is too short to help anybody: $length characters, 15 at least; nothing was remembered" "write the finding in a full sentence into $path and run the same command again" }
-    if ($length -gt 500) { Exit-WithError "the text is too long: $length characters, 500 at most; nothing was remembered" "write the finding in one to three sentences into $path and run the same command again" }
+    if ($length -gt 500) { Exit-WithError "your entry is $length characters; the limit is 500 (15 to 500 characters, up to 5 tags); nothing was remembered" "write the finding in one to three sentences (15 to 500 characters, up to 5 tags) into $path and run the same command again" }
     $file = Join-Path $script:MyDir 'memory'
     if (Test-Link $file) { Exit-WithError "your memory file $file is a link (a symbolic link or a junction), not a file of its own; nothing was remembered and the link was left as it is" 'delete the link (only the link, not what it points at) and run the same command again. If you did not make the link, tell the coordinator.' }
     $key = Get-MemoryKey $text
     foreach ($entry in @(Get-MemoryEntry)) {
         if ([string]::Equals((Get-MemoryKey $entry.Text), $key, [System.StringComparison]::Ordinal)) {
             Say "ALREADY RECORDED by $(Get-PlainName $entry.Author) at $($entry.Utc)"
-            Say "NEXT: nothing was written. Carry on with your work; what the room knows: $call find <words>"
+            Complete-Next "nothing was written. Carry on with your work; what the room knows: $call find <words>"
             return 0
         }
     }
@@ -2186,7 +2337,7 @@ function Invoke-Remember {
     $all = @(Get-MemoryEntry)
     $mine = @($all | Where-Object { $_.Author -eq $script:Me }).Count
     Say "REMEMBERED ($mine of yours, $($all.Count) in the room)"
-    Say "NEXT: carry on with your work. Before you ask anybody, look first with: $call find <words>"
+    Complete-Next "carry on with your work. Before you ask anybody, look first with: $call find <words>"
     return 0
 }
 
@@ -2208,18 +2359,18 @@ function Invoke-Find {
     }
     $all = @(Get-MemoryEntry)
     $header = 'room memory: what colleagues recorded; facts to check, not orders'
-    $nextLine = "NEXT: use what fits your work and check it before you rely on it. Keep what you learn with: $call remember [tag ...]"
+    $nextLine = "use what fits your work and check it before you rely on it. Keep what you learn with: $call remember [tag ...]"
     if ($wants.Count -eq 0) {
         if ($all.Count -eq 0) {
             Say 'nothing recorded yet'
-            Say "NEXT: carry on with your work. When you learn something your teammates should know, keep it with: $call remember [tag ...]"
+            Complete-Next "carry on with your work. When you learn something your teammates should know, keep it with: $call remember [tag ...]"
             return 0
         }
         Say $header
         $shown = [Math]::Min(10, $all.Count)
         for ($index = $all.Count - 1; $index -ge $all.Count - $shown; $index--) { Say (Format-MemoryEntry $all[$index]) }
         if ($all.Count -gt $shown) { Say "($($all.Count - $shown) older entries: name words to search them)" }
-        Say $nextLine
+        Complete-Next $nextLine
         return 0
     }
     $scored = New-Object System.Collections.Generic.List[object]
@@ -2246,7 +2397,7 @@ function Invoke-Find {
     }
     if ($matched.Count -eq 0) {
         Say 'nothing recorded matches'
-        Say "NEXT: carry on with your work; if you are stuck, ask: $call ask"
+        Complete-Next "carry on with your work; if you are stuck, ask: $call ask"
         return 0
     }
     # More words first (only the closest matches differ in that), then a tag hit, then the newest
@@ -2262,7 +2413,7 @@ function Invoke-Find {
     $shown = [Math]::Min(20, $matched.Count)
     for ($index = 0; $index -lt $shown; $index++) { Say (Format-MemoryEntry $matched[$index].Entry) }
     if ($matched.Count -gt $shown) { Say "($($matched.Count - $shown) more: add words to narrow it down)" }
-    Say $nextLine
+    Complete-Next $nextLine
     return 0
 }
 
@@ -2341,7 +2492,7 @@ function Invoke-Team {
     }
     Say ''
     Say "YOU: $(Get-PlainName $script:Me). Your parts: $minePlain. $write"
-    Say 'NEXT: carry on.'
+    Complete-Next 'carry on.'
     return 0
 }
 
@@ -2363,6 +2514,17 @@ function ConvertTo-IntroductionWord {
         $rest = @($rest | Select-Object -Skip 1)
         $Call = "$Call new"
     }
+    elseif ($IsJoin -and $rest.Count -ge 4 -and $rest[$rest.Count - 1].Trim().ToLowerInvariant() -eq 'new') {
+        $front = @('new')
+        $rest = @($rest[0..($rest.Count - 2)])
+        $Call = "$Call new"
+    }
+    # join may end with "as <name>": the seat that session wants, not a fourth word of its introduction
+    $seatName = ''
+    if ($IsJoin -and $rest.Count -ge 3 -and $rest[$rest.Count - 2].Trim().ToLowerInvariant() -eq 'as') {
+        $seatName = $rest[$rest.Count - 1].Trim().ToLowerInvariant()
+        if ($rest.Count -gt 2) { $rest = @($rest[0..($rest.Count - 3)]) } else { $rest = @() }
+    }
     $plain = New-Object System.Collections.Generic.List[string]
     foreach ($word in $rest) {
         $joined = (($word -replace '\s+', ' ').Trim()) -replace ' ', '-'
@@ -2379,13 +2541,16 @@ function ConvertTo-IntroductionWord {
         if ($IsJoin) { $verbName = 'join' }
         Exit-WithError "$verbName takes three words, your product, your model and your effort, each of letters, digits, dot and dash (64 at most); the $($labels[$index]) '$shown' is not such a word" "run it as: $Call <product> <model> <effort>   for example: $Call codex-cli gpt-6-sol medium   A name of several words is fine as you were given it: its blanks become dashes. Write unknown where you do not know."
     }
-    return @($front + $three)
+    $words = @($front + $three)
+    if ($seatName) { $words += @('as', $seatName) }
+    return $words
 }
 
 function Invoke-Start {
     param([string[]]$Tokens)
     $cardPath = Join-Path $script:MyDir 'card'
     $old = Read-KeyValue $cardPath
+    Assert-StartSession $old
     $product = Get-Value $old 'product' 'unknown'
     $model = Get-Value $old 'model' 'unknown'
     $effort = Get-Value $old 'effort' 'unknown'
@@ -2409,6 +2574,12 @@ function Invoke-Start {
     $card['tool'] = "relay.ps1 $($script:ToolVersion)"
     $card['started_utc'] = Get-UtcStamp
     Write-KeyValue $cardPath $card
+    $claimPath = Join-Path $script:MyDir 'claim'
+    $claim = Read-KeyValue $claimPath
+    $claim['session'] = Get-SessionKey
+    $claim['session_env'] = Get-SessionEnvironmentKey
+    $claim['gen'] = $script:MyGen
+    Write-KeyValue $claimPath $claim
     # A draft kept in the working folder lies in the folder of this start from here on (Get-DraftPath)
     $script:DraftPath = ''
 
@@ -2465,6 +2636,8 @@ function Invoke-Start {
         if ($coordinatorCard.Count -gt 0) { Say "your coordinator: $(Get-Value $coordinatorCard 'display' $script:Coordinator) on $(Get-Value $coordinatorCard 'computer' '?') ($(Get-Value $coordinatorCard 'product' '?'))" }
         else { Say "your coordinator: $($script:Coordinator) (has not introduced itself yet)" }
     }
+    Say ''
+    Show-MandatoryWait
     foreach ($document in 'START-HERE.md', 'ASSIGNMENT.md') {
         $text = Read-Text (Join-Path $script:MyDir $document)
         if ($text.Trim()) { Say ''; Say "=== $document ==="; Say (Expand-Document $text).TrimEnd() }
@@ -2496,16 +2669,14 @@ function Invoke-Start {
     $waitHint = "run: $call wait   as a background command; its exit wakes you"
     if ($script:Wake -eq 'loop') { $waitHint = "run: $call wait   (it returns within $($script:WaitMinutes) minutes; when nothing arrived, run it again)" }
     if ($script:Wake -eq 'manual') { $waitHint = "run: $call check   whenever the owner tells you to look" }
-    if ($waiting -gt 0) { Say "NEXT: $waiting new message(s) are waiting for you: $waitHint" }
-    elseif ($openCount -gt 0) { Say "NEXT: work on the open request(s) above, reply as each DO line says, then $waitHint" }
-    else { Say "NEXT: $waitHint" }
+    if ($waiting -gt 0) { Complete-Next "$waiting new message(s) are waiting for you: $waitHint" }
+    elseif ($openCount -gt 0) { Complete-Next "work on the open request(s) above, reply as each DO line says, then $waitHint" }
+    else { Complete-Next $waitHint }
     return 0
 }
 
-function Get-SessionKey {
-    # A fingerprint of the agent session that calls, where its product says which session it is: the same for
-    # the whole life of one session, different for two sessions. Only a hash is kept, the room being shared.
-    # Empty when the product gives nothing to go by. RELAY_SESSION is for a product that has no such variable.
+function Get-SessionEnvironmentKey {
+    # Never keep a native session identifier in the shared room.
     foreach ($name in 'RELAY_SESSION', 'CLAUDE_CODE_SESSION_ID') {
         $value = [Environment]::GetEnvironmentVariable($name)
         if (-not $value) { continue }
@@ -2514,13 +2685,51 @@ function Get-SessionKey {
     return ''
 }
 
+function Get-SessionKey {
+    $environmentKey = Get-SessionEnvironmentKey
+    $agent = Get-AgentProcessEntry
+    if ($null -eq $agent -or -not $agent.Started) { return $environmentKey }
+    $text = '{0}|{1}|{2}' -f $environmentKey, $agent.Id, $agent.Started
+    return ((ConvertTo-Sha256Hex ($script:Utf8.GetBytes($text))).Substring(0, 24))
+}
+
+function Assert-StartSession {
+    param($OldCard)
+    $claim = Read-KeyValue (Join-Path $script:MyDir 'claim')
+    $claimedSession = Get-Value $claim 'session' ''
+    if (-not $claim.Contains('session') -or $claimedSession -eq (Get-SessionKey)) { return }
+    $generation = Get-Value $claim 'gen' (Get-Value $OldCard 'gen' $script:MyGen)
+    if ([string]$generation -ne [string]$script:MyGen) { return }
+    # Sample the room filesystem's clock without renewing this seat's heartbeat.
+    $probe = Join-Path $script:MyDir ('.start-clock-' + [guid]::NewGuid().ToString('N'))
+    $now = $null
+    try {
+        [System.IO.File]::WriteAllText($probe, '')
+        $now = Get-FileTimeUtc $probe
+    }
+    catch { $null = $_ }
+    finally { Remove-Entry $probe }
+    if ($null -eq $now -or $now -eq [datetime]::MinValue) {
+        Exit-WithError 'the room clock could not be read; cannot check whether this seat is still alive' 'run the same start command again; if it fails again, tell the coordinator what it printed'
+    }
+    $alive = Get-FileTimeUtc (Join-Path $script:MyDir 'alive')
+    $lease = Get-FileTimeUtc (Join-Path $script:MyDir 'wait.lease')
+    $recent = $alive -ne [datetime]::MinValue -and ($now - $alive).TotalSeconds -lt 120
+    $waiting = $lease -ne [datetime]::MinValue -and ($now - $lease).TotalSeconds -lt 30 -and (Test-OwnWait)
+    if (-not $recent -and -not $waiting) { return }
+    $display = Get-Value $script:Seat 'display' $script:Me
+    $join = Format-Call (Get-WrapperPath)
+    Exit-WithError "$display's session is still alive and you are not it. A new agent joins with: $join new <product> <model> <effort>. To take over this seat, the coordinator runs Add-RelayAgent -Replace $($script:Me)." "If you are $display restarted, wait a minute for the old wait to end and run start again"
+}
+
 function Request-Seat {
     # join: gives this session a seat of the room and returns the seat's name: the seat it already has when
     # the session is known to have joined before, otherwise the next free one. Ends the process when it cannot
     # tell whether this session joined before, or when no seat is free.
-    param([bool]$IsNew, [string]$Product)
+    param([bool]$IsNew, [string]$Product, [string]$SeatName = '')
     $joinWrapper = Get-WrapperPath
     $session = Get-SessionKey
+    $environmentSession = Get-SessionEnvironmentKey
     $kind = Resolve-Kind $Product
     $computer = [Environment]::MachineName
     $user = [Environment]::UserName
@@ -2547,12 +2756,33 @@ function Request-Seat {
         })
     $ordered = @($seats.ToArray())
 
+    if ($SeatName) {
+        # A seat asked for by name: only that one, and only while nobody holds it. A name that is no seat of
+        # this room, is retired or is already taken gets the same refusal, and no other seat is taken.
+        $wanted = @($ordered | Where-Object { [string]::Equals($_.Name, $SeatName, [System.StringComparison]::Ordinal) })
+        if ($wanted.Count -eq 0) { Exit-WithError "Seat $SeatName is not free; run join without a name for the next free seat" "run it as: $(Format-Call $joinWrapper) <product> <model> <effort>" }
+        $wantedClaim = Read-KeyValue (Join-Path $wanted[0].Dir 'claim')
+        if ($wantedClaim.Count -gt 0) {
+            $wantedSession = Get-Value $wantedClaim 'session' ''
+            if (-not $IsNew -and $environmentSession -and $session -and $wantedSession -eq $session) {
+                # The session that holds this seat, asking for it by name: it is that agent, nobody new
+                try { Add-Line $log "$stamp back $($wanted[0].Name) $computer $kind" } catch { $null = $_ }
+                $script:IsBack = $true
+                return $wanted[0].Name
+            }
+            Exit-WithError "Seat $SeatName is not free; run join without a name for the next free seat" "run it as: $(Format-Call $joinWrapper) <product> <model> <effort>"
+        }
+        $ordered = $wanted
+    }
+
     foreach ($seat in $ordered) {
         $claim = Read-KeyValue (Join-Path $seat.Dir 'claim')
         if ($claim.Count -eq 0) { continue }
         $claimSession = Get-Value $claim 'session' ''
-        if ($session -and $claimSession -eq $session) {
-            # The product says it is the same session: it is that agent, and nobody has to guess
+        if (-not $IsNew -and $environmentSession -and $session -and $claimSession -eq $session) {
+            # The product says it is the same session: it is that agent, and nobody has to guess. The agent
+            # process alone does not say it: several sessions share one ancestor process (a test host, a
+            # coordinator), so with no session id from the product the identity check below must decide.
             try { Add-Line $log "$stamp back $($seat.Name) $computer $kind" } catch { $null = $_ }
             $script:IsBack = $true
             return $seat.Name
@@ -2562,7 +2792,9 @@ function Request-Seat {
         foreach ($seat in $ordered) {
             $claim = Read-KeyValue (Join-Path $seat.Dir 'claim')
             # Two sessions that both say which session they are, and differ, are two agents
-            if ($session -and (Get-Value $claim 'session' '')) { continue }
+            $claimEnvironment = Get-Value $claim 'session' ''
+            if ($claim.Contains('session_env')) { $claimEnvironment = [string]$claim['session_env'] }
+            if ($environmentSession -and $claimEnvironment -and $environmentSession -ne $claimEnvironment) { continue }
             if ((Get-Value $claim 'identity' '') -ne $identity) { continue }
             $generation = (Read-Text (Join-Path $seat.Dir 'gen')).Trim()
             if (-not $generation) { $generation = '1' }
@@ -2572,7 +2804,7 @@ function Request-Seat {
         }
     }
 
-    $text = "identity: $identity`nsession: $session`ncomputer: $computer`nuser: $user`ncwd: $folder`nproduct: $(ConvertTo-HeaderText $Product)`nclaimed_utc: $stamp`n"
+    $text = "identity: $identity`nsession: $session`nsession_env: $environmentSession`ngen: 1`ncomputer: $computer`nuser: $user`ncwd: $folder`nproduct: $(ConvertTo-HeaderText $Product)`nclaimed_utc: $stamp`n"
     $bytes = $script:Utf8.GetBytes($text)
     foreach ($seat in $ordered) {
         $path = Join-Path $seat.Dir 'claim'
@@ -2854,9 +3086,42 @@ function Show-Placeholder {
     Say 'DO: ask its sender to send it again; if you have no line to the sender, tell the coordinator.'
 }
 
+function Get-ShownSet {
+    # An absent file belongs to an older room: preserve its delivery history once. Once initialized,
+    # missing ids are unshown deliveries and must be replayed. Even an empty history gets its marker file.
+    # An older tool could record a delivery it never printed, so a receipt of that time proves nothing on its
+    # own: a request (task, question, proposal) that no result or answer names yet is left out of the seed and
+    # is shown once more, as "delivered but not shown". Notes and answered requests are not replayed.
+    param([hashtable]$Delivered)
+    $path = Join-Path $script:MyDir 'shown'
+    if (-not [System.IO.File]::Exists($path)) {
+        $uncertain = @{}
+        if ($Delivered.Count -gt 0) { foreach ($request in @(Get-OpenRequest $script:Me)) { $uncertain[[string]$request.Id] = $true } }
+        $ids = New-Object System.Collections.Generic.List[string]
+        foreach ($id in $Delivered.Keys) { if (-not $uncertain.ContainsKey([string]$id)) { $ids.Add([string]$id) } }
+        $ids.Sort([System.StringComparer]::Ordinal)
+        $stamp = Get-UtcStamp
+        $lines = New-Object System.Collections.Generic.List[string]
+        foreach ($id in $ids) { $lines.Add("$id $stamp") }
+        $text = ''
+        if ($lines.Count -gt 0) { $text = ($lines.ToArray() -join "`n") + "`n" }
+        Write-Text $path $text
+        $left = ''
+        $leftCount = @($Delivered.Keys | Where-Object { $uncertain.ContainsKey([string]$_) }).Count
+        if ($leftCount -gt 0) { $left = "; $leftCount open request(s) to be shown again" }
+        Add-Journal 'shown' "seeded from $($ids.Count) delivered records$left"
+    }
+    $set = @{}
+    foreach ($line in ((Read-Text $path) -split "`n")) {
+        $id = ($line.Trim() -split ' ')[0]
+        if ($id) { $set[$id] = $true }
+    }
+    return $set
+}
+
 function Send-Delivery {
-    # Prints the messages, then records them as delivered: exactly the ones it printed. A session that dies in
-    # between gets them again, and the requests among them stay open until answered: nothing is lost either way.
+    # Print and flush the complete notification before acknowledging it. A buffered writer can accept every
+    # WriteLine yet fail at Flush; neither its shown stamps nor its delivery records may advance then.
     param([object[]]$Deliverable)
     $items = @($Deliverable)
     Sync-Assignment
@@ -2869,21 +3134,6 @@ function Send-Delivery {
         Show-Message $message -HeaderOnly:$short
         if (-not $short) { $printed += $message.Body.Length }
     }
-    $stamp = Get-UtcStamp
-    foreach ($item in $items) {
-        $mark = ''
-        if ($item.Placeholder) { $mark = ' unreadable' }
-        Add-Line (Join-Path $script:MyDir 'delivered') "$($item.Entry.Id) $stamp$mark"
-    }
-
-    foreach ($item in $items) {
-        if ($item.Placeholder) { continue }
-        if ($item.Message.Type -ceq 'answer' -and $item.Message.Re) { $null = Save-ProposalEntry -Id $item.Message.Re -State 'closed' }
-    }
-
-    Write-Status 'working' "woken by $($items.Count) message(s)"
-    Add-Journal 'delivered' ((@($items | ForEach-Object { $_.Entry.Id })) -join ',')
-    Save-StateValue 'idle_timeouts' '0'
     $null = Show-NewRule
     Show-NewMemory
     $open = @(Get-OpenRequest $script:Me)
@@ -2900,6 +3150,24 @@ function Send-Delivery {
     if ($hasTask -and $script:Wake -eq 'background') { Say "NEXT: start your wait as a background command now, before the work: $(Get-Call) wait   Then handle the messages above in order, each as its DO line says." }
     elseif ($hasTask -and $script:Wake -eq 'loop') { Say "NEXT: handle the messages above in order, each as its DO line says, and run $(Get-Call) check after every step of the work. Then run: $(Get-Call) wait" }
     else { Say "NEXT: handle the messages above in order, each as its DO line says. Then run: $(Get-Call) wait$(Get-WaitMode)" }
+
+    # A successful flush acknowledges the output API, not whether a downstream reader kept the bytes.
+    [Console]::Out.Flush()
+    $stamp = Get-UtcStamp
+    foreach ($item in $items) {
+        $mark = ''
+        if ($item.Placeholder) { $mark = ' unreadable' }
+        # A crash between these writes may repeat the message, but cannot hide one that was never printed.
+        Add-Line (Join-Path $script:MyDir 'shown') "$($item.Entry.Id) $stamp"
+        Add-Line (Join-Path $script:MyDir 'delivered') "$($item.Entry.Id) $stamp$mark"
+    }
+    foreach ($item in $items) {
+        if ($item.Placeholder) { continue }
+        if ($item.Message.Type -ceq 'answer' -and $item.Message.Re) { $null = Save-ProposalEntry -Id $item.Message.Re -State 'closed' }
+    }
+    Write-Status 'working' "woken by $($items.Count) message(s)"
+    Add-Journal 'delivered' ((@($items | ForEach-Object { $_.Entry.Id })) -join ',')
+    Save-StateValue 'idle_timeouts' '0'
 }
 
 function Invoke-WaitControl {
@@ -2954,7 +3222,8 @@ function Invoke-WaitDelivery {
     # another wait holds the lease, -1 when nothing was delivered in this round. A file that cannot be read yet
     # stays pending and ends no wait.
     param([object[]]$Entries, [hashtable]$Delivered, [string]$Token, [int]$Settle, $ShareNow, [DateTime]$Since)
-    $new = @($Entries | Where-Object { -not $Delivered.ContainsKey($_.Id) })
+    $shown = Get-ShownSet $Delivered
+    $new = @($Entries | Where-Object { -not $Delivered.ContainsKey($_.Id) -or -not $shown.ContainsKey($_.Id) })
     if ($new.Count -eq 0) { return -1 }
     # The room's clock now: the time the file system gave the last heartbeat, plus what passed since
     $deliverable = @(Get-Deliverable $new (Get-RoomTimeNow $ShareNow $Since))
@@ -2962,13 +3231,15 @@ function Invoke-WaitDelivery {
     # Messages sent together are delivered together: one wake, not two
     if ($Settle -gt 0) {
         Start-Sleep -Milliseconds $Settle
-        $new = @(@(Get-InboxEntry $script:Me) | Where-Object { -not $Delivered.ContainsKey($_.Id) })
+        $new = @(@(Get-InboxEntry $script:Me) | Where-Object { -not $Delivered.ContainsKey($_.Id) -or -not $shown.ContainsKey($_.Id) })
         $deliverable = @(Get-Deliverable $new (Get-RoomTimeNow $ShareNow $Since))
         if ($deliverable.Count -eq 0) { return -1 }
     }
     $verdict = Get-LeaseVerdict $Token
     if ($verdict -eq 'lost') { return 4 }
     if ($verdict -ne 'mine') { return -1 }
+    $unshown = @($deliverable | Where-Object { $Delivered.ContainsKey($_.Entry.Id) -and -not $shown.ContainsKey($_.Entry.Id) })
+    if ($unshown.Count -gt 0) { Say ('delivered but not shown: ' + ((@($unshown | ForEach-Object { $_.Entry.Id })) -join ', ')) }
     Send-Delivery $deliverable
     return 0
 }
@@ -3100,6 +3371,46 @@ function Show-ReachNote {
     $tasks = @(@(Get-OpenRequest $script:Me) | Where-Object { $_.Type -ceq 'task' -and $shown.ContainsKey($_.Id) })
     if ($tasks.Count -eq 0) { return }
     Say "=== you have an open task and no wait running: start $(Get-Call) wait as a background command now ==="
+}
+
+function Invoke-WaitIdleAttention {
+    # Coordinator wait: once per agent, when the board would mark it idle with no wait for more than 3 minutes.
+    param([string]$Token, $Now)
+    if (-not $script:IsCoordinator -or $null -eq $Now) { return -1 }
+    $verdict = Get-LeaseVerdict $Token
+    if ($verdict -eq 'lost') { return 4 }
+    if ($verdict -ne 'mine') { return -1 }
+    $saidRaw = Get-Value (Get-State) 'idle_attention_said' ''
+    $said = New-Object System.Collections.Generic.List[string]
+    foreach ($piece in @($saidRaw -split ',')) { if ($piece) { $said.Add($piece) } }
+    $still = New-Object System.Collections.Generic.List[string]
+    $printed = New-Object System.Collections.Generic.List[string]
+    foreach ($name in @(Get-Roster)) {
+        if ($name -eq $script:Coordinator) { continue }
+        $dir = Get-AgentDir $name
+        if (Test-Path -LiteralPath (Join-Path $dir 'retired')) { continue }
+        $card = Read-KeyValue (Join-Path $dir 'card')
+        if ($card.Count -eq 0) { continue }
+        $alive = Get-FileTimeUtc (Join-Path $dir 'alive')
+        if ($alive -eq [DateTime]::MinValue) { continue }
+        $silent = [int][Math]::Max(0, ($Now - $alive).TotalMinutes)
+        if ($silent -lt 3) { continue }
+        $openTasks = @(@(Get-OpenRequest $name) | Where-Object { $_.Type -ceq 'task' })
+        if ($openTasks.Count -gt 0) { continue }
+        $leaseAt = Get-FileTimeUtc (Join-Path $dir 'wait.lease')
+        $hasWait = ($leaseAt -ne [DateTime]::MinValue -and ($Now - $leaseAt).TotalSeconds -lt 60)
+        if ($hasWait) { continue }
+        $null = $still.Add($name)
+        if ($said -contains $name) { continue }
+        Say ("=== ATTENTION: {0}: idle with no wait running for {1} min: it reads nothing; tell its session to run wait ===" -f (Get-PlainName $name), $silent)
+        $null = $printed.Add($name)
+    }
+    Save-StateValue 'idle_attention_said' (($still | Where-Object { ($said -contains $_) -or ($printed -contains $_) }) -join ',')
+    if ($printed.Count -eq 0) { return -1 }
+    Write-Status 'working' "woken by $($printed.Count) idle-without-wait agent(s)"
+    Say ''
+    Complete-Next "tell each session to run wait, then run: $(Get-Call) wait$(Get-WaitMode)"
+    return 0
 }
 
 function Invoke-WaitOverdue {
@@ -3243,10 +3554,12 @@ function Invoke-Wait {
         $holderText = "its lease was refreshed $holder s ago"
         if ((Get-Value $lease 'pid' '') -and (Get-Value $lease 'host' '')) { $holderText += " by process $(Get-Value $lease 'pid' '') on $(Get-Value $lease 'host' '')" }
         Add-Journal 'second-wait' $holderText
-        Say "=== another wait is already running for $($script:Me) ($holderText) ==="
+        # Exit 0: nothing is wrong (the first wait still listens). A non-zero code here made hosts show a failed
+        # background command. Exit 4 stays for a lease lost while this wait already held it (Get-LeaseVerdict).
+        Say "A wait is already listening for $($script:Me); nothing to do."
         if ($Once) { Say "NEXT: that wait delivers what arrives; nothing to do now. If no wait of yours is running, run: $(Get-Call) wait$(Get-WaitMode)" }
         else { Say "NEXT: that wait stayed alive while this one waited for it, so it is yours and it listens for you: do nothing, its exit wakes you. If it ends without printing anything, run: $(Get-Call) wait$(Get-WaitMode)" }
-        return 4
+        return 0
     }
     $pollSeconds = 5
     $custom = 0
@@ -3337,9 +3650,14 @@ function Invoke-Wait {
                 $code = Invoke-WaitProposal $token
                 if ($code -ge 0) { break }
                 # The coordinator's own tasks: one that is overdue ends the wait, as a delivery does
-                if ($script:IsCoordinator -and $script:TaskLog -and ($Once -or ([DateTime]::UtcNow - $lastOverdueCheck).TotalSeconds -ge $overdueEvery)) {
+                if ($script:IsCoordinator -and ($Once -or ([DateTime]::UtcNow - $lastOverdueCheck).TotalSeconds -ge $overdueEvery)) {
                     $lastOverdueCheck = [DateTime]::UtcNow
-                    $code = Invoke-WaitOverdue -Token $token -Now (Get-RoomTimeNow $shareNow $lastRefresh) -Entries $entries
+                    $roomNow = Get-RoomTimeNow $shareNow $lastRefresh
+                    if ($script:TaskLog) {
+                        $code = Invoke-WaitOverdue -Token $token -Now $roomNow -Entries $entries
+                        if ($code -ge 0) { break }
+                    }
+                    $code = Invoke-WaitIdleAttention -Token $token -Now $roomNow
                     if ($code -ge 0) { break }
                 }
             }
@@ -3422,7 +3740,7 @@ function Invoke-Show {
         $count = Show-OpenRequest -WithText
         if ($count -eq 0) { Say '=== no open requests: you owe nobody a reply ===' }
         Say ''
-        Say "NEXT: reply as each DO line says, then run: $call wait$(Get-WaitMode)"
+        Complete-Next "reply as each DO line says, then run: $call wait$(Get-WaitMode)"
         return 0
     }
     if ($what -eq 'rules') {
@@ -3453,7 +3771,7 @@ function Invoke-Show {
         foreach ($link in @($tree.Links)) { Say "  link, not followed: $link" }
     }
     Say ''
-    Say "NEXT: act as the DO line says, then run: $call wait$(Get-WaitMode)"
+    Complete-Next "act as the DO line says, then run: $call wait$(Get-WaitMode)"
     return 0
 }
 
@@ -3492,7 +3810,7 @@ function Invoke-Reply {
     $sent = Send-Message -To $original.From -Type 'answer' -Re $id -Expects 'none' -Subject $subject -Body $body -AllowSecret:($parsed.Flags.ContainsKey('allow-secret'))
     Clear-Draft
     Say "SENT $sent (answer to $id) to $(Get-DisplayName $original.From)"
-    Say "NEXT: carry on; when you have nothing to do, run: $call wait$(Get-WaitMode)"
+    Complete-Next "carry on; when you have nothing to do, run: $call wait$(Get-WaitMode)"
     return 0
 }
 
@@ -3550,6 +3868,7 @@ function Invoke-Send {
         foreach ($target in $targets) {
             foreach ($conflict in @(Get-AssignmentConflict -To $target -Text ($draft.Subject + "`n" + $draft.Body))) {
                 $conflicts.Add("  $(Get-DisplayName $target), $($conflict.Section): $($conflict.Bullet)   (the task says: $($conflict.Words -join ', '))")
+                if ($conflict.MatchedSentence) { $conflicts.Add("  matched: $($conflict.MatchedSentence)") }
             }
         }
         if ($conflicts.Count -gt 0) {
@@ -3566,6 +3885,17 @@ function Invoke-Send {
     if ($Verb -eq 'ask') { $type = 'question'; $expects = 'reply' }
     if ($Verb -eq 'task') { $type = 'task'; $expects = 'reply' }
     if ($Verb -eq 'propose') { $type = 'proposal'; $expects = "proceed $minutes" }
+    # A task can cross its receiver's bye (the bye and the task were sent at the same time): it is sent all
+    # the same and waits in the inbox, and the coordinator is told at once. The receiver's status says so.
+    $byeWarnings = New-Object System.Collections.Generic.List[string]
+    if ($Verb -eq 'task') {
+        foreach ($target in $targets) {
+            $targetStatus = Read-KeyValue (Join-Path (Get-AgentDir $target) 'status')
+            if ((Get-Value $targetStatus 'state' '') -ceq 'offline' -and (Get-Value $targetStatus 'detail' '') -ceq 'said bye') {
+                $byeWarnings.Add("WARNING: $target said bye at $(Get-Value $targetStatus 'since_utc' '?'); the task waits in its inbox until that session returns (start) or the seat is replaced")
+            }
+        }
+    }
     $sentIds = New-Object System.Collections.Generic.List[string]
     $notNoted = New-Object System.Collections.Generic.List[string]
     foreach ($target in $targets) {
@@ -3583,12 +3913,13 @@ function Invoke-Send {
         return 0
     }
     Say ("SENT $($sentIds -join ', ') ($type) to " + ((@($targets | ForEach-Object { Get-DisplayName $_ })) -join ', '))
+    foreach ($byeWarning in $byeWarnings) { Say $byeWarning }
     if ($Verb -eq 'task') {
         if ($script:TaskLog -and $notNoted.Count -eq 0) { Say "expected: $expected minutes. Your wait wakes you when the receiver has sent nothing for that long." }
         else { Say "expected: $expected minutes. This could not be noted on this PC, so no wait will say when the task is overdue: look at the board yourself when the time is up." }
     }
-    if ($type -eq 'question') { Say "NEXT: keep working on whatever does not depend on the answer; when you have nothing to do, run: $call wait$(Get-WaitMode)" }
-    else { Say "NEXT: carry on; when you have nothing to do, run: $call wait$(Get-WaitMode)" }
+    if ($type -eq 'question') { Complete-Next "keep working on whatever does not depend on the answer; when you have nothing to do, run: $call wait$(Get-WaitMode)" }
+    else { Complete-Next "carry on; when you have nothing to do, run: $call wait$(Get-WaitMode)" }
     return 0
 }
 
@@ -3626,7 +3957,7 @@ function Invoke-Report {
     Say $audit.Summary
     foreach ($line in $outsideLines) { Say $line }
     if (@(Read-MemoryFile $script:Me).Count -eq 0) { Say 'tip: remember durable findings for your teammates' }
-    Say "NEXT: run: $call wait$(Get-WaitMode)"
+    Complete-Next "run: $call wait$(Get-WaitMode)"
     return 0
 }
 
@@ -3668,8 +3999,8 @@ function Invoke-Who {
     }
     if ($free.Count -gt 0) { Say ''; Say "free seats ($($free.Count)), nobody there yet: $($free -join ', ')" }
     Say ''
-    if ($script:IsCoordinator) { Say 'NEXT: you may write to any of them.' }
-    else { Say "NEXT: you write to $(Get-Value (Read-KeyValue (Join-Path (Get-AgentDir $script:Coordinator) 'seat')) 'display' $script:Coordinator), the coordinator, unless it gave you a direct line." }
+    if ($script:IsCoordinator) { Complete-Next 'you may write to any of them.' }
+    else { Complete-Next "you write to $(Get-Value (Read-KeyValue (Join-Path (Get-AgentDir $script:Coordinator) 'seat')) 'display' $script:Coordinator), the coordinator, unless it gave you a direct line." }
     return 0
 }
 
@@ -3706,7 +4037,7 @@ function Show-Usage {
     Say "  $call who                            who is in the room"
     Say "  $call team                           the plan, who does which part, and where everybody stands"
     Say "  $call progress                       tell the team where you stand, in one line (draft file); wakes nobody"
-    Say "  $call remember [tag ...]             keep a finding for the whole team (draft file); wakes nobody"
+    Say "  $call remember [tag ...]             keep a finding for the whole team (draft file, 15 to 500 characters, up to 5 tags); wakes nobody"
     Say "  $call find [word|tag:name ...]       search what the team keeps; do it before you start or ask"
     Say "  $call bye                            leave the room"
     Say '  coordinator only: task <name> [anyway] [<minutes it should take>], ask <name>, note <name>|all'
@@ -3803,9 +4134,14 @@ if ($verb -eq 'join') {
     $joinCall = Format-Call (Get-WrapperPath)
     $isNew = (@($tokens).Count -ge 1 -and $tokens[0].ToLowerInvariant() -eq 'new')
     if ($isNew) { $tokens = @($tokens | Select-Object -Skip 1) }
+    $seatName = ''
+    if (@($tokens).Count -ge 2 -and $tokens[@($tokens).Count - 2].ToLowerInvariant() -eq 'as') {
+        $seatName = $tokens[@($tokens).Count - 1]
+        if (@($tokens).Count -gt 2) { $tokens = @($tokens[0..(@($tokens).Count - 3)]) } else { $tokens = @() }
+    }
     if (@($tokens).Count -lt 1) { Exit-WithError 'join needs to know what you are' "run it as: $joinCall <product> <model> <effort>   (your agent product as exactly as you know it, for example claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent or copilot-cli; your model; your reasoning effort setting if your session shows one; write unknown where you do not know)" }
     if (Test-Path -LiteralPath (Join-Path $script:Room 'CLOSED')) { Exit-WithError "the room $($script:RoomId) is closed" 'there is nothing to join: tell your owner' 5 }
-    $script:Me = Request-Seat -IsNew $isNew -Product $tokens[0]
+    $script:Me = Request-Seat -IsNew $isNew -Product $tokens[0] -SeatName $seatName
     $script:MyGen = (Read-Text (Join-Path (Get-AgentDir $script:Me) 'gen')).Trim()
     if (-not $script:MyGen) { $script:MyGen = '1' }
     $env:RELAY_NAME = $script:Me
@@ -3855,6 +4191,7 @@ if ($script:Wake -eq 'auto') {
     $script:WaitNote = Get-KindValue $kind 'hint' ''
 }
 
+$script:CurrentVerb = ''
 $exitCode = 0
 $stop = Test-StopCondition
 if ($stop -ne 0) {
@@ -3886,6 +4223,7 @@ try {
     try { Show-IntegrityNote } catch { $null = $_ }
     # Then, for an agent that has a task and no wait running: nothing reaches it until it starts one
     try { Show-ReachNote $verb } catch { $null = $_ }
+    $script:CurrentVerb = $verb
     switch ($verb) {
         'start' { $exitCode = Invoke-Start $tokens }
         'wait' {

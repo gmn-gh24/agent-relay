@@ -848,3 +848,79 @@ changes the same room caused in the tools and the skill follow in the next secti
   skill and `coordinating.md` say every question is asked through the question tool with options, and the
   Improve step triages per group the same way (`self-improvement.md`); `-Replace` names the prompt to paste and
   `Add-RelayAgent.ps1 -Clipboard <name>` puts a named one on the clipboard.
+- **The join prompt spent a small agent's context before work began.** An agent with a 16K-token window
+  compacted after reading a 4,160-character join prompt. Changed: the prompt holds only the pre-join steps
+  and opens with the owner's request to join. The join prints the after-join rules in `START-HERE.md`;
+  the blocked-command rule remains in `PROTOCOL.md`, with its after-join summary belonging in `START-HERE.md`.
+  An unknown model or effort no longer delays joining: the agent writes `unknown`, and the coordinator
+  settles it with the owner after the agent is in.
+
+## 2026-10-14: the Ollama room, by the numbers (115 messages in 281 minutes)
+
+A research room of several agents on several machines; its statistics and its owner-requested notes gave
+these numbers and the changes they led to:
+
+- **32 requests, 3 never answered; median reply 3 minutes, slowest 56.** The slowest was an agent with no wait
+  running: nothing could reach it, and the status request to it took 31 minutes. Changed: the exit
+  code of a second `wait` is 0 and the instructions enforce keep-waiting (an agent waits until it is retired
+  or the room is closed); the coordinator sends a welcome after a join and a reminder after every accepted
+  result, so an agent never ends a turn without a wait (`coordinating.md`, "Introductions", "Results").
+- **11 reports flagged changes outside the assigned paths, all false.** Every one was the reviewer's own work
+  folder, which lay inside an allowed root. Not changed: a self-audit cannot tell such a folder from a real
+  change; the coordinator reads each flagged line against the roots it assigned (`coordinating.md`,
+  "Results").
+- **One idle agent polled the room 49 times, and one started a second wait four or
+  five times.** Each poll cost a turn on a local model, and its host showed the second wait's exit code as a
+  failure. Changed: the second wait exits 0, and the START-HERE and the join prompt were shortened so the
+  rules that stop polling fit in a small context window.
+- **No tamper alarm fired, no question was asked twice and nothing was delivered twice.** Nothing to change.
+- **One useful leaving remark: a product has two package names on the registry,** and the task notes named
+  only one. Changed: `agent-kinds.md` records such naming traps per product.
+- **A second wait exited 4 and hosts painted it as a failure.** Five times in one session: nothing was wrong
+  (the first wait still listened), but exit code 4 made the host show a failed background command. Changed: that
+  path prints "A wait is already listening for <name>; nothing to do." and exits 0; exit 4 remains only for a
+  lease lost while a wait already held it.
+
+## 2026-10-14/15: the plugin-improvements room (0.11.0)
+
+One job, done as a room: the improvement list of the rooms before it, worked item by item. Eight agents of
+five products; twelve branches were accepted in two and a half hours, eighteen merged in four.
+
+- **Review as a step of its own paid for itself.** Every branch was read by the coordinator before its pull
+  request, and that pass caught what the agents' own green runs had not: a rewritten history, suites that
+  were claimed but never run, text that was not wrapped, and an upgrade replayed on a room that already had
+  it. None of those needed a second agent to find; they needed a reader whose job was only to read.
+- **The agents' design questions corrected the coordinator twice.** Twice an agent stopped and asked about
+  a point the task had settled too quickly, and the answer changed the build. A task that names what to do
+  when a point is unclear gets those questions; one that does not gets silence and the quick settlement.
+- **The record let branches be rebuilt.** When work had to be redone, the room's messages, the drafts and
+  the attached logs said what the first attempt had done and where it had stopped, so the rebuild started
+  from evidence, not from a summary nobody could check.
+- **One coordinator is the bottleneck.** Every message cost about a turn of the coordinator, so the room's
+  speed was the coordinator's speed of reading, however many agents worked at once. Splitting the reading
+  (a reviewer seat) is the obvious next step and is not built.
+- **Eight Pester runs on one PC at once run 2 to 3 times slower, and some do not survive it.** Child
+  processes timed out at their limits in suites that pass cleanly one after another, and one whole gate was
+  killed. On one machine, run the suites in sequence; parallel runs belong on several machines.
+- **Two coder seats on a local model were retired for silence, and the local runner seat earned its keep:**
+  it caught a merge error the stronger seats had all read past. A weak seat is a risk as a coder and worth
+  having as a checker, which is a different assignment, not a smaller one.
+- **Two cloud sessions ran out of credit in the middle of a task.** Their work stood frozen where it was;
+  the coordinator committed it as it stood and the branch went on. Work that is committed early survives
+  its session; work that is only in a session does not.
+- **A seat was retired by mistake twice, once on a wrong premise.** Retirement is quick and its record
+  looks final, so it is the step to say out loud before it is done; one of the two was read back from the
+  board in time.
+- Changed by this room: the three standing rules in `coordinating.md`, the owner's priorities at the head
+  of `ROADMAP.md`, and an un-retire item on the roadmap for the seat that cannot be brought back.
+- **Promoted from the room's memory, with the owner's approval.** Never edit code while a gate runs:
+  Pester discovers the assertions before it runs them while the scripts import the module again on every
+  call, so an edit in the middle mixes old assertions with new code on both engines; freeze the files
+  until the gate ends, or rerun the affected suite fresh. A test must not start a real `wait` to prove a
+  live lease: the wait outlives the test and hangs the ones after it; a fake lease file under the agent's
+  generation folder proves the same. Windows PowerShell 5.1 has no `String.Contains` overload with a
+  `StringComparison`: use `IndexOf` with `Ordinal`, as the conventions already say for every parsed text.
+- **The static gate did not parse the test files.** A merge that lost a closing brace between two tests
+  passed `-StaticOnly` and failed only when Windows PowerShell 5.1 loaded the file; the local runner seat
+  reported the parser's words and the fix took a minute. Not changed yet: a parse pass over every `.ps1`
+  and `.psm1` on both engines belongs in the static step (the room's improvements file lists it).

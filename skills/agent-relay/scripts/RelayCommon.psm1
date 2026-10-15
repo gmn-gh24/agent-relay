@@ -1567,6 +1567,11 @@ function Get-RelayAgentState {
         $canonDir = Join-Path (Join-Path $Room.Canon 'agents') $name
         $seat = Read-RelayKeyValue (Join-Path $canonDir 'seat')
         $card = Read-RelayKeyValue (Join-Path $dir 'card')
+        # What the owner stated for the seat (Add-RelayAgent.ps1 -Seat -SetModel/-SetEffort) is this PC's own
+        # record and wins over what the card, which the agent writes, says
+        $stated = Read-RelayKeyValue (Join-Path $canonDir 'stated')
+        $statedModel = Get-RelayValue $stated 'model' ''
+        $statedEffort = Get-RelayValue $stated 'effort' ''
         $status = Read-RelayKeyValue (Join-Path $dir 'status')
         $controlMap = Read-RelayKeyValue (Join-Path $canonDir 'control')
         $control = Get-RelayValue $controlMap 'state' 'run'
@@ -1580,11 +1585,29 @@ function Get-RelayAgentState {
         # A seat nobody is named for: free until an agent given the join prompt takes it
         $isOpen = ((Get-RelayValue $seat 'open' '') -eq 'yes')
         $isFree = ($isOpen -and $card.Count -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $dir 'claim')))
+        # A seat the coordinator ended on purpose is no dead wait to restart: retired, replaced by a newer
+        # generation (the session's own status is of the older one), or stopped through its control
+        $currentGen = 0
+        $null = [int]::TryParse((Read-RelayText (Join-Path $canonDir 'gen')).Trim(), [ref]$currentGen)
+        $sessionGenText = Get-RelayValue $status 'gen' ''
+        if (-not $sessionGenText) { $sessionGenText = Get-RelayValue $card 'gen' '' }
+        $sessionGen = 0
+        $null = [int]::TryParse($sessionGenText, [ref]$sessionGen)
+        $isReplaced = ($currentGen -gt 0 -and $sessionGen -gt 0 -and $sessionGen -lt $currentGen)
+        $stoppedKind = ''
+        if ($isStale) {
+            if ($isRetired) { $stoppedKind = 'retired' }
+            elseif ($isReplaced) { $stoppedKind = 'replaced' }
+            elseif ($control -ceq 'stop') { $stoppedKind = 'control stop' }
+        }
+        $stopped = ''
+        if ($stoppedKind) { $stopped = "stopped ($stoppedKind) $silent min ago" }
         $attention = ''
         $expected = Get-RelayValue $seat 'expect_computer' ''
         $computer = Get-RelayValue $card 'computer' ''
         if ($isRetired) { $state = 'retired' }
         elseif ($isFree) { $state = 'free seat' }
+        elseif ($stopped) { $attention = '' }
         elseif ($expected -and $computer -and $expected -ne $computer) { $attention = "introduced itself from $computer, expected ${expected}: check with the owner before giving it work" }
         elseif ($isStale) { $attention = "wait died $silent min ago: owner must restart that session" }
         elseif ($state -eq 'not started' -and $isOpen) { $attention = 'took a seat but has not introduced itself: owner must look at that session' }
@@ -1609,6 +1632,35 @@ function Get-RelayAgentState {
                 $leaseAt = Get-RelayFileTimeUtc (Join-Path $dir 'wait.lease')
                 $hasWait = ($leaseAt -ne [DateTime]::MinValue -and ($now - $leaseAt).TotalSeconds -lt 60)
                 if ($tasks.Count -gt 0 -and -not $hasWait) { $attention = "has an open task and no wait running, last sign of life $silent min ago: no message reaches it; ask the owner to tell that session to check the room" }
+            }
+            # A seat that said bye (offline) was told to stop: nothing below asks for it to be given work or to wait.
+            # A seat that wakes by hand (manual) is told not to wait, so no wait is missing there.
+            $isOffline = ($state -ceq 'offline')
+            $isManual = ((Get-RelayValue $card 'wake' (Get-RelayValue $seat 'wake' '')) -ceq 'manual')
+            # Reported on its last task and the coordinator has sent nothing since: the owner must not be the one
+            # who notices it sitting idle
+            if (-not $attention -and -not $isOffline -and @($open | Where-Object { $_.To -ceq $name }).Count -eq 0) {
+                $lastResult = $null
+                foreach ($message in @($Messages | Where-Object { $_.From -ceq $name -and $_.Type -ceq 'result' } | Sort-Object Time, Id)) { $lastResult = $message }
+                if ($null -ne $lastResult) {
+                    $since = @($Messages | Where-Object {
+                            $_.To -ceq $name -and $_.From -ceq $Room.Coordinator -and $_.Time -gt $lastResult.Time -and
+                            -not ($lastResult.Re -and $_.Id -ceq $lastResult.Re)
+                        })
+                    if ($since.Count -eq 0) {
+                        $reportedMin = [int][Math]::Max(0, ($now - $lastResult.Time).TotalMinutes)
+                        if ($reportedMin -gt 5) { $attention = "reported $reportedMin min ago, nothing sent to it since: give it its next task or its reminder" }
+                    }
+                }
+            }
+            # Idle (no open task) with no wait for more than 3 minutes: nothing reaches it; tell its session to wait
+            if (-not $attention -and -not $isOffline -and -not $isManual -and $card.Count -gt 0 -and $silent -ge 3) {
+                $openTasks = @($open | Where-Object { $_.To -eq $name -and $_.Type -ceq 'task' })
+                $leaseAt = Get-RelayFileTimeUtc (Join-Path $dir 'wait.lease')
+                $hasWait = ($leaseAt -ne [DateTime]::MinValue -and ($now - $leaseAt).TotalSeconds -lt 60)
+                if ($openTasks.Count -eq 0 -and -not $hasWait) {
+                    $attention = "idle with no wait running for $silent min: it reads nothing; tell its session to run wait"
+                }
             }
         }
         $owes = @($open | Where-Object { $_.To -eq $name })
@@ -1641,6 +1693,7 @@ function Get-RelayAgentState {
                 state         = $state
                 detail        = (Get-RelayValue $status 'detail' '')
                 isStale       = $isStale
+                stopped       = $stopped
                 silentMinutes = $silent
                 control       = $control
                 attention     = $attention
@@ -1659,12 +1712,24 @@ function Get-RelayAgentState {
                 os            = (Get-RelayValue $card 'os' '')
                 hostApp       = (Get-RelayValue $card 'host_app' '')
                 product       = (Get-RelayValue $card 'product' '')
-                model         = (Get-RelayValue $card 'model' '')
-                tier          = (Get-RelayModelTier (Get-RelayValue $card 'model' ''))
-                effort        = (Get-RelayValue $card 'effort' '')
+                model         = (Get-RelayValue $stated 'model' (Get-RelayValue $card 'model' ''))
+                modelOwner    = [bool]$statedModel
+                tier          = (Get-RelayModelTier (Get-RelayValue $stated 'model' (Get-RelayValue $card 'model' '')))
+                effort        = (Get-RelayValue $stated 'effort' (Get-RelayValue $card 'effort' ''))
+                effortOwner   = [bool]$statedEffort
             })
     }
     return @($agents.ToArray())
+}
+
+function Get-RelayAgentSignature {
+    # What the feed compares between two looks to decide whether the agents changed and the pane gets them
+    # again: every field the pane shows that can change while a seat keeps its state, the owner's model and
+    # effort for a seat among them (Add-RelayAgent.ps1 -Seat -SetModel/-SetEffort)
+    param([AllowEmptyCollection()][object[]]$Agents = @())
+    return (@(@($Agents) | ForEach-Object {
+                "$($_.name)|$($_.state)|$($_.detail)|$($_.gen)|$($_.control)|$($_.attention)|$($_.isIntroduced)|$($_.owes)|$($_.progressUtc)|$(@($_.parts) -join ',')|$($_.model)|$($_.modelOwner)|$($_.tier)|$($_.effort)|$($_.effortOwner)"
+            }) -join ';')
 }
 
 function Get-RelayRightsKind {
@@ -1678,6 +1743,63 @@ function Get-RelayRightsKind {
     if ($text -like '*can elevate*') { return 'can-elevate' }
     if ($text -like 'not elevated*') { return 'none' }
     return 'unknown'
+}
+
+function Test-RelayModelName {
+    # A model or an effort as one word: letters, digits and . _ + : / ( ) - only, up to 64 characters. It goes into
+    # a file on this PC and into the board, so nothing else is taken, whoever said it.
+    param([string]$Name)
+    return ([string]$Name) -cmatch '^[A-Za-z0-9][A-Za-z0-9._+:/()-]{0,63}$'
+}
+
+function Get-RelayKnownModelFile {
+    return (Join-Path (Get-RelayLocalRoot) 'models.json')
+}
+
+function Get-RelayKnownModel {
+    # The models this PC has seen in introductions and from the owner: name, product, the day first seen. A file
+    # that is not readable as that list is no list: the models seen again are written afresh.
+    $text = Read-RelayText (Get-RelayKnownModelFile)
+    if (-not $text.Trim()) { return @() }
+    try { $table = ConvertFrom-RelayJson $text } catch { return @() }
+    if ($null -eq $table -or $null -eq $table.PSObject.Properties['models']) { return @() }
+    return @(@($table.models) | Where-Object { $null -ne $_ -and $null -ne $_.PSObject.Properties['name'] -and (Test-RelayModelName ([string]$_.name)) } | ForEach-Object {
+            [pscustomobject]@{ name = [string]$_.name; product = [string](Get-RelayProperty $_ 'product' ''); date = [string](Get-RelayProperty $_ 'date' '') }
+        })
+}
+
+function Add-RelayKnownModel {
+    # Adds each model name that is not in the list yet (names compare ordinally, case ignored), with its product and
+    # today's date, once. 'unknown', an empty name and a name that is no model name are left out: the cards are
+    # room text. Nothing is written when nothing is new. The list holds 300 names at most.
+    param([AllowEmptyCollection()][object[]]$Entry = @())
+    $known = New-Object System.Collections.Generic.List[object]
+    foreach ($item in @(Get-RelayKnownModel)) { $known.Add($item) }
+    $changed = $false
+    foreach ($new in @($Entry)) {
+        $name = ([string]$new.name).Trim()
+        if (-not $name -or $name.Equals('unknown', [System.StringComparison]::OrdinalIgnoreCase) -or -not (Test-RelayModelName $name)) { continue }
+        $seen = $false
+        foreach ($have in $known) { if ($have.name.Equals($name, [System.StringComparison]::OrdinalIgnoreCase)) { $seen = $true; break } }
+        if ($seen -or $known.Count -ge 300) { continue }
+        $product = ([string]$new.product).Trim()
+        if ($product -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$') { $product = '' }
+        $known.Add([pscustomobject]@{ name = $name; product = $product; date = (Format-RelayUtc -Format 'yyyy-MM-dd') })
+        $changed = $true
+    }
+    if ($changed) { Write-RelayTextAtomic (Get-RelayKnownModelFile) ((ConvertTo-Json -InputObject ([ordered]@{ models = @($known.ToArray()) }) -Depth 4) + "`n") }
+}
+
+function Get-RelayModelLabel {
+    # What the board prints for an agent's model and effort. What the owner stated is marked, because it is not what
+    # the agent said: both stated "m/e (owner)", one of them "m (owner model)/e" or "m/e (owner effort)".
+    param([Parameter(Mandatory)]$Agent)
+    $model = [string]$Agent.model
+    $effort = [string]$Agent.effort
+    if ($Agent.modelOwner -and $Agent.effortOwner) { return "$model/$effort (owner)" }
+    if ($Agent.modelOwner) { return "$model (owner model)/$effort" }
+    if ($Agent.effortOwner) { return "$model/$effort (owner effort)" }
+    return "$model/$effort"
 }
 
 function Get-RelayModelTier {
@@ -1779,6 +1901,8 @@ function Get-RelayBoard {
         $plan | Add-Member -NotePropertyName differs -NotePropertyValue ([bool](Test-RelayPlanDifference $Room))
     }
     $agents = @(Get-RelayAgentState -Room $Room -Now $now -Open $open -Plan $plan -Messages $messages)
+    # Every introduction adds its model to the list of models this PC has seen (the choices offered to the owner)
+    Add-RelayKnownModel -Entry @($agents | Where-Object { $_.isIntroduced -and $_.model } | ForEach-Object { [pscustomobject]@{ name = $_.model; product = $_.product } })
 
     $openRows = New-Object System.Collections.Generic.List[object]
     $taskLog = Read-RelayTaskLog $Room
@@ -1787,6 +1911,16 @@ function Get-RelayBoard {
         # for that long (0 expected minutes: not a task of the coordinator)
         $clock = [pscustomobject]@{ expectedMinutes = 0; isDelivered = $false; elapsedMinutes = 0; quietMinutes = 0; isOverdue = $false; alerts = 0 }
         if ($message.Type -ceq 'task' -and $message.From -ceq $Room.Coordinator) { $clock = Get-RelayTaskClock -Room $Room -Message $message -Messages $messages -Now $now -TaskLog $taskLog }
+        # A task that crossed its receiver's bye: the receiver's status still says so, and the task was
+        # sent after the time that status was written
+        $sentAfterBye = $false
+        if ($message.Type -ceq 'task') {
+            $targetStatus = Read-RelayKeyValue (Join-Path (Join-Path (Join-Path $Room.Path 'agents') ([string]$message.To)) 'status')
+            if ((Get-RelayValue $targetStatus 'state' '') -ceq 'offline' -and (Get-RelayValue $targetStatus 'detail' '') -ceq 'said bye') {
+                $byeAt = ConvertFrom-RelayUtc (Get-RelayValue $targetStatus 'since_utc' '')
+                if ($null -ne $byeAt -and $message.Time -ge $byeAt) { $sentAfterBye = $true }
+            }
+        }
         $openRows.Add([pscustomobject]@{
                 id              = $message.Id
                 from            = $message.From
@@ -1803,6 +1937,7 @@ function Get-RelayBoard {
                 quietMinutes    = $clock.quietMinutes
                 isOverdue       = $clock.isOverdue
                 alerts          = $clock.alerts
+                sentAfterBye    = $sentAfterBye
             })
     }
     $cards = New-Object System.Collections.Generic.List[object]
@@ -2566,31 +2701,24 @@ function Get-RelayJoinPrompt {
     $fallback = (Get-RelayReachFallback $Room).TrimEnd('\', '/')
     Assert-RelayPastePath $fallback 'The fallback room folder'
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add('You are asked to join a work room: a shared folder through which several coding agents work on one job for the same owner. Another agent, the coordinator, hands out the tasks and answers questions.')
+    $lines.Add('Owner''s request: this session becomes an agent of a work room. Run the join command below; change nothing until a task arrives.')
     $lines.Add('')
     $lines.Add("Room folder: $base")
     if ($fallback) {
-        $lines.Add("Fallback, the same folder by the server's address: $fallback")
-        $lines.Add('Use the fallback only when the folder above cannot be reached: the name does not resolve on this machine, or the share refuses you with a user name or password error. Then put the fallback in place of the folder in the commands below, and tell your owner which of the two worked.')
+        $lines.Add("Fallback: $fallback")
+        $lines.Add('Use the fallback only if the name does not resolve or the share refuses access. Substitute it below; tell the owner which path worked.')
     }
     $lines.AddRange([string[]]@(
         ''
-        '1. Run ONE of these now, the one for your shell. The three words at the end say what you are: your agent product as exactly as you know it (claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent, copilot-cli, or its name as one word), your model, and your reasoning effort setting if your session or its configuration shows one (low, medium, high, ...). Write unknown where you do not know; do not guess. Type the words themselves, without the angle brackets, for example: claude-code-cli sonnet-5.5 medium'
+        'Fill product/model/effort with your exact product name (claude-code-cli, codex-cli, codex-app, gemini-cli, cursor-agent, copilot-cli, or its name as one word), model and reasoning effort, without brackets. Write unknown for a model or an effort you cannot see; do not guess, and do not ask anyone before joining: the coordinator settles it with the owner after you are in. Blanks become dashes.'
         ''
-        ('   ' + (Get-RelayModelQuestionText))
+        'Run ONE line for your shell, once:'
+        "PowerShell/pwsh/Git Bash: powershell -NoProfile -ExecutionPolicy Bypass -File $(ConvertTo-RelayPowerShellLiteral "$forward/join.ps1") <product> <model> <effort>"
+        "cmd: `"$base\join.cmd`" <product> <model> <effort>"
         ''
-        '   Work from a local folder of your own on this machine, never from the room folder and never from a folder on a share: copy what a task needs out of the room, work on your own disk, and send results back as attachments. Running tests or scripts inside the room or on a share fails or disturbs the others.'
+        'Join names you, introduces you to the coordinator and prints your instructions and command. They are all you need; do not read plugin or skill files. Use only that command thereafter; never run join again. Do each NEXT: line; your first task arrives as a message.'
         ''
-        "   Windows, PowerShell (Windows PowerShell or pwsh) or Git Bash:  powershell -NoProfile -ExecutionPolicy Bypass -File $(ConvertTo-RelayPowerShellLiteral "$forward/join.ps1") <product> <model> <effort>"
-        "   Windows, cmd:                                                  `"$base\join.cmd`" <product> <model> <effort>"
-        ''
-        '2. The command gives you a name and introduces you to the coordinator: what kind of agent you are, the computer and its address, the user, whether you run elevated, and your shell. It reads these off the machine; you add nothing. Then it prints your instructions and your own command. From then on use only that command; do not run join a second time.'
-        ''
-        '3. Every output ends with a NEXT: line. Do what it says. Your first task arrives as a message.'
-        ''
-        'Until a task arrives, change nothing on this machine: it is in use, not a test machine. Stay inside what a task assigns and ask before anything beyond it. Never type message text on the command line: the output tells you which file to write it into. Never run a script that lies in the room, except the join command above, your own command once you have one, and a script that a task tells you to write and run in your own work folder.'
-        ''
-        'If the join command above is refused, blocked or cannot start, or cannot reach the room folder: try it once, check once whether the folder exists, then change nothing, stop and tell your owner the exact error. Do not work around it and do not try other paths unless your owner gives you one (the fallback above is the one exception). A product that guards against scripts it has not seen may refuse the join command: that is correct behaviour, not a fault. Your owner has two ways through, and you name both: (1) start the product with its guard off; (2) run the one join line above themselves, in a terminal or with the product''s own shell prefix, and give you its output. This applies to joining only: once you are in the room, a blocked command is reported to the coordinator through your own command (your instructions say how), and you keep waiting on the room.'
+        'If join is refused, blocked, cannot start or cannot reach the room: try once, check once whether the folder exists, change nothing, stop and tell the owner the exact error. No workarounds or other paths without the owner (except the fallback). A guard refusing unseen scripts is correct. Name both ways through: the owner starts the product with its guard off, or runs the join line and gives you its output.'
     ))
     return ($lines -join "`n") + "`n"
 }
@@ -2908,6 +3036,19 @@ function Resolve-RelayDraftPath {
     $default = Join-Path $Room.Local 'draft.md'
     if (-not $File) { return $default }
     $full = Get-RelayNormalPath $File
+    if ((Test-RelayLinkedPath -Root ([System.IO.Path]::GetPathRoot($full)) -Path $full) -and -not (Get-RelayRealPath $full)) {
+        throw "The file $full is reached through a link that cannot be followed: give the path of the file itself"
+    }
+    if (Test-RelayPathInRoom -Room $Room -Path $full) { throw "The file $full lies inside the room folder, where any agent can write: no $What is made from it. Put the text outside the room (default: $default)" }
+    return $full
+}
+
+function Test-RelayPathInRoom {
+    # True when a path lies inside the room folder, also when the way to it, or to the room, goes through a link:
+    # where a link really leads decides. A link on the way that cannot be followed counts as inside, since nobody
+    # can say where it leads. For what this PC reads from or writes to outside the room.
+    param([Parameter(Mandatory)]$Room, [Parameter(Mandatory)][string]$Path)
+    $full = Get-RelayNormalPath $Path
     $roomPath = Get-RelayNormalPath $Room.Path
     $paths = New-Object System.Collections.Generic.List[string]
     $paths.Add($full)
@@ -2915,19 +3056,32 @@ function Resolve-RelayDraftPath {
     $folders.Add($roomPath)
     if (Test-RelayLinkedPath -Root ([System.IO.Path]::GetPathRoot($full)) -Path $full) {
         $real = Get-RelayRealPath $full
-        if (-not $real) { throw "The file $full is reached through a link that cannot be followed: give the path of the file itself" }
+        if (-not $real) { return $true }
         $paths.Add($real)
     }
     if (Test-RelayLinkedPath -Root ([System.IO.Path]::GetPathRoot($roomPath)) -Path $roomPath) {
         $realRoom = Get-RelayRealPath $roomPath
         if ($realRoom) { $folders.Add($realRoom) }
     }
-    foreach ($path in $paths) {
+    foreach ($candidate in $paths) {
         foreach ($folder in $folders) {
-            if (Test-RelayPathWithin -Path $path -Folder $folder) { throw "The file $full lies inside the room folder, where any agent can write: no $What is made from it. Put the text outside the room (default: $default)" }
+            if (Test-RelayPathWithin -Path $candidate -Folder $folder) { return $true }
         }
     }
-    return $full
+    return $false
+}
+
+function Set-RelayClipboard {
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Low')]
+    param([Parameter(Mandatory)][string]$Text)
+    if (-not $PSCmdlet.ShouldProcess('the clipboard', 'put the prompt on the clipboard')) { return }
+    if ($env:RELAY_TEST_CLIPBOARD_LOG) {
+        $folder = Split-Path -Parent $env:RELAY_TEST_CLIPBOARD_LOG
+        if ($folder -and -not (Test-Path -LiteralPath $folder)) { $null = New-Item -ItemType Directory -Path $folder -Force }
+        [System.IO.File]::AppendAllText($env:RELAY_TEST_CLIPBOARD_LOG, $Text)
+        return
+    }
+    Set-Clipboard -Value $Text
 }
 
 #endregion

@@ -290,10 +290,10 @@ Describe 'The exit steps of -Retire and -Replace' -Tag 'Integrity' {
     }
 
     It 'applies the same steps to a replaced session, and names the prompt to paste' {
-        { & $addScript -Room $id -Replace emma -NoClipboard -WaitMinutes 0 } | Should -Throw '*emma is alive and has not said bye*'
+        { & $addScript -Room $id -Replace emma -WaitMinutes 0 } | Should -Throw '*emma is alive and has not said bye*'
         Get-RelayCanonicalGeneration (Resolve-RelayRoom $id) 'emma' | Should -Be 1
         [System.IO.File]::SetLastWriteTimeUtc((Join-Path $room 'agents\emma\alive'), [DateTime]::UtcNow.AddMinutes(-30))
-        $output = @(& $addScript -Room $id -Replace emma -NoClipboard) -join "`n"
+        $output = @(& $addScript -Room $id -Replace emma) -join "`n"
         $output | Should -Match 'REPLACED emma: generation 2'
         $output | Should -Match 'exit of the old session: lost'
         $output | Should -Match 'NEXT: paste the start prompt for emma into the new session \(-Clipboard emma puts it on the clipboard\)'
@@ -331,15 +331,15 @@ Describe 'The host name first, the address as the fallback' -Tag 'Integrity' {
         $info['integrity'] | Should -Be 'stamped'
         $prompt = [string]$created.JoinPrompt
         $prompt | Should -Match ([regex]::Escape("Room folder: $named"))
-        $prompt | Should -Match ([regex]::Escape("Fallback, the same folder by the server's address: $addressed"))
-        $prompt | Should -Match 'Use the fallback only when the folder above cannot be reached'
+        $prompt | Should -Match ([regex]::Escape("Fallback: $addressed"))
+        $prompt | Should -Match 'Use the fallback only if the name does not resolve or the share refuses access'
         $prompt | Should -Match ([regex]::Escape("-File '//files01/team/rooms/$id/join.ps1'"))
         $prompt | Should -Not -Match ([regex]::Escape("-File '//10.1.2.3/"))
-        # The wording about a guard that refuses the command, and about scripts in the room
-        $prompt | Should -Match 'try it once'
-        $prompt | Should -Match 'correct behaviour, not a fault'
-        $prompt | Should -Match '\(1\) start the product with its guard off; \(2\) run the one join line above themselves'
-        $prompt | Should -Match 'Never run a script that lies in the room, except the join command above, your own command once you have one, and a script that a task tells you to write and run in your own work folder'
+        # The guard rule applies before join; instructions about room scripts are printed after join
+        $prompt | Should -Match 'try once'
+        $prompt | Should -Match 'A guard refusing unseen scripts is correct'
+        $prompt | Should -Match 'the owner starts the product with its guard off, or runs the join line and gives you its output'
+        $prompt | Should -Not -Match 'Never run a script that lies in the room'
         # A named agent gets the same two spellings in its start prompt
         $start = [string]$created.Prompts['zoe']
         $start | Should -Match ([regex]::Escape("-File '//files01/team/rooms/$id/agents/zoe/g1/relay.ps1' start <product> <model> <effort>"))
@@ -351,7 +351,7 @@ Describe 'The host name first, the address as the fallback' -Tag 'Integrity' {
 
     It 'names no fallback for a room folder given by its address' {
         $created = New-RelayTestRoom -Root $root -RoomId $id -Extra @{ open_seats = 1; reach_path = $addressed }
-        ([string]$created.JoinPrompt) | Should -Not -Match 'Fallback, the same folder'
+        ([string]$created.JoinPrompt) | Should -Not -Match 'Fallback:'
         (Read-RelayKeyValue (Join-Path $created.Path 'ROOM')).Contains('reach_fallback') | Should -BeFalse
     }
 

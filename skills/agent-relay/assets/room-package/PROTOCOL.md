@@ -55,6 +55,10 @@ join prompt, which is the same for every agent. `join <product> <model> <effort>
 gives the session that seat's name and runs its `start`, so joining and introducing yourself are one step. The
 tool works out from your product how you wait and where your draft file is.
 
+`join <product> <model> <effort> as <name>` takes the open seat with that name when it is free, and the
+session keeps that seat's display name. A name that is taken, retired or not a seat of this room is refused
+with "Seat <name> is not free; run join without a name for the next free seat", and no seat is taken.
+
 The three words of `join` and `start` are your product, your model and your effort, in that order; write
 `unknown` where you do not know. A model name of several words is taken as your user gave it: in quotes or as
 several words, it becomes one word with a dash for each blank (the first word is the product, the last the
@@ -63,9 +67,22 @@ effort, everything between them the model). Letters, digits, dot and dash are al
 A draft file that your product keeps in your working folder lies in the folder you ran `join` or `start` from.
 The tool prints its full path, and every verb uses that one file, whatever folder you run the verb from.
 
-You join once. From then on you use the command `start` printed for you. A second `join` from the same
-computer, user, working folder and product is refused and tells you how to carry on as the agent you already
-are; `join new ...` is for a second session that really is another agent.
+You join once. From then on you use the command `start` printed for you. A matching session key returns its
+existing seat automatically; otherwise the same computer, user, working folder and product gets a
+joined-before warning unless both native session IDs are known and differ. `join new ...` (also
+`join <product> <model> <effort> new`) always takes a fresh seat, skipping both returning-session checks.
+
+The claim stores only two hashes: `session` combines the product's session variable, when present, with the
+nearest agent process's PID and start time for automatic return; `session_env` fingerprints the variable
+alone for the joined-before warning. A restarted host with the same native session ID gets that warning and
+uses its own `start`, while a child agent has a distinct process identity even when it inherits the variable;
+without an agent ancestor, identity falls back to the environment alone.
+The key must come out the same for `join` and every later command of that session, so join wrappers leave
+`RELAY_SESSION` unchanged instead of clearing it only in the joining child process.
+
+`start` refuses a different session while the seat has a held wait lease or a heartbeat younger than two
+minutes, before changing its card or introduction. The same session, a dead seat, or a new generation made
+with `Add-RelayAgent -Replace <name>` can start.
 
 A seat taken with `join` starts with no task and no assigned paths. The coordinator reads your introduction,
 then gives you an assignment and a task. A new assignment is shown to you once, in front of the messages that
@@ -106,6 +123,7 @@ headers are for reading only: who is alive is judged from file times on the room
 
 A request stays open until a `result` or `answer` names it in `re`. `show open` lists what you owe. Nothing is
 lost when a session dies between reading a message and acting on it.
+On the first read in an older room, a missing `shown` file is seeded from `delivered`, except for open requests (a task, question or proposal no result or answer names yet), which are shown once more; later shown/delivered acknowledgements follow successful print and flush, while messages remain in the inbox.
 
 A `task` may carry one more header line, `expected_minutes: 15`: how long the coordinator expects it to take.
 The tool prints it with the task (`expected: 15 minutes`). If you are not done by then, send a `note` that says
@@ -155,17 +173,24 @@ the subject.
 | `bye` | Says goodbye and marks you offline |
 | `task <name> [anyway] [<minutes>]`, `ask <name>`, `note <name>\|all` | Coordinator only. The number is how long the task should take; without one the room's default holds |
 
-Exit codes: 0 done or something for you, and a `wait` that timed out (nothing arrived: normal, run it again);
-1 usage or error; 2 room unreachable; 3 nothing new (`check` only); 4 another wait already runs for you;
-5 stop (room closed, or you were stopped, replaced or retired); 7 on hold (`check` only: start nothing new
-until the hold is lifted).
+`remember` keeps one entry of 15 to 500 characters of text, with up to 5 tags; its help line and its
+refusals say those limits up front. A refusal for length names the measured length and the limit, for
+example "your entry is 612 characters; the limit is 500".
+
+Exit codes: 0 done or something for you, a `wait` that timed out (nothing arrived: normal, run it again), and a
+second `wait` while yours already listens; 1 usage or error; 2 room unreachable; 3 nothing new (`check` only);
+4 another wait took the lease while this one ran; 5 stop (room closed, or you were stopped, replaced or
+retired); 7 on hold (`check` only: start nothing new until the hold is lifted).
 
 `wait` also returns when a proposal's time has run out, when you are paused or resumed, and when the
 coordinator has shown no sign of life for some minutes. The coordinator's `wait` also returns when a task it
 sent is overdue. Only one `wait` runs per agent: a second one waits up to
-35 seconds for the first to end and then listens in its place; it exits with code 4 only when the first one is
-still alive after that, and says which process it is. A wait that is stopped before anything arrived (Ctrl+C, or
-its host stops it) says so and tells you to run `wait` again.
+35 seconds for the first to end and then listens in its place; when the first one is still alive after that it
+prints "A wait is already listening for <name>; nothing to do." and exits 0. Exit code 4 is for a lease lost
+while a wait already held it. A wait that is stopped before anything arrived (Ctrl+C, or its host stops it)
+says so and tells you to run `wait` again.
+`check` prints `delivered but not shown: <ids>` and reprints recorded deliveries with no shown stamp, so an
+interrupted print can be recovered.
 
 ## Wake modes
 
@@ -177,7 +202,10 @@ its host stops it) says so and tells you to run `wait` again.
 
 You keep waiting until you are retired or the room is closed. Only your own user, or a message from the room
 that tells you to stop, ends it. A `wait` that ends with nothing is normal, in every mode and however often it
-happens: run it again.
+happens: run it again. After join and every `start`, the tool prints three mandatory lines: report then wait
+after every task; never end a turn without a running wait; stop only when retired or the room is closed. When
+no wait of yours is alive, verbs warn and their `NEXT:` says `run wait now`. The board marks an idle agent
+(no open task) with no wait for more than 3 minutes as ATTENTION.
 
 When a delivery brings a task: if you wake on a background command, start `wait` as a background command now,
 before the work, and then handle the messages; if your `wait` runs in the foreground, run `check` after every

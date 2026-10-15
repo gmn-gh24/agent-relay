@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.11.0 (2026-10-15)
+
+One room, eighteen branches: the plugin-improvements room ran eight agents of five products for a day, each
+branch reviewed before its pull request (room package 3.6.1; running rooms:
+`Update-RelayRoom.ps1 -Room <id>`; agents learn what changed from a note). What the room itself taught is in
+`references/lessons.md`.
+
+- **The join prompt holds only the steps before joining, and opens with the owner's request.** Everything
+  that belongs after the join moved into the room's instructions, where an agent reads it once it is in.
+- **START-HERE and ASSIGNMENT are written in direct form.** The instructions say what to do, in the order to
+  do it, without the detours a new agent had to work out for itself.
+- **A model or effort the agent cannot see never blocks a join.** The agent joins with `unknown`, and the
+  coordinator settles the values with the owner afterwards: `Add-RelayAgent.ps1 -Seat` with `-SetModel`,
+  `-SetEffort` and `-ListModels` (the models known on this PC are offered as choices).
+- **A child agent never inherits its parent's seat.** The session key is taken from the nearest agent
+  process; `join new` resets the identity it is compared by, and `start` refuses a seat that is alive.
+- **A second `wait` exits 0 with a calm line.** A wait that is already running is not an error, and products
+  that show every non-zero exit as a failure no longer drop out of the room over it.
+- **A message counts as delivered only after it was printed.** `check` lists what was delivered but not
+  shown, so a message an agent was woken for is never silently behind it.
+- **The send guard matches the actions a text asks for and prints the sentence that matched.** A refusal
+  names what it stopped on, instead of leaving the sender to guess which word it was.
+- **Agents are kept waiting, and the board sees one that is not.** Joining and starting print a
+  keep-waiting block and every `wait` that ends names the next one; the board marks an idle agent without
+  a wait running as ATTENTION.
+- **The board no longer cries wolf over seats the coordinator ended.** Retired, replaced and
+  control-stopped seats read `stopped (...) N min ago`, not ATTENTION; a task sent after an agent's `bye`
+  warns as it is sent, and the board marks such a task `sent after bye`; an agent that reported and has
+  sent nothing since is marked as such.
+- **The self-audit leaves files inside a nested allowed root alone.** A file in an inner allowed root no
+  longer counts as OUTSIDE under an outer one.
+- **`Add-RelayAgent.ps1` edits an assignment a piece at a time** (`-AddMay`, `-RemoveNever`, `-AddRoots`
+  and the rest), instead of the assignment being written again whole for a one-line change.
+- **The clipboard is written only when it is asked for** (`-Clipboard`, `-CopyJoin`); the board gives the
+  free seats as a count.
+- **`join <product> <model> <effort> as <name>` takes the seat of that name** when it is free, and refuses
+  a taken, retired or unknown name without taking another seat.
+- **`remember` says its limits before it refuses:** 15 to 500 characters, up to 5 tags, in its help line
+  and in the refusal, which names the measured length.
+- **Closing a room writes its `PLUGIN-IMPROVEMENTS.md`.** `Add-RelayImprovement.ps1` appends the room's
+  dated section to the file in the job's project folder (the `project_folder` answer) and
+  `Close-RelayRoom.ps1` refuses to close without the record; `-Force` closes and says so in the record.
+- **The skill text grew a welcome and a reminder, the owner's standing rules, and what owners expect,**
+  and the close of a room is a step of its own in the workflow.
+- **`agent-kinds.md` has measured facts for more products:** Copilot CLI, OpenCode, aider, the DeepSeek
+  Harness, Claude Code and Codex CLI, and the window and start-up sizes that were measured.
+- **`ROADMAP.md` now opens with the owner's priorities** and holds ten deferred items with their reasons.
+- **Review fixes before the release.** `Add-RelayImprovement.ps1` refuses a project folder inside the room
+  (also through a link), a file that is a link and a draft that is the file itself, and writes through a
+  handle no other writer may open, so two rooms closing into one project keep both sections. The board asks
+  a seat that said bye for no task and no wait, and a seat that wakes by hand for no wait. The feed sends the
+  agents again when the owner sets or clears a seat's model or effort. The send guard judges negation per
+  clause ("Do not commit on main; push the branch" still asks for the push). An upgraded room shows an open
+  request again whose old delivery receipt may never have been printed. The close step in the skill names
+  the helper.
+
 ## 0.10.0 (2026-10-14)
 
 An improvement pass after a research room across three machines (room package 3.6.0; running rooms:

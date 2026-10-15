@@ -529,7 +529,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             Wait-Listening -Room $room | Should -BeTrue
             $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "Second of two`n`nIt reaches the wait that took over."
             $two = Wait-RelayTool -Handle $second -TimeoutSeconds (90 * $pace)
-            $two.Output | Should -Not -Match 'another wait is already running'
+            $two.Output | Should -Not -Match 'A wait is already listening'
             $two.ExitCode | Should -Be 0
             $two.Output | Should -Match 'Second of two'
         }
@@ -539,8 +539,8 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $watch = [System.Diagnostics.Stopwatch]::StartNew()
             $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -TimeoutSeconds (60 * $pace)
             $watch.Stop()
-            $result.ExitCode | Should -Be 4
-            $result.Output | Should -Match 'another wait is already running for emma'
+            $result.ExitCode | Should -Be 0
+            $result.Output | Should -Match '(?m)^A wait is already listening for emma; nothing to do\.$'
             # It tries for about three seconds first
             $watch.Elapsed.TotalSeconds | Should -BeGreaterThan $lockWait
             Test-Path -LiteralPath (Join-Path $room 'agents\emma\wait.lease.lock') | Should -BeTrue
@@ -576,7 +576,7 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $two = Wait-RelayTool -Handle $second -TimeoutSeconds (60 * $pace)
             $readers = @(@($one, $two) | Where-Object { $_.Output -match '=== 1 new message' })
             $readers.Count | Should -Be 1
-            @(@($one, $two) | Where-Object { $_.ExitCode -eq 4 }).Count | Should -Be 1
+            @(@($one, $two) | Where-Object { $_.Output -match 'A wait is already listening for emma' }).Count | Should -Be 1
             Test-Path -LiteralPath (Join-Path $room 'agents\emma\wait.lease.lock') | Should -BeFalse
         }
 
@@ -1057,7 +1057,8 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
                 $check = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -TimeoutSeconds (45 * $pace)
                 $watch.Stop()
                 $check.TimedOut | Should -BeFalse
-                $check.ExitCode | Should -BeIn @(3, 4)
+                # 0: treated as another wait already listening (calm line); 3: nothing new; 4: old lease-lost code
+                $check.ExitCode | Should -BeIn @(0, 3, 4)
                 $watch.Elapsed.TotalSeconds | Should -BeLessThan (30 * $pace)
                 $watch.Restart()
                 $waited = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '1') -Environment @{ RELAY_MINUTE_SECONDS = '4' } -TimeoutSeconds (45 * $pace)
@@ -1187,8 +1188,8 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             $lease = Join-Path $room 'agents\emma\wait.lease'
             [System.IO.File]::WriteAllText($lease, '')
             $young = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -TimeoutSeconds (60 * $pace)
-            $young.ExitCode | Should -Be 4
-            $young.Output | Should -Match 'another wait is already running for emma'
+            $young.ExitCode | Should -Be 0
+            $young.Output | Should -Match '(?m)^A wait is already listening for emma; nothing to do\.$'
             (Get-Item -LiteralPath $lease).LastWriteTimeUtc = [DateTime]::UtcNow.AddSeconds(-60)
             $old = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check') -TimeoutSeconds (60 * $pace)
             $old.ExitCode | Should -Be 3

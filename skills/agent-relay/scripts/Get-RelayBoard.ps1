@@ -53,7 +53,7 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
         $mark = ''
         if ($agent.isCoordinator) { $mark = '*' }
         $where = 'not introduced'
-        if ($agent.isIntroduced) { $where = "$($agent.product) $($agent.model)/$($agent.effort) [$($agent.tier)] | $($agent.elevation) | $($agent.shell) | $($agent.computer) $($agent.ipv4)" }
+        if ($agent.isIntroduced) { $where = "$($agent.product) $(Get-RelayModelLabel $agent) [$($agent.tier)] | $($agent.elevation) | $($agent.shell) | $($agent.computer) $($agent.ipv4)" }
         $care = ''
         if ($agent.machineCare -eq 'disposable') { $care = ' [disposable for this job]' }
         '  {0,-9}{1,-1} {2,-12} gen {3,-2} {4,-22} {5}{6}' -f $agent.display, $mark, $agent.state, $agent.gen, $agent.role, $where, $care
@@ -62,6 +62,7 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
         if ($agent.progress) { "             progress: $($agent.progress)  ($($agent.progressUtc))" }
         if (@($agent.parts).Count -gt 0) { "             parts: $(@($agent.parts) -join ', ')" }
         if ($agent.attention) { "             ATTENTION: $($agent.attention)" }
+        if ($agent.stopped) { "             $($agent.stopped)" }
     }
     # Who can do administrator work, so that such a task goes to an agent that needs nobody's hand for it
     $remote = @($board.agents | Where-Object { $_.isIntroduced -and -not $_.isCoordinator -and $_.state -ne 'retired' })
@@ -83,7 +84,7 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
         '          plain command runs go to the lightest, running tests to a standard one, writing or reviewing code and tests to the strongest'
     }
     $free = @($board.agents | Where-Object { $_.isFree })
-    if ($free.Count -gt 0) { "  free seats ($($free.Count)): " + ((@($free | ForEach-Object { $_.display })) -join ', ') + '   (any agent given PROMPT-JOIN.txt takes the next one)' }
+    if ($free.Count -gt 0) { "  free seats: $($free.Count)   (any agent given PROMPT-JOIN.txt takes the next one)" }
     elseif (@($board.agents | Where-Object { $_.isOpen }).Count -gt 0) { '  free seats (0): add some with Add-RelayAgent.ps1 -OpenSeats <n> before another agent joins' }
     if ($board.turnedAway) { "  ATTENTION: an agent tried to join and found no free seat ($($board.turnedAway))" }
     # The team plan (Set-RelayPlan.ps1 writes it): who builds which part, and which parts wait for another
@@ -129,7 +130,7 @@ if ($AsJson) { return (ConvertTo-RelayJsonLine $board) }
     $others = @($board.open | Where-Object { $_.to -ne $board.coordinator })
     "OPEN WITH THE AGENTS ($($others.Count))"
     foreach ($request in $others) {
-        "  $($request.id)  $($request.type) to $($request.to), $($request.ageMinutes) min: $($request.subject)" + $(if ($request.mismatch) { $headerMark } else { '' })
+        "  $($request.id)  $($request.type) to $($request.to), $($request.ageMinutes) min: $($request.subject)" + $(if ($request.mismatch) { $headerMark } else { '' }) + $(if ($request.sentAfterBye) { '   [sent after bye]' } else { '' })
         # A task against the time it should take: OVERDUE when its receiver has sent nothing for that long
         if ($request.expectedMinutes -gt 0) {
             $delivered = "not delivered yet: the agent has not picked it up, sent $($request.elapsedMinutes) min ago"
