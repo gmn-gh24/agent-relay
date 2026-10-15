@@ -1711,12 +1711,95 @@ function Get-TextWord {
     return @(($Text.ToLowerInvariant() -split '[^a-z0-9]+') | Where-Object { $_ })
 }
 
+function Test-NegatedTaskClause {
+    param([string]$Clause)
+    $c = $Clause.Trim().ToLowerInvariant()
+    if ($c.StartsWith('do not ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith("don't ", [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('never ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('no ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('not part', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('without ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('except ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.StartsWith('avoid ', [System.StringComparison]::Ordinal)) { return $true }
+    if ($c.IndexOf(' do not ', [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    if ($c.IndexOf(" don't ", [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    if ($c.IndexOf(' never ', [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    if ($c.IndexOf(' without ', [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    if ($c.IndexOf(' except ', [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    if ($c.IndexOf(' avoid ', [System.StringComparison]::Ordinal) -ge 0) { return $true }
+    return $false
+}
+
+function Split-ActiveTaskClause {
+    # Task text with negated sentences and clauses removed (comma or semicolon boundaries)
+    param([string]$Text)
+    $active = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($Text -split "`n")) {
+        $line = $line.Trim()
+        if (-not $line) { continue }
+        foreach ($sentence in ($line -split '[.!?]+')) {
+            $sentence = $sentence.Trim()
+            if (-not $sentence) { continue }
+            if (Test-NegatedTaskClause $sentence) { continue }
+            foreach ($clause in ($sentence -split '[,;]')) {
+                $clause = $clause.Trim()
+                if (-not $clause) { continue }
+                if (Test-NegatedTaskClause $clause) { continue }
+                $active.Add($clause)
+            }
+        }
+    }
+    return @($active.ToArray())
+}
+
+function Test-WordIsVerbLike {
+    # Imperative, infinitive or participle stems for matching requested actions
+    param([string]$Word)
+    if ($Word.Length -lt 2) { return $false }
+    if ($Word.Length -gt 4) {
+        if ($Word.EndsWith('ing', [System.StringComparison]::Ordinal)) { return $true }
+        if ($Word.EndsWith('ed', [System.StringComparison]::Ordinal)) { return $true }
+    }
+    $stems = @('push', 'pull', 'commit', 'install', 'restart', 'publish', 'deploy', 'send', 'run', 'delete', 'remove', 'rename', 'change', 'launch', 'stop', 'start', 'write', 'read', 'copy', 'move', 'list', 'build', 'test', 'merge', 'reboot', 'shutdown', 'update', 'upgrade', 'download', 'upload', 'execute', 'kill', 'uninstall', 'shutdown')
+    foreach ($stem in $stems) {
+        if ($Word -ceq $stem) { return $true }
+        if ($Word.Length -gt $stem.Length -and $Word.StartsWith($stem, [System.StringComparison]::Ordinal) -and (Test-WordMatch $stem $Word)) { return $true }
+    }
+    return $false
+}
+
+function Test-TellingWordsAreNounsOnly {
+    param([string[]]$Telling)
+    foreach ($word in $Telling) { if (Test-WordIsVerbLike $word) { return $false } }
+    return $true
+}
+
+function Get-TellingWordHitsInClause {
+    param([string[]]$Telling, [string]$Clause, [bool]$NounsOnlyLine)
+    $hits = New-Object System.Collections.Generic.List[string]
+    $words = @(Get-TextWord $Clause)
+    if ($words.Count -eq 0) { return @() }
+    foreach ($tell in $Telling) {
+        $matched = $false
+        foreach ($w in $words) {
+            if (-not (Test-WordMatch $tell $w)) { continue }
+            if ($NounsOnlyLine) { $matched = $true; break }
+            if (Test-WordIsVerbLike $tell) { $matched = $true; break }
+            if (Test-WordIsVerbLike $w) { $matched = $true; break }
+        }
+        if ($matched) { $hits.Add($tell) }
+    }
+    return @($hits.ToArray())
+}
+
 function Get-AssignmentConflict {
-    # The lines of the receiver's "Never" and "Not part of this task" that a task's text runs into: a line
-    # counts when two of its telling words (one, when it has only one) are in the text. A warning for the
-    # coordinator; nothing is decided by it. The assignment is read from this tool's own copy of the room
-    # (the coordinator's launcher runs this PC's canonical copy, where only this PC writes), never from the
-    # room folder, where any agent could take a line out or put one in.
+    # The lines of the receiver's "Never" and "Not part of this task" that a task's active text requests
+    # against: negated clauses are ignored; a telling word counts when it appears as a requested action
+    # (verb stem) in a remaining clause, or when the line's telling words are nouns only, two of them in one
+    # clause. A warning for the coordinator; nothing is decided by it. The assignment is read from this
+    # tool's own copy of the room (the coordinator's launcher runs this PC's canonical copy, where only this
+    # PC writes), never from the room folder, where any agent could take a line out or put one in.
     param([string]$To, [string]$Text)
     $found = New-Object System.Collections.Generic.List[object]
     $ownCopy = [System.IO.Path]::GetFullPath((Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'agents') $To) 'ASSIGNMENT.md'))
@@ -1725,8 +1808,8 @@ function Get-AssignmentConflict {
     if (-not $assignment.Trim()) { return @($found.ToArray()) }
     # Words every assignment and every task hold, which tell nothing
     $plain = @('a', 'an', 'the', 'and', 'or', 'nor', 'but', 'so', 'if', 'of', 'to', 'in', 'on', 'at', 'by', 'as', 'is', 'it', 'its', 'be', 'am', 'are', 'was', 'has', 'had', 'did', 'do', 'go', 'no', 'not', 'up', 'we', 'he', 'me', 'my', 'our', 'you', 'can', 'may', 'own', 'one', 'two', 'any', 'all', 'yet', 'via', 'per', 'for', 'off', 'out', 'let', 'get', 'put', 'see', 'how', 'why', 'who', 'new', 'old', 'this', 'that', 'with', 'from', 'your', 'into', 'onto', 'what', 'when', 'then', 'than', 'them', 'they', 'there', 'their', 'have', 'will', 'would', 'could', 'should', 'which', 'while', 'where', 'every', 'each', 'only', 'also', 'more', 'most', 'some', 'such', 'other', 'another', 'outside', 'inside', 'room', 'agent', 'agents', 'file', 'files', 'folder', 'folders', 'anything', 'nothing', 'something', 'task', 'tasks', 'message', 'messages', 'send', 'sends', 'read', 'reads', 'write', 'writes', 'change', 'changes', 'assignment', 'except', 'unless', 'draft', 'attach', 'without', 'after', 'before', 'does', 'done', 'under', 'over', 'these', 'those', 'here', 'about', 'part', 'never', 'first', 'whatever', 'says', 'said', 'line', 'list', 'lists', 'make', 'makes', 'take', 'takes', 'tell', 'tells', 'work', 'working', 'report', 'result', 'results', 'coordinator', 'owner', 'machine', 'need', 'needs', 'want', 'wants', 'must', 'being', 'were', 'been', 'because', 'through', 'again', 'same', 'thing', 'things', 'come', 'comes', 'back')
-    $textWords = @(Get-TextWord $Text | Where-Object { $plain -notcontains $_ } | Select-Object -Unique)
-    if ($textWords.Count -eq 0) { return @($found.ToArray()) }
+    $activeClauses = @(Split-ActiveTaskClause $Text)
+    if ($activeClauses.Count -eq 0) { return @($found.ToArray()) }
     $section = ''
     foreach ($line in ($assignment -split "`n")) {
         if ($line.StartsWith('## ', [System.StringComparison]::Ordinal)) { $section = $line.Substring(3).Trim(); continue }
@@ -1736,13 +1819,26 @@ function Get-AssignmentConflict {
         # A short word (npm, git, acl) tells as much as a long one: it has to match whole (Test-WordMatch)
         $telling = @(Get-TextWord $bullet | Where-Object { $_.Length -ge 2 -and $plain -notcontains $_ } | Select-Object -Unique)
         if ($telling.Count -eq 0) { continue }
-        $hits = New-Object System.Collections.Generic.List[string]
-        foreach ($word in $telling) {
-            foreach ($candidate in $textWords) { if (Test-WordMatch $word $candidate) { $hits.Add($word); break } }
+        $nounsOnly = Test-TellingWordsAreNounsOnly $telling
+        $bestHits = @()
+        $matchedSentence = ''
+        foreach ($clause in $activeClauses) {
+            $hits = @(Get-TellingWordHitsInClause -Telling $telling -Clause $clause -NounsOnlyLine:$nounsOnly)
+            if ($hits.Count -gt $bestHits.Count -or ($hits.Count -eq $bestHits.Count -and $hits.Count -gt 0 -and $clause.Length -gt $matchedSentence.Length)) {
+                $bestHits = $hits; $matchedSentence = $clause
+            }
+            if ($nounsOnly -and $hits.Count -ge 2) { $bestHits = $hits; $matchedSentence = $clause; break }
         }
         $needed = 2
         if ($telling.Count -eq 1) { $needed = 1 }
-        if ($hits.Count -ge $needed) { $found.Add([pscustomobject]@{ Section = $section; Bullet = $bullet; Words = @($hits.ToArray()) }) }
+        if ($nounsOnly) { $needed = 2 }
+        else {
+            $verbHits = @($bestHits | Where-Object { Test-WordIsVerbLike $_ })
+            if ($verbHits.Count -ge 1) { $needed = 1 }
+        }
+        if ($bestHits.Count -ge $needed) {
+            $found.Add([pscustomobject]@{ Section = $section; Bullet = $bullet; Words = $bestHits; MatchedSentence = $matchedSentence })
+        }
     }
     return @($found.ToArray())
 }
@@ -3550,6 +3646,7 @@ function Invoke-Send {
         foreach ($target in $targets) {
             foreach ($conflict in @(Get-AssignmentConflict -To $target -Text ($draft.Subject + "`n" + $draft.Body))) {
                 $conflicts.Add("  $(Get-DisplayName $target), $($conflict.Section): $($conflict.Bullet)   (the task says: $($conflict.Words -join ', '))")
+                if ($conflict.MatchedSentence) { $conflicts.Add("  matched: $($conflict.MatchedSentence)") }
             }
         }
         if ($conflicts.Count -gt 0) {

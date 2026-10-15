@@ -206,7 +206,8 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             [System.IO.File]::WriteAllText($assignment, $text)
             $goal = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Rename tables`n`nRename the database tables to the new scheme."
             $goal.ExitCode | Should -Be 1
-            $goal.Output | Should -Match '(?m)^  Emma, Not part of this task: Renaming the database tables\.   \(the task says: renaming, database, tables\)$'
+            $goal.Output | Should -Match '(?m)Emma, Not part of this task: Renaming the database tables\.   \(the task says: renaming\)'
+            $goal.Output | Should -Match 'matched: Rename the database tables to the new scheme'
             # One telling word alone is not a hit: the subject may be mentioned
             $mention = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "List the tables`n`nList the tables and their row counts."
             $mention.ExitCode | Should -Be 0
@@ -223,10 +224,50 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             [System.IO.File]::WriteAllText($assignment, ($text -replace '- Push, publish, deploy or send anything outside this room\.', '- Run npm.'))
             $short = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Install`n`nRun npm install in the kit and send the log."
             $short.ExitCode | Should -Be 1
-            $short.Output | Should -Match '(?m)^  Emma, Never: Run npm\.   \(the task says: run, npm\)$'
+            $short.Output | Should -Match '(?m)Emma, Never: Run npm\.   \(the task says: run\)'
+            $short.Output | Should -Match 'matched: Run npm install in the kit and send the log'
             # and a word that only begins the same way (npmrc is not npm) does not match a short one
             $other = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Config`n`nRead the npmrc of the kit and send it."
             $other.ExitCode | Should -Be 0
+        }
+
+        It 'matches requested actions in active task text, not negated prohibitions or noun-only mentions' {
+            $assignment = Join-Path $room 'agents\emma\ASSIGNMENT.md'
+            $text = [System.IO.File]::ReadAllText($assignment)
+            $limitsStart = $text.IndexOf('## Not part of this task', [System.StringComparison]::Ordinal)
+            $reportStart = $text.IndexOf('## Your report', [System.StringComparison]::Ordinal)
+            $limits = @(
+                '## Not part of this task',
+                '',
+                '- Installing software; restarting services.',
+                '',
+                '## Never',
+                '',
+                '- Push to any remote.',
+                '- Commit on main.',
+                '- Do not launch Claude, Copilot, or Codex as separate products.',
+                '',
+                '## Your report'
+            ) -join "`n"
+            [System.IO.File]::WriteAllText($assignment, $text.Substring(0, $limitsStart) + $limits + $text.Substring($reportStart + '## Your report'.Length))
+
+            $negated = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Scope`n`nDo not push, do not commit on main, no pull request."
+            $negated.ExitCode | Should -Be 0
+            $negated.Output | Should -Match 'SENT olivia-emma'
+
+            $inventory = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Inventory`n`nList the environment variable names."
+            $inventory.ExitCode | Should -Be 0
+
+            $products = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Docs`n`nDocument how Claude and Copilot agents join a room."
+            $products.ExitCode | Should -Be 0
+
+            $install = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Setup`n`nInstall the module and restart the service."
+            $install.ExitCode | Should -Be 1
+            $install.Output | Should -Match 'matched: Install the module and restart the service'
+
+            $push = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Release`n`nPush the branch."
+            $push.ExitCode | Should -Be 1
+            $push.Output | Should -Match 'matched: Push the branch'
         }
 
         It 'reads the receiver''s assignment from this PC''s copy when the coordinator''s launcher runs the tool, not from the room, which any agent can edit' {
