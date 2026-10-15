@@ -1765,6 +1765,20 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         Get-RelayTestJoinedName $withNew | Should -Be $openSeats[0]
     }
 
+    It 'join as its own name gives a session that says who it is its seat back' {
+        $session = @{ CLAUDE_CODE_SESSION_ID = 'cccccccc-1111-2222-3333-444444444444' }
+        $named = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'm', 'e', 'as', $openSeats[1]) -Environment $session
+        $named.ExitCode | Should -Be 0 -Because $named.Output
+        Get-RelayTestJoinedName $named | Should -Be $openSeats[1]
+
+        $back = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'm', 'e', 'as', $openSeats[1]) -Environment $session
+        $back.ExitCode | Should -Be 0 -Because $back.Output
+        $back.Output | Should -Match '^BACK: '
+        Get-RelayTestJoinedName $back | Should -Be $openSeats[1]
+        Test-Path -LiteralPath (Join-Path $room "agents\$($openSeats[0])\claim") | Should -BeFalse
+        (Get-Content -LiteralPath (Join-Path $room 'join.log') -Raw) | Should -Match ("back " + $openSeats[1] + " ")
+    }
+
     It 'remember says its limits in the help and in the refusal, with the measured length' {
         $help = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('help')
         $help.ExitCode | Should -Be 0

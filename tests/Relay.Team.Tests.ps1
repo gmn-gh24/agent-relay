@@ -1829,6 +1829,16 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             [Math]::Abs(([DateTime]::UtcNow - $stamp).TotalSeconds) | Should -BeLessThan 120
         }
 
+        It 'keeps the remember NEXT wording while a wait of the agent is running' {
+            Write-TeamWaitLease 'emma'
+            $result = Invoke-Remember 'emma' 'The build runs only from the repository root.' @('build', 'paths')
+            $result.ExitCode | Should -Be 0
+            $lines = Get-TeamLine $result.Output
+            $lines.Count | Should -Be 2
+            $lines[0] | Should -BeExactly 'REMEMBERED (1 of yours, 1 in the room)'
+            $lines[1] | Should -Match '^NEXT: carry on with your work\. Before you ask anybody, look first with: \S.* find <words>$'
+        }
+
         It 'writes a dash for no tags, and small letters for tags, each once' {
             $null = Invoke-Remember 'emma' 'An entry without any tags at all.'
             $null = Invoke-Remember 'emma' 'An entry with the same tag twice.' @('Build', 'PATHS', 'build')
@@ -1921,6 +1931,15 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             Test-Path -LiteralPath (Join-Path $room 'agents\jack\memory') | Should -BeFalse
         }
 
+        It 'keeps the already-recorded NEXT wording while a wait of the agent is running' {
+            Write-TeamMemory 'emma' @('2026-10-10T08:00:00Z | build | The build needs the repository root.')
+            Write-TeamWaitLease 'jack'
+            $result = Invoke-Remember 'jack' "the BUILD needs   the`nrepository root."
+            $result.ExitCode | Should -Be 0
+            Join-TeamLine (Get-TeamLine $result.Output) | Should -Match '^ALREADY RECORDED by Emma at 2026-10-10T08:00:00Z\nNEXT: nothing was written\. Carry on with your work; what the room knows: \S.* find <words>$'
+            Test-Path -LiteralPath (Join-Path $room 'agents\jack\memory') | Should -BeFalse
+        }
+
         It 'keeps only the last 200 lines when the file holds <Before> and one is added' -ForEach @(
             @{ Before = 199; Expected = 200 }
             @{ Before = 200; Expected = 200 }
@@ -1945,6 +1964,18 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $lines[1] | Should -Match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z Emma \[build\] The build runs only from the repository root\.$'
             $lines[2] | Should -BeExactly 'WARNING: no wait of yours is running; nothing reaches you until it does.'
             $lines[3] | Should -BeExactly 'NEXT: run wait now'
+        }
+
+        It 'keeps the find NEXT wording while a wait of the agent is running' {
+            $null = Invoke-Remember 'emma' 'The build runs only from the repository root.' @('build')
+            Write-TeamWaitLease 'jack'
+            $found = Invoke-Team 'jack' @('find', 'build')
+            $found.ExitCode | Should -Be 0
+            $lines = Get-TeamLine $found.Output
+            $lines.Count | Should -Be 3
+            $lines[0] | Should -BeExactly $memoryHeader
+            $lines[1] | Should -Match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z Emma \[build\] The build runs only from the repository root\.$'
+            $lines[2] | Should -Match '^NEXT: use what fits your work and check it before you rely on it\. Keep what you learn with: \S.* remember \[tag \.\.\.\]$'
         }
 
         It 'puts a tag hit before a hit in the text only, then the newest first, case aside' {
