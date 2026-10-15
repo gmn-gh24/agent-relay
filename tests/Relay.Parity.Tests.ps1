@@ -250,11 +250,11 @@ Describe 'Parity on <Engine>' -Tag 'Parity' -ForEach $engineCases {
             $first = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('remember', 'build') -Text 'The build runs only from the repository root.'
             $first.ExitCode | Should -Be 0
             $call = Get-ParityCall
-            Join-ParityLine (Get-ParityLine $first.Output) | Should -BeExactly (Join-ParityLine @('REMEMBERED (1 of yours, 1 in the room)', "NEXT: carry on with your work. Before you ask anybody, look first with: $call find <words>"))
+            Join-ParityLine (Get-ParityLine $first.Output) | Should -BeExactly (Join-ParityLine @('REMEMBERED (1 of yours, 1 in the room)', 'WARNING: no wait of yours is running; nothing reaches you until it does.', 'NEXT: run wait now'))
             $stamp = ([System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\memory'))).Substring(0, 20)
             $again = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('remember') -Text 'the build runs only from the  REPOSITORY root.'
             $again.ExitCode | Should -Be 0
-            Join-ParityLine (Get-ParityLine $again.Output) | Should -BeExactly (Join-ParityLine @("ALREADY RECORDED by Emma at $stamp", "NEXT: nothing was written. Carry on with your work; what the room knows: $call find <words>"))
+            Join-ParityLine (Get-ParityLine $again.Output) | Should -BeExactly (Join-ParityLine @("ALREADY RECORDED by Emma at $stamp", 'WARNING: no wait of yours is running; nothing reaches you until it does.', 'NEXT: run wait now'))
             $second = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('remember') -Text 'The tests need a local disk, not a share.'
             (Get-ParityLine $second.Output)[0] | Should -BeExactly 'REMEMBERED (1 of yours, 2 in the room)'
         }

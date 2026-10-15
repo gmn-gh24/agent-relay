@@ -167,6 +167,13 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             return (Invoke-RelayTool -Room $room -Agent $Agent -Engine $engine -Words $Words -Environment $Environment)
         }
 
+        function Set-TeamWaitLease {
+            # A fake lease of this test process: a live wait of the agent, so a verb ends with its own NEXT
+            # line and no keep-waiting warning (the pid is this host, which lives for the whole test)
+            param([string]$Agent)
+            [System.IO.File]::WriteAllText((Join-Path $room "agents\$Agent\wait.lease"), ("token: test`ngen: 1`nhost: {0}`npid: {1}`n" -f [Environment]::MachineName, $PID))
+        }
+
         function Get-TeamRawOutput {
             # The bytes the tool printed, carriage returns kept (Wait-RelayTool takes them out)
             param([string]$Agent, [string[]]$Words)
@@ -243,6 +250,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
 
     Context 'progress' {
         It 'prints exactly two lines and exits 0' {
+            Set-TeamWaitLease 'emma'
             $result = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('progress') -Text 'Writing the verbs'
             $result.ExitCode | Should -Be 0
             $lines = Get-TeamLine $result.Output
@@ -255,6 +263,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $help = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('help')
             ($help.Output -match '(?m)^  (?<call>.+?) team +\S') | Should -BeTrue
             $call = $Matches['call']
+            Set-TeamWaitLease 'emma'
             $result = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('progress') -Text 'Writing the verbs'
             (Get-TeamLine $result.Output)[1] | Should -BeExactly "NEXT: carry on. The team sees it with: $call team"
         }
@@ -451,6 +460,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
 
         It 'prints the whole contract layout for a caller with a direct line' {
             Write-TeamPlan $room $defaultPlan
+            Set-TeamWaitLease 'emma'
             $result = Invoke-Team 'emma' @('team')
             $result.ExitCode | Should -Be 0
             $expected = @(
@@ -477,6 +487,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
 
         It 'ends with the YOU line and then NEXT: carry on.' {
             Write-TeamPlan $room $defaultPlan
+            Set-TeamWaitLease 'jack'
             $lines = Get-TeamLine (Invoke-Team 'jack' @('team')).Output
             $lines[$lines.Count - 1] | Should -BeExactly 'NEXT: carry on.'
             $lines[$lines.Count - 2] | Should -Match '^YOU: '
@@ -538,6 +549,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
         }
 
         It 'works without a PLAN file: no plan yet, one empty line, then AGENTS' {
+            Set-TeamWaitLease 'jack'
             $result = Invoke-Team 'jack' @('team')
             $result.ExitCode | Should -Be 0
             $lines = Get-TeamLine $result.Output
@@ -1311,6 +1323,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
         }
 
         It 'shows it once with start, directly before the NEXT: line and after the standing rules' {
+            Set-TeamWaitLease 'emma'
             $first = Invoke-Team 'emma' @('start')
             $first.ExitCode | Should -Be 0
             $lines = Get-TeamLine $first.Output
@@ -1401,6 +1414,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
         ) {
             if ($Blocked -ne 'journal') { [System.IO.File]::Delete((Join-Path $room 'agents\emma\status')); $null = New-Item -ItemType Directory -Path (Join-Path $room 'agents\emma\status') }
             if ($Blocked -ne 'status') { [System.IO.File]::Delete((Join-Path $room 'agents\emma\journal')); $null = New-Item -ItemType Directory -Path (Join-Path $room 'agents\emma\journal') }
+            Set-TeamWaitLease 'emma'
             $result = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('progress') -Text 'Writing the verbs'
             $result.ExitCode | Should -Be 0
             Join-TeamLine (Get-TeamLine $result.Output) | Should -Match '^PROGRESS noted: Writing the verbs\nNEXT: carry on\. The team sees it with: \S.* team$'
@@ -1804,9 +1818,10 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $result = Invoke-Remember 'emma' 'The build runs only from the repository root.' @('build', 'paths')
             $result.ExitCode | Should -Be 0
             $lines = Get-TeamLine $result.Output
-            $lines.Count | Should -Be 2
+            $lines.Count | Should -Be 3
             $lines[0] | Should -BeExactly 'REMEMBERED (1 of yours, 1 in the room)'
-            $lines[1] | Should -Match '^NEXT: carry on with your work\. Before you ask anybody, look first with: \S.* find <words>$'
+            $lines[1] | Should -BeExactly 'WARNING: no wait of yours is running; nothing reaches you until it does.'
+            $lines[2] | Should -BeExactly 'NEXT: run wait now'
             $saved = @(Read-TeamFileLine (Join-Path $room 'agents\emma\memory'))
             $saved.Count | Should -Be 1
             $saved[0] | Should -Match ($memoryPattern + 'build,paths \| The build runs only from the repository root\.$')
@@ -1861,7 +1876,8 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             }
             else {
                 $result.ExitCode | Should -Be 1
-                $result.Output | Should -Match ("(?m)^ERROR: the text is too (short|long).*: $Length characters, (15 at least|500 at most); nothing was remembered$")
+                if ($Length -gt 500) { $result.Output | Should -Match ("(?m)^ERROR: your entry is $Length characters; the limit is 500 \(15 to 500 characters, up to 5 tags\); nothing was remembered$") }
+                else { $result.Output | Should -Match ("(?m)^ERROR: the text is too (short|long).*: $Length characters, (15 at least|500 at most); nothing was remembered$") }
                 $result.Output | Should -Match '(?m)^NEXT: write the finding '
                 Test-Path -LiteralPath $memory | Should -BeFalse
             }
@@ -1901,7 +1917,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             Write-TeamMemory 'emma' @('2026-10-10T08:00:00Z | build | The build needs the repository root.')
             $result = Invoke-Remember 'jack' "the BUILD needs   the`nrepository root."
             $result.ExitCode | Should -Be 0
-            Join-TeamLine (Get-TeamLine $result.Output) | Should -Match '^ALREADY RECORDED by Emma at 2026-10-10T08:00:00Z\nNEXT: '
+            Join-TeamLine (Get-TeamLine $result.Output) | Should -Match '^ALREADY RECORDED by Emma at 2026-10-10T08:00:00Z\nWARNING: no wait of yours is running; nothing reaches you until it does\.\nNEXT: run wait now$'
             Test-Path -LiteralPath (Join-Path $room 'agents\jack\memory') | Should -BeFalse
         }
 
@@ -1924,10 +1940,11 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $found = Invoke-Team 'jack' @('find', 'build')
             $found.ExitCode | Should -Be 0
             $lines = Get-TeamLine $found.Output
-            $lines.Count | Should -Be 3
+            $lines.Count | Should -Be 4
             $lines[0] | Should -BeExactly $memoryHeader
             $lines[1] | Should -Match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z Emma \[build\] The build runs only from the repository root\.$'
-            $lines[2] | Should -Match '^NEXT: use what fits your work and check it before you rely on it\. Keep what you learn with: \S.* remember \[tag \.\.\.\]$'
+            $lines[2] | Should -BeExactly 'WARNING: no wait of yours is running; nothing reaches you until it does.'
+            $lines[3] | Should -BeExactly 'NEXT: run wait now'
         }
 
         It 'puts a tag hit before a hit in the text only, then the newest first, case aside' {
@@ -1942,6 +1959,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
                     '2026-10-10T08:00:00Z Emma [build] Oldest, tagged.'
                     '2026-10-10T08:10:00Z Adam [-] Newest, build in the text.'
                     '2026-10-10T08:05:00Z Emma [-] Newer, the BUILD word in the text.'
+                    'WARNING: no wait of yours is running; nothing reaches you until it does.'
                     ($lines[$lines.Count - 1])
                 ))
         }
@@ -1953,7 +1971,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
                 '2026-10-10T08:02:00Z | - | The word tests in the text.'
             )
             $lines = Get-TeamLine (Invoke-Team 'jack' @('find', 'tag:TESTS')).Output
-            $lines.Count | Should -Be 3
+            $lines.Count | Should -Be 4
             $lines[1] | Should -BeExactly '2026-10-10T08:00:00Z Emma [tests] Tagged tests.'
         }
 
@@ -1964,7 +1982,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
                 '2026-10-10T08:02:00Z | - | The logs live in the temp folder.'
             )
             $all = Get-TeamLine (Invoke-Team 'jack' @('find', 'cache', 'temp')).Output
-            $all.Count | Should -Be 3
+            $all.Count | Should -Be 4
             $all[1] | Should -BeExactly '2026-10-10T08:00:00Z Emma [-] The cache lives in the temp folder.'
             $any = Get-TeamLine (Invoke-Team 'jack' @('find', 'night', 'logs')).Output
             Join-TeamLine $any[0..3] | Should -BeExactly (Join-TeamLine @(
@@ -1973,7 +1991,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
                     '2026-10-10T08:02:00Z Emma [-] The logs live in the temp folder.'
                     '2026-10-10T08:01:00Z Emma [-] The cache is cleared at night.'
                 ))
-            $any.Count | Should -Be 5
+            $any.Count | Should -Be 6
         }
 
         It 'says when nothing matches any word' {
@@ -1981,9 +1999,10 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $result = Invoke-Team 'jack' @('find', 'printer')
             $result.ExitCode | Should -Be 0
             $lines = Get-TeamLine $result.Output
-            $lines.Count | Should -Be 2
+            $lines.Count | Should -Be 3
             $lines[0] | Should -BeExactly 'nothing recorded matches'
-            $lines[1] | Should -Match '^NEXT: '
+            $lines[1] | Should -BeExactly 'WARNING: no wait of yours is running; nothing reaches you until it does.'
+            $lines[2] | Should -BeExactly 'NEXT: run wait now'
         }
 
         It 'shows the 10 newest entries without words, newest first' {
@@ -2103,8 +2122,9 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
         It 'gives the tip to remember with a report only while the agent has recorded nothing' {
             $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'adam') -Text "First`n`nDo it."
             $first = Get-TeamLine (Send-RelayTestMessage -Room $room -Agent 'adam' -Engine $engine -Words @('report') -Text "Done`n`n1. Result: done.").Output
-            $first[$first.Count - 2] | Should -BeExactly 'tip: remember durable findings for your teammates'
-            $first[$first.Count - 1] | Should -Match '^NEXT: run: '
+            $first[$first.Count - 3] | Should -BeExactly 'tip: remember durable findings for your teammates'
+            $first[$first.Count - 2] | Should -BeExactly 'WARNING: no wait of yours is running; nothing reaches you until it does.'
+            $first[$first.Count - 1] | Should -BeExactly 'NEXT: run wait now'
             $null = Invoke-Remember 'adam' 'Something adam learned that lasts.'
             $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'adam') -Text "Second`n`nDo it."
             $second = Send-RelayTestMessage -Room $room -Agent 'adam' -Engine $engine -Words @('report') -Text "Done`n`n1. Result: done."
@@ -2123,7 +2143,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $at = [array]::IndexOf($lines, $who[0])
             $lines[$at + 1] | Should -Match '^  .+? team {2,}the plan, who does which part, and where everybody stands$'
             $lines[$at + 2] | Should -Match '^  .+? progress {2,}tell the team where you stand, in one line \(draft file\); wakes nobody$'
-            $lines[$at + 3] | Should -Match '^  .+? remember \[tag \.\.\.\] {2,}keep a finding for the whole team \(draft file\); wakes nobody$'
+            $lines[$at + 3] | Should -Match '^  .+? remember \[tag \.\.\.\] {2,}keep a finding for the whole team \(draft file, 15 to 500 characters, up to 5 tags\); wakes nobody$'
             $lines[$at + 4] | Should -Match '^  .+? find \[word\|tag:name \.\.\.\] {2,}search what the team keeps; do it before you start or ask$'
             $lines[$at + 5] | Should -Match '^  .+? bye {2,}\S'
             # the same column as the lines around them: the text starts where the text of who starts
