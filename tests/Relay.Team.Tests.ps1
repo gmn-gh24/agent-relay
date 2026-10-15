@@ -167,7 +167,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             return (Invoke-RelayTool -Room $room -Agent $Agent -Engine $engine -Words $Words -Environment $Environment)
         }
 
-        function Set-TeamWaitLease {
+        function Write-TeamWaitLease {
             # A fake lease of this test process: a live wait of the agent, so a verb ends with its own NEXT
             # line and no keep-waiting warning (the pid is this host, which lives for the whole test)
             param([string]$Agent)
@@ -250,7 +250,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
 
     Context 'progress' {
         It 'prints exactly two lines and exits 0' {
-            Set-TeamWaitLease 'emma'
+            Write-TeamWaitLease 'emma'
             $result = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('progress') -Text 'Writing the verbs'
             $result.ExitCode | Should -Be 0
             $lines = Get-TeamLine $result.Output
@@ -263,7 +263,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
             $help = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('help')
             ($help.Output -match '(?m)^  (?<call>.+?) team +\S') | Should -BeTrue
             $call = $Matches['call']
-            Set-TeamWaitLease 'emma'
+            Write-TeamWaitLease 'emma'
             $result = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('progress') -Text 'Writing the verbs'
             (Get-TeamLine $result.Output)[1] | Should -BeExactly "NEXT: carry on. The team sees it with: $call team"
         }
@@ -460,7 +460,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
 
         It 'prints the whole contract layout for a caller with a direct line' {
             Write-TeamPlan $room $defaultPlan
-            Set-TeamWaitLease 'emma'
+            Write-TeamWaitLease 'emma'
             $result = Invoke-Team 'emma' @('team')
             $result.ExitCode | Should -Be 0
             $expected = @(
@@ -487,7 +487,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
 
         It 'ends with the YOU line and then NEXT: carry on.' {
             Write-TeamPlan $room $defaultPlan
-            Set-TeamWaitLease 'jack'
+            Write-TeamWaitLease 'jack'
             $lines = Get-TeamLine (Invoke-Team 'jack' @('team')).Output
             $lines[$lines.Count - 1] | Should -BeExactly 'NEXT: carry on.'
             $lines[$lines.Count - 2] | Should -Match '^YOU: '
@@ -549,7 +549,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
         }
 
         It 'works without a PLAN file: no plan yet, one empty line, then AGENTS' {
-            Set-TeamWaitLease 'jack'
+            Write-TeamWaitLease 'jack'
             $result = Invoke-Team 'jack' @('team')
             $result.ExitCode | Should -Be 0
             $lines = Get-TeamLine $result.Output
@@ -1323,7 +1323,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
         }
 
         It 'shows it once with start, directly before the NEXT: line and after the standing rules' {
-            Set-TeamWaitLease 'emma'
+            Write-TeamWaitLease 'emma'
             $first = Invoke-Team 'emma' @('start')
             $first.ExitCode | Should -Be 0
             $lines = Get-TeamLine $first.Output
@@ -1414,7 +1414,7 @@ Describe 'Team verbs on <Engine>' -Tag 'Team' -ForEach $engineCases {
         ) {
             if ($Blocked -ne 'journal') { [System.IO.File]::Delete((Join-Path $room 'agents\emma\status')); $null = New-Item -ItemType Directory -Path (Join-Path $room 'agents\emma\status') }
             if ($Blocked -ne 'status') { [System.IO.File]::Delete((Join-Path $room 'agents\emma\journal')); $null = New-Item -ItemType Directory -Path (Join-Path $room 'agents\emma\journal') }
-            Set-TeamWaitLease 'emma'
+            Write-TeamWaitLease 'emma'
             $result = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('progress') -Text 'Writing the verbs'
             $result.ExitCode | Should -Be 0
             Join-TeamLine (Get-TeamLine $result.Output) | Should -Match '^PROGRESS noted: Writing the verbs\nNEXT: carry on\. The team sees it with: \S.* team$'
