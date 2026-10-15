@@ -2081,6 +2081,8 @@ Describe 'Open seats' -Tag 'Scripts' {
         { & $add -Room 'incr' -Assign $name -RemoveNever 'Change a file under src.' -Never 'Push anything.' } | Should -Throw '*cannot be combined*'
         { & $add -Room 'incr' -Assign $name -AddRoots 'C:\x=y' -AnswersFile (Join-Path $root 'none.json') } | Should -Throw '*cannot be combined*'
         (Read-RelayKeyValue (Join-Path $room "agents\$name\seat"))['role'] | Should -Be 'tester'
+    }
+
     It 'records the model and effort the owner stated for a seat, shows them as owner''s on the board, and keeps the models seen on this PC' {
         $room = (New-RelayTestRoom -Root $root -RoomId 'stated' -Extra @{ open_seats = 2 }).Path
         $open = @(Get-RelayTestOpenSeat $room)
