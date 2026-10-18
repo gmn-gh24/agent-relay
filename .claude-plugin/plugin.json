@@ -1,6 +1,6 @@
 {
   "name": "agent-relay",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Coordinate any number of coding agents on this PC, or on other machines over a shared folder, from one session: tasks, questions, approvals and a record of it all.",
   "author": { "name": "gmn-gh24" },
   "license": "MIT",

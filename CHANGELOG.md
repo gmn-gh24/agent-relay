@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 (2026-10-18)
+
+The coordinator's wait batches, with the fixes merged since 0.11.0 (room package 3.7.0; running rooms:
+`Update-RelayRoom.ps1 -Room <id>`).
 
 - **The coordinator's `wait` goes on listening after a message arrived and delivers everything that came in
   the meantime in one wake.** Every wake is a turn of the coordinator, and one wake per message was the real

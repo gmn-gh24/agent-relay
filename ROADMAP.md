@@ -36,7 +36,7 @@ Set by the owner after the plugin-improvements room (eight agents of five produc
 half hours). These three come before everything below; the items they point at keep their own sections.
 
 1. **The coordinator's turn count.** It is the real cost of a room: one wake per message, one turn per wake, and
-   a restart of `wait` at the end of every turn. The wait that batches is done (`hold_seconds`; see the CHANGELOG).
+   a restart of `wait` at the end of every turn. The wait that batches shipped in 0.12.0 (`hold_seconds`).
    Next cheap win: a help verb that keeps the first output short (D1). The strong one: a Claude Code Stop
    hook that holds the turn while no wait lease is alive (D3).
 2. **The launcher.** Starting an agent from inside a room, headless, with the product's guard and context flags
