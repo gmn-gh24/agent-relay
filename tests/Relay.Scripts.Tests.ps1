@@ -344,6 +344,28 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         (Get-Content -LiteralPath (Join-Path $both.Path 'tools\kinds') -Raw) | Should -Not -Match 'park'
     }
 
+    It 'writes how long the coordinator''s wait holds into ROOM: 20 seconds, the number of the answers, or the parameter''s' {
+        # Without a word about it: 20 seconds, in the room and in this PC's copy
+        $plain = New-RelayTestRoom -Root $root -RoomId 'hold-plain'
+        (Read-RelayKeyValue (Join-Path $plain.Path 'ROOM'))['hold_seconds'] | Should -Be '20'
+        (Resolve-RelayRoom 'hold-plain').Info['hold_seconds'] | Should -Be '20'
+        # From the answers file
+        $set = New-RelayTestRoom -Root $root -RoomId 'hold-set' -Extra @{ hold_seconds = 5 }
+        (Read-RelayKeyValue (Join-Path $set.Path 'ROOM'))['hold_seconds'] | Should -Be '5'
+        # The parameter wins over the file
+        $file = Join-Path $root 'hold.json'
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject ([ordered]@{ job = 'Hold'; room_id = 'hold-both'; rooms_root = (Join-Path $root 'rooms'); open_seats = 1; hold_seconds = 5 })))
+        $both = & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $file -HoldSeconds 7 -PassThru
+        (Read-RelayKeyValue (Join-Path $both.Path 'ROOM'))['hold_seconds'] | Should -Be '7'
+        # 0 is a value: one wake per message, as before there was a hold
+        $none = New-RelayTestRoom -Root $root -RoomId 'hold-none' -Extra @{ hold_seconds = 0 }
+        (Read-RelayKeyValue (Join-Path $none.Path 'ROOM'))['hold_seconds'] | Should -Be '0'
+        # A number outside 0 to 300 builds nothing
+        { New-RelayTestRoom -Root $root -RoomId 'hold-bad' -Extra @{ hold_seconds = 999 } } | Should -Throw '*"hold_seconds" is a number from 0 to 300*'
+        { & (Join-Path $scripts 'New-RelayRoom.ps1') -Job 'x' -RoomId 'hold-worse' -RoomsRoot (Join-Path $root 'rooms') -OpenSeats 1 -HoldSeconds 301 } | Should -Throw
+        Test-Path -LiteralPath (Join-Path $root 'rooms\hold-bad') | Should -BeFalse
+    }
+
     It 'refuses answers it cannot build a room from' {
         $bad = Join-Path $root 'bad.json'
         $null = New-Item -ItemType Directory -Path $root -Force

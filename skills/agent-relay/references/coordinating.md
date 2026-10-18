@@ -11,7 +11,10 @@ the owner hears about the room from you.
    refuses to start without it. What the check covers, and what it does not, is in `references/protocol.md`
    ("What the tamper check covers").
 1. Your `wait` runs as a background command. Its exit wakes you: with new messages, or with an `OVERDUE`
-   block for a task whose agent has sent nothing for the time the task should take.
+   block for a task whose agent has sent nothing for the time the task should take. After a message arrives
+   it goes on listening for a short while (`hold_seconds`, 20 by default, capped at three times that) and
+   brings everything that came in the meantime in one wake, since every wake is a turn of yours; a question,
+   a proposal or a message from the owner is never held. Expect several messages per wake.
 2. `scripts/Get-RelayBoard.ps1 -Room <id>` shows the agents, what waits on you, what waits on the owner,
    every agent that needs attention, and every open task that is overdue.
 3. Handle what waits on you, oldest first (sections below). An `OVERDUE` block is handled at once, before

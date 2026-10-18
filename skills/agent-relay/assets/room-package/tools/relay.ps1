@@ -31,7 +31,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.6.1'
+$script:ToolVersion = '3.7.0'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -3249,15 +3249,36 @@ function Invoke-WaitDelivery {
     # One look at the inbox in a wait: delivers what is new and readable. Returns 0 when it delivered, 4 when
     # another wait holds the lease, -1 when nothing was delivered in this round. A file that cannot be read yet
     # stays pending and ends no wait.
-    param([object[]]$Entries, [hashtable]$Delivered, [string]$Token, [int]$Settle, $ShareNow, [DateTime]$Since)
+    param([object[]]$Entries, [hashtable]$Delivered, [string]$Token, [int]$Settle, $ShareNow, [DateTime]$Since, [int]$HoldSeconds = 0, [hashtable]$Hold = $null)
     $shown = Get-ShownSet $Delivered
     $new = @($Entries | Where-Object { -not $Delivered.ContainsKey($_.Id) -or -not $shown.ContainsKey($_.Id) })
-    if ($new.Count -eq 0) { return -1 }
     # The room's clock now: the time the file system gave the last heartbeat, plus what passed since
-    $deliverable = @(Get-Deliverable $new (Get-RoomTimeNow $ShareNow $Since))
-    if ($deliverable.Count -eq 0) { return -1 }
+    $deliverable = @()
+    if ($new.Count -gt 0) { $deliverable = @(Get-Deliverable $new (Get-RoomTimeNow $ShareNow $Since)) }
+    if ($deliverable.Count -eq 0) {
+        # What was held is gone again (moved out by the tamper check): the hold is over, with nothing to deliver
+        if ($null -ne $Hold -and $Hold.ContainsKey('Since')) { $Hold.Clear(); Write-Status 'listening' '' }
+        return -1
+    }
+    if ($HoldSeconds -gt 0 -and $null -ne $Hold) {
+        # The coordinator's wait holds what arrived for a quiet period after the last arrival, at most three times
+        # that from the first, and delivers it all in one wake: every wake is a turn of the coordinator. A message
+        # whose sender waits for the answer (a question, a proposal), or one from the owner, ends the hold at once.
+        $now = [DateTime]::UtcNow
+        if (-not $Hold.ContainsKey('Since')) { $Hold['Since'] = $now; $Hold['LastGrowth'] = $now; $Hold['Count'] = 0 }
+        if ($deliverable.Count -gt [int]$Hold['Count']) {
+            $Hold['LastGrowth'] = $now
+            $Hold['Count'] = $deliverable.Count
+            Write-Status 'listening' "holding $($deliverable.Count) message(s)"
+        }
+        $urgent = @($deliverable | Where-Object { -not $_.Placeholder -and ($_.Entry.From -ceq 'owner' -or @('question', 'proposal') -ccontains $_.Message.Type) }).Count -gt 0
+        $quiet = ($now - [DateTime]$Hold['LastGrowth']).TotalSeconds -ge $HoldSeconds
+        $capped = ($now - [DateTime]$Hold['Since']).TotalSeconds -ge (3 * $HoldSeconds)
+        if (-not ($urgent -or $quiet -or $capped)) { return -1 }
+        $Hold['Held'] = [int][Math]::Floor(($now - [DateTime]$Hold['Since']).TotalSeconds)
+    }
     # Messages sent together are delivered together: one wake, not two
-    if ($Settle -gt 0) {
+    elseif ($Settle -gt 0) {
         Start-Sleep -Milliseconds $Settle
         $new = @(@(Get-InboxEntry $script:Me) | Where-Object { -not $Delivered.ContainsKey($_.Id) -or -not $shown.ContainsKey($_.Id) })
         $deliverable = @(Get-Deliverable $new (Get-RoomTimeNow $ShareNow $Since))
@@ -3269,6 +3290,10 @@ function Invoke-WaitDelivery {
     $unshown = @($deliverable | Where-Object { $Delivered.ContainsKey($_.Entry.Id) -and -not $shown.ContainsKey($_.Entry.Id) })
     if ($unshown.Count -gt 0) { Say ('delivered but not shown: ' + ((@($unshown | ForEach-Object { $_.Entry.Id })) -join ', ')) }
     Send-Delivery $deliverable
+    if ($null -ne $Hold -and $Hold.ContainsKey('Held')) {
+        Add-Journal 'hold' "$($deliverable.Count) message(s) delivered after $($Hold['Held']) s"
+        $Hold.Clear()
+    }
     return 0
 }
 
@@ -3596,6 +3621,10 @@ function Invoke-Wait {
     $settle = 700
     if ([int]::TryParse([string]$env:RELAY_SETTLE_MS, [ref]$custom) -and $custom -ge 0) { $settle = $custom }
     $useEvents = (-not $env:RELAY_NO_EVENTS) -and (-not $Once)
+    # The coordinator's wait holds arrivals for a while and delivers them together (check never holds)
+    $holdSeconds = 0
+    if ($script:IsCoordinator -and -not $Once) { $holdSeconds = $script:HoldSeconds }
+    $hold = @{}
     $inbox = Join-Path $script:MyDir 'inbox'
     if (-not (Test-Path -LiteralPath $inbox)) { $null = New-Item -ItemType Directory -Path $inbox -Force }
     # Every span of time in a wait is taken on the UTC clock: local time jumps by an hour twice a year, and a span
@@ -3674,12 +3703,15 @@ function Invoke-Wait {
                 }
             }
             if ($null -ne $entries -and $look.Control -ne 'pause' -and -not $look.Unknown -and -not $deliveredUnknown) {
-                $code = Invoke-WaitDelivery -Entries $entries -Delivered $delivered -Token $token -Settle $settle -ShareNow $shareNow -Since $lastRefresh
+                $code = Invoke-WaitDelivery -Entries $entries -Delivered $delivered -Token $token -Settle $settle -ShareNow $shareNow -Since $lastRefresh -HoldSeconds $holdSeconds -Hold $hold
                 if ($code -ge 0) { break }
-                $code = Invoke-WaitProposal $token
+                # While messages are held, nothing else ends the wait: the batch goes out first, and the next wait
+                # raises a proposal, an overdue task or an idle agent at most one hold later
+                $holding = $hold.ContainsKey('Since')
+                if (-not $holding) { $code = Invoke-WaitProposal $token }
                 if ($code -ge 0) { break }
                 # The coordinator's own tasks: one that is overdue ends the wait, as a delivery does
-                if ($script:IsCoordinator -and ($Once -or ([DateTime]::UtcNow - $lastOverdueCheck).TotalSeconds -ge $overdueEvery)) {
+                if ($script:IsCoordinator -and -not $holding -and ($Once -or ([DateTime]::UtcNow - $lastOverdueCheck).TotalSeconds -ge $overdueEvery)) {
                     $lastOverdueCheck = [DateTime]::UtcNow
                     $roomNow = Get-RoomTimeNow $shareNow $lastRefresh
                     if ($script:TaskLog) {
@@ -4191,9 +4223,16 @@ if ($script:SentLog) {
 # How long a task should take when the coordinator names no number: the room's setting, from this tool's own copy
 # of the room (for the coordinator that is this PC's canonical copy, where only this PC writes)
 $script:TaskMinutes = 15
+# How long the coordinator's wait goes on listening after a message arrived, in seconds, before it ends with
+# everything that came in the meantime: a quiet period after the last arrival, capped at three times it from
+# the first. Every wake is a turn of the coordinator. 0 is no hold, as for every agent's wait.
+$script:HoldSeconds = 0
 if ($script:IsCoordinator) {
-    $script:TaskMinutes = Get-Number (Read-KeyValue (Join-Path (Join-Path $PSScriptRoot '..') 'ROOM')) 'task_minutes' 15
+    $ownRoom = Read-KeyValue (Join-Path (Join-Path $PSScriptRoot '..') 'ROOM')
+    $script:TaskMinutes = Get-Number $ownRoom 'task_minutes' 15
     if ($script:TaskMinutes -lt 1 -or $script:TaskMinutes -gt 1440) { $script:TaskMinutes = 15 }
+    $script:HoldSeconds = Get-Number $ownRoom 'hold_seconds' 20
+    if ($script:HoldSeconds -lt 0 -or $script:HoldSeconds -gt 300) { $script:HoldSeconds = 20 }
 }
 $script:MyDir = Get-AgentDir $script:Me
 if (-not (Test-Path -LiteralPath $script:MyDir)) { Exit-WithError "there is no agent '$($script:Me)' in room $($script:RoomId)" 'use the wrapper you were given; do not copy one from another agent' }

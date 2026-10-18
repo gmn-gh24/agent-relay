@@ -36,9 +36,9 @@ Set by the owner after the plugin-improvements room (eight agents of five produc
 half hours). These three come before everything below; the items they point at keep their own sections.
 
 1. **The coordinator's turn count.** It is the real cost of a room: one wake per message, one turn per wake, and
-   a restart of `wait` at the end of every turn. Cheap wins first: a wait that batches (D9) and a help verb that
-   keeps the first output short (D1). The strong one: a Claude Code Stop hook that holds the turn while no wait
-   lease is alive (D3).
+   a restart of `wait` at the end of every turn. The wait that batches shipped in 0.12.0 (`hold_seconds`).
+   Next cheap win: a help verb that keeps the first output short (D1). The strong one: a Claude Code Stop
+   hook that holds the turn while no wait lease is alive (D3).
 2. **The launcher.** Starting an agent from inside a room, headless, with the product's guard and context flags
    set (D2). It turns a thirty-second ritual per seat into one command and makes remote seats routine; the
    per-product facts it needs are in `references/agent-kinds.md`.
@@ -284,13 +284,6 @@ on a seat) are not listed: they ship, or are in the CHANGELOG.
 - **Direction.** Add the flag to `Watch-RelayFeed.ps1`, the `to*` functions in `hooks/feed.ts`,
   `types/index.d.ts` and `hooks/feed.test.ts`.
 - **Open.** How the pane shows it (next to the model, as on the board).
-
-### D9. A wait that batches
-
-- **What happened.** The coordinator's wait ends at the first message: one wake, and one turn, per message.
-- **Direction.** Hold for several messages, or for a short quiet period, before ending.
-- **Open.** The hold time and the cap, so an urgent message is not held; a limit that stays: a `wait` whose
-  output is read and then discarded cannot be told from a legitimate file reader.
 
 ### D10. The known-models list offers a fake name
 

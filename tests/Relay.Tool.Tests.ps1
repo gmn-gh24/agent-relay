@@ -46,6 +46,24 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             foreach ($name in 'emma', 'jack', 'henry') { Set-TestFileAge (Join-Path $Room "agents\olivia\inbox\$name-0001.md") 600 }
         }
 
+        function Set-TestHold {
+            # How long the coordinator's wait holds what arrived (hold_seconds in the tool's own copy of ROOM: in
+            # these tests the coordinator runs the room's tool, so that is the room's ROOM)
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper')]
+            param([string]$Room, [int]$Seconds)
+            $facts = Join-Path $Room 'ROOM'
+            [System.IO.File]::WriteAllText($facts, (([System.IO.File]::ReadAllText($facts)) -replace '(?m)^hold_seconds: .*$', "hold_seconds: $Seconds"))
+        }
+
+        function Wait-TestListening {
+            # Until the agent's wait says that it listens: a busy machine starts a PowerShell in more than three seconds
+            param([string]$Room, [string]$Name)
+            $status = Join-Path $Room "agents\$Name\status"
+            $until = [DateTime]::UtcNow.AddSeconds(30)
+            while ([DateTime]::UtcNow -lt $until -and (Get-Content -LiteralPath $status -Raw) -notmatch 'state: listening') { Start-Sleep -Milliseconds 200 }
+            (Get-Content -LiteralPath $status -Raw) | Should -Match 'state: listening'
+        }
+
         function Set-TestTaskEvent {
             # Moves the time of the last such line of the coordinator's task record: as if it had been noted then
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper')]
@@ -1171,6 +1189,108 @@ exit $code
             $ended.Output | Should -Match '(?m)^=== the room has been unreachable for 30 minutes: '
             $ended.Output | Should -Match '(?m)^NEXT: check the network path to the room, then run start again\.$'
             ((Get-Date) - $gone).TotalSeconds | Should -BeGreaterThan 25
+        }
+
+        It 'holds the coordinator''s wait for a quiet period after a message and delivers what came meanwhile in one wake' {
+            # Every wake is a turn of the coordinator: two messages a few seconds apart are one wake, not two
+            Set-TestHold $room 8
+            $waiting = Start-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('wait', '5')
+            Wait-TestListening $room 'olivia'
+            $firstSent = [DateTime]::UtcNow
+            $null = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('note', 'olivia') -Text "First of the batch`n`nOne."
+            # The board sees the hold: the status says what is held
+            $status = Join-Path $room 'agents\olivia\status'
+            $until = [DateTime]::UtcNow.AddSeconds(5)
+            while ([DateTime]::UtcNow -lt $until -and (Get-Content -LiteralPath $status -Raw) -notmatch 'holding 1 message') { Start-Sleep -Milliseconds 200 }
+            (Get-Content -LiteralPath $status -Raw) | Should -Match '(?m)^state: listening$'
+            (Get-Content -LiteralPath $status -Raw) | Should -Match '(?m)^detail: holding 1 message\(s\)$'
+            $waiting.Process.HasExited | Should -BeFalse
+            $null = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('note', 'olivia') -Text "Second of the batch`n`nTwo."
+            $woken = Wait-RelayTool -Handle $waiting -TimeoutSeconds 40
+            $woken.ExitCode | Should -Be 0
+            ([DateTime]::UtcNow - $firstSent).TotalSeconds | Should -BeGreaterThan 8
+            $woken.Output | Should -Match '(?m)^=== 2 new message\(s\) for olivia in room '
+            $woken.Output | Should -Match 'subject: First of the batch'
+            $woken.Output | Should -Match 'subject: Second of the batch'
+            (Get-Content -LiteralPath $status -Raw) | Should -Match 'state: working'
+            [System.IO.File]::ReadAllText((Join-Path $room 'agents\olivia\journal')) | Should -Match '(?m)^\S+ hold 2 message\(s\) delivered after \d+ s$'
+        }
+
+        It 'ends the hold at once for a question, whose sender waits for the answer' {
+            Set-TestHold $room 30
+            $waiting = Start-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('wait', '5')
+            Wait-TestListening $room 'olivia'
+            $sent = [DateTime]::UtcNow
+            $null = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('ask', 'olivia') -Text "May I`n`nMay I delete the cache?"
+            $woken = Wait-RelayTool -Handle $waiting -TimeoutSeconds 40
+            $woken.ExitCode | Should -Be 0
+            ([DateTime]::UtcNow - $sent).TotalSeconds | Should -BeLessThan 20
+            $woken.Output | Should -Match 'subject: May I'
+        }
+
+        It 'ends the hold at its cap, three times the quiet period, while messages keep arriving' {
+            Set-TestHold $room 6
+            $waiting = Start-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('wait', '5')
+            Wait-TestListening $room 'olivia'
+            $started = [DateTime]::UtcNow
+            $sent = 0
+            # A note every few seconds, each inside the quiet period of the one before, for longer than the cap of 18 s
+            while (-not $waiting.Process.HasExited -and ([DateTime]::UtcNow - $started).TotalSeconds -lt 45) {
+                $sent++
+                $null = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('note', 'olivia') -Text "Note $sent`n`nStill coming."
+                Start-Sleep -Seconds 1
+            }
+            $waiting.Process.HasExited | Should -BeTrue
+            $woken = Wait-RelayTool -Handle $waiting -TimeoutSeconds 10
+            $woken.ExitCode | Should -Be 0
+            $woken.Output | Should -Match '(?m)^=== ([3-9]|[1-9][0-9]) new message\(s\) for olivia'
+            ([DateTime]::UtcNow - $started).TotalSeconds | Should -BeGreaterThan 17
+        }
+
+        It 'holds nothing for an agent: its wait ends at the first message, whatever hold_seconds says' {
+            Set-TestHold $room 30
+            $waiting = Start-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('wait', '5')
+            Wait-TestListening $room 'emma'
+            $sent = [DateTime]::UtcNow
+            $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'emma') -Text "At once`n`nNo hold."
+            $woken = Wait-RelayTool -Handle $waiting -TimeoutSeconds 40
+            $woken.ExitCode | Should -Be 0
+            ([DateTime]::UtcNow - $sent).TotalSeconds | Should -BeLessThan 20
+            $woken.Output | Should -Match 'subject: At once'
+            [System.IO.File]::ReadAllText((Join-Path $room 'agents\emma\journal')) | Should -Not -Match '(?m)^\S+ hold '
+        }
+
+        It 'never holds in check, and holds nothing when hold_seconds is 0' {
+            Set-TestHold $room 30
+            $null = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('note', 'olivia') -Text "Looked at`n`nOne look."
+            $looked = Invoke-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('check') -TimeoutSeconds 25
+            $looked.ExitCode | Should -Be 0
+            $looked.Output | Should -Match 'subject: Looked at'
+            Set-TestHold $room 0
+            $waiting = Start-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('wait', '5')
+            Wait-TestListening $room 'olivia'
+            $sent = [DateTime]::UtcNow
+            $null = Send-RelayTestMessage -Room $room -Agent 'jack' -Engine $engine -Words @('note', 'olivia') -Text "The first message ends it`n`nNo hold."
+            $woken = Wait-RelayTool -Handle $waiting -TimeoutSeconds 40
+            $woken.ExitCode | Should -Be 0
+            ([DateTime]::UtcNow - $sent).TotalSeconds | Should -BeLessThan 20
+            $woken.Output | Should -Match '(?m)^=== 1 new message\(s\) for olivia'
+        }
+
+        It 'holds for 20 seconds in a room made before hold_seconds existed' {
+            $facts = Join-Path $room 'ROOM'
+            [System.IO.File]::WriteAllText($facts, (([System.IO.File]::ReadAllText($facts)) -replace '(?m)^hold_seconds: .*\n', ''))
+            (Get-Content -LiteralPath $facts -Raw) | Should -Not -Match 'hold_seconds'
+            $waiting = Start-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('wait', '5')
+            Wait-TestListening $room 'olivia'
+            $sent = [DateTime]::UtcNow
+            $null = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('note', 'olivia') -Text "Old room`n`nThe default hold."
+            Start-Sleep -Seconds 8
+            $waiting.Process.HasExited | Should -BeFalse
+            $woken = Wait-RelayTool -Handle $waiting -TimeoutSeconds 40
+            $woken.ExitCode | Should -Be 0
+            ([DateTime]::UtcNow - $sent).TotalSeconds | Should -BeGreaterThan 19
+            $woken.Output | Should -Match '(?m)^=== 1 new message\(s\) for olivia'
         }
     }
 

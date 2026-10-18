@@ -77,6 +77,12 @@
     How many minutes a task should take when the coordinator names no number with it ("task_minutes", 15):
     its wait ends with an OVERDUE block when the receiver has sent nothing for that long.
 
+.PARAMETER HoldSeconds
+    How many seconds the coordinator's wait goes on listening after a message arrived before it ends with
+    everything that came in the meantime ("hold_seconds", 20): a quiet period after the last arrival, capped at
+    three times it. 0 ends the wait at the first message. A question, a proposal or a message from the owner
+    is never held.
+
 .PARAMETER NoTabTitles
     The agents' tools do not name their terminal tabs ("tab_titles": no).
 
@@ -108,6 +114,7 @@ param(
     [AllowEmptyCollection()][string[]]$WorkFiles,
     [string]$ReachPath,
     [ValidateRange(1, 1440)][int]$TaskMinutes,
+    [ValidateRange(0, 300)][int]$HoldSeconds,
     [switch]$NoTabTitles,
     [switch]$Clipboard,
     [switch]$PassThru
@@ -125,7 +132,7 @@ if ($AnswersFile) {
     if ($null -eq $answers -or $answers -is [array] -or $answers -is [string] -or $answers -is [ValueType]) { throw "The answers file $AnswersFile does not hold one JSON object" }
 }
 # A parameter given as well wins over the file's value
-$byParameter = [ordered]@{ Job = 'job'; RoomName = 'room_name'; RoomId = 'room_id'; RoomsRoot = 'rooms_root'; Authority = 'authority'; OpenSeats = 'open_seats'; WorkFiles = 'work_files'; ReachPath = 'reach_path'; TaskMinutes = 'task_minutes' }
+$byParameter = [ordered]@{ Job = 'job'; RoomName = 'room_name'; RoomId = 'room_id'; RoomsRoot = 'rooms_root'; Authority = 'authority'; OpenSeats = 'open_seats'; WorkFiles = 'work_files'; ReachPath = 'reach_path'; TaskMinutes = 'task_minutes'; HoldSeconds = 'hold_seconds' }
 foreach ($parameter in $byParameter.Keys) {
     if (-not $PSBoundParameters.ContainsKey($parameter)) { continue }
     $value = $PSBoundParameters[$parameter]
@@ -170,6 +177,9 @@ if ($agentAnswers.Count -lt 1 -and $openSeats -lt 1) { throw 'The answers file n
 # How long a task should take when the coordinator gives no number with it
 $minutesPerTask = [int](Get-RelayProperty $answers 'task_minutes' 15)
 if ($minutesPerTask -lt 1 -or $minutesPerTask -gt 1440) { throw '"task_minutes" is a number from 1 to 1440' }
+# How long the coordinator's wait holds what arrived before it ends with all of it
+$holdSecondsValue = [int](Get-RelayProperty $answers 'hold_seconds' 20)
+if ($holdSecondsValue -lt 0 -or $holdSecondsValue -gt 300) { throw '"hold_seconds" is a number from 0 to 300' }
 
 $roomPath = Get-RelayNormalPath (Join-Path $roomsRoot $roomId)
 # What is put into a command line for somebody to paste cannot hold a double quote or a line break
@@ -257,6 +267,7 @@ try {
         pickup_minutes = [int](Get-RelayProperty $answers 'pickup_minutes' 30)
         silent_minutes = [int](Get-RelayProperty $answers 'silent_minutes' 10)
         task_minutes   = $minutesPerTask
+        hold_seconds   = $holdSecondsValue
         proposal_limit = [int](Get-RelayProperty $answers 'proposal_limit' 3)
     }
     # Each agent's tool names its terminal tab after the agent, unless the owner does not want that

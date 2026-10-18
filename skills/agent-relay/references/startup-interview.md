@@ -77,11 +77,16 @@ Both can be mixed in one room. Seats can be added at any time.
 | Files the agents need in the room | `work_files` | none |
 | May each agent's tool name its terminal tab after the agent? | `tab_titles` | `yes` |
 | How long should a task take when you give no number with it? | `task_minutes` | 15 |
+| How long does your wait go on listening after a message arrived, before it wakes you with all of them? | `hold_seconds` | 20 |
 | Where do the room's improvement notes go at the close? | `project_folder` | local state, with a warning |
 
 `task_minutes`: do not ask, unless the job's tasks are plainly longer (a build or a test cycle of half an
 hour). It is only the default: every task can say its own time (`task <name> <minutes>`), and your wait ends
 when an agent has sent nothing for that long.
+
+`hold_seconds`: do not ask. It is an answer, not a question: the quiet period your wait keeps after a message
+arrived (capped at three times it), so that one wake brings several messages. Change it only when the owner
+asks for faster wakes (lower, or 0 for one wake per message) or for fewer turns (higher, up to 300).
 
 `room_name`: do not ask, choose. Name the room after the project, script or task it serves, in two to four
 words: `backup agent rollout`, `pester on training vm`, `dotnet runtime uninstall`. It becomes the folder
