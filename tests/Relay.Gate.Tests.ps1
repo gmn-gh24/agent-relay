@@ -120,3 +120,54 @@ Describe 'Invoke-AllTests.ps1 runs the editions it is given' -Tag 'Gate' {
         @($run.Lines | Where-Object { $_ -like 'RESULT *' }).Count | Should -Be 0
     }
 }
+
+Describe 'The plugin manifests agree (Test-RelayTestManifest)' -Tag 'Gate' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'RelayTestHelpers.ps1')
+
+        function New-ManifestPair {
+            # A plugin.json and a marketplace.json in this test's drive; the entry gets a version only when one is given
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper')]
+            param(
+                [Parameter(Mandatory)][string]$Folder,
+                [string]$EntryName = 'agent-relay', [string]$EntryDescription = 'Coordinate agents.', [string]$EntryVersion = ''
+            )
+            $path = Join-Path $TestDrive $Folder
+            $null = New-Item -ItemType Directory -Path $path -Force
+            $plugin = [ordered]@{ name = 'agent-relay'; version = '1.2.3'; description = 'Coordinate agents.' }
+            $entry = [ordered]@{ name = $EntryName; source = './'; description = $EntryDescription }
+            if ($EntryVersion) { $entry['version'] = $EntryVersion }
+            $marketplace = [ordered]@{ name = 'agent-relay'; owner = @{ name = 'someone' }; plugins = @($entry) }
+            $pluginPath = Join-Path $path 'plugin.json'
+            $marketplacePath = Join-Path $path 'marketplace.json'
+            [System.IO.File]::WriteAllText($pluginPath, (ConvertTo-Json -InputObject $plugin -Depth 5))
+            [System.IO.File]::WriteAllText($marketplacePath, (ConvertTo-Json -InputObject $marketplace -Depth 5))
+            return [pscustomobject]@{ Plugin = $pluginPath; Marketplace = $marketplacePath }
+        }
+    }
+
+    It 'names a marketplace entry whose description differs from plugin.json' {
+        $pair = New-ManifestPair -Folder 'description' -EntryDescription 'Something else.' -EntryVersion '1.2.3'
+        $found = @(Test-RelayTestManifest -PluginPath $pair.Plugin -MarketplacePath $pair.Marketplace)
+        $found | Should -Be @('plugin manifests: marketplace.json plugin description differs from plugin.json description')
+    }
+
+    It 'returns nothing for a pair that agrees, with or without a version in the entry' {
+        $pair = New-ManifestPair -Folder 'agree'
+        @(Test-RelayTestManifest -PluginPath $pair.Plugin -MarketplacePath $pair.Marketplace).Count | Should -Be 0
+        $pair = New-ManifestPair -Folder 'agree-version' -EntryVersion '1.2.3'
+        @(Test-RelayTestManifest -PluginPath $pair.Plugin -MarketplacePath $pair.Marketplace).Count | Should -Be 0
+        $pair = New-ManifestPair -Folder 'version' -EntryVersion '1.2.2'
+        @(Test-RelayTestManifest -PluginPath $pair.Plugin -MarketplacePath $pair.Marketplace) | Should -Be @("plugin manifests: marketplace.json plugin version '1.2.2' differs from plugin.json version '1.2.3'")
+        $pair = New-ManifestPair -Folder 'name' -EntryName 'other-name'
+        @(Test-RelayTestManifest -PluginPath $pair.Plugin -MarketplacePath $pair.Marketplace) | Should -Be @("plugin manifests: marketplace.json plugin name 'other-name' differs from plugin.json name 'agent-relay'")
+    }
+
+    It 'finds the manifests in the repository in agreement' {
+        $folder = Join-Path (Get-RelayTestPath repo) '.claude-plugin'
+        $found = @(Test-RelayTestManifest -PluginPath (Join-Path $folder 'plugin.json') -MarketplacePath (Join-Path $folder 'marketplace.json'))
+        # Joined, so that a failure names the problems
+        ($found -join '; ') | Should -BeExactly ''
+        $found.Count | Should -Be 0
+    }
+}
