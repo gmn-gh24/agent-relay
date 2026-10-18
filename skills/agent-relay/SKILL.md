@@ -62,6 +62,10 @@ heading named in brackets:
 
 ## 1. Start a room
 
+First check that the job needs a room at all. A single question to one of the owner's own Claude sessions
+(which branch it is on, whether its build passed) needs none: tell the owner so and build nothing. A room is
+for a scoped task, an agent of another product, a record of the work, or more than one agent.
+
 1. Run `scripts/Get-RelayRooms.ps1`. If the job already has an open room, go to workflow 3.
 2. Interview the owner with `references/startup-interview.md`. Ask through your host's question tool when
    it has one (the one that shows choices to pick from), one question per decision, with the choices and
