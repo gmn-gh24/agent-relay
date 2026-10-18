@@ -101,8 +101,9 @@ wait, send the welcome again as `ask <name>`, and tell the owner when that stays
 Three questions, in this order, for every task before it goes out. The board answers the first two in its
 `rights:` and `models:` lines.
 
-1. **Can it do the task alone?** Rights, shell, machine, product (see Introductions). An agent that cannot
-   is not a candidate, however good its model. That includes checking its own work: an agent whose machine
+1. **Can it do the task alone?** Rights, shell, machine, product, and the tools its product has (a full-page
+   fetch, for example): read them in its introduction and on the board before the task goes out. An agent
+   that cannot is not a candidate, however good its model. That includes checking its own work: an agent whose machine
    has no PowerShell 7 cannot run a test under `pwsh` (its introduction lists the shells its machine has). Give
    such a check to an agent that has the engine, or say in the task that you run it and when.
 2. **Is its model the right strength?** The lightest model that does a job well gets it:
@@ -243,6 +244,22 @@ Things a task says when they apply:
 
 - **Where to work.** Agents copy what they need out of the room and work on their own disk (their
   instructions say so). Name the folder in `work` to copy from, and say that results come back as attachments.
+  List by name the files you attached and the ones the agent is expected to read; "the kit" leaves it to
+  guess which.
+- **The shell.** Name the shell the commands are written for (`pwsh`, `powershell`, cmd or Git Bash).
+  Otherwise the agent runs them in its own, which its introduction names and which may be another.
+- **A protocol check.** Give the exact request or wire text to send and the reply to expect, or say "skip if
+  unknown". An agent that rebuilds a protocol from its name tests its guess, not the product.
+- **An agent that works one task at a time.** Send its next task after its result for the last one, not a
+  queue of them behind it.
+- **A screenshot of a destructive feature.** Say "do not trigger it": the agent opens the screen, captures
+  it and leaves it as it was. A delete, reset or uninstall that runs by mistake cannot be taken back.
+- **UI testing on a virtual machine.** Say up front that the machine's console must stay unlocked for the
+  whole task: a locked screen leaves nothing to click or capture. The agent's first step checks for a lock
+  and reports one at once, not after the first step that fails.
+- **A group.** When an instruction names a group ("the test machines", "the others") and the requests it
+  leads to cannot be taken back (a retire, a delete, an uninstall), write out the members you take it to
+  mean and confirm the set with whoever gave the instruction before the first one goes out.
 - **A long run.** A command that runs for many minutes is lost when the agent's session ends, and nobody
   knows how it came out. Ask for it in pieces (one test file, one engine at a time), each with its output
   written to a file in the agent's own folder, and for the files with the report. The agent's instructions
@@ -259,6 +276,9 @@ Things a task says when they apply:
   statements or a path with a space. Ask for one delete per command, and say which other way is allowed for a
   path the guard refuses. A helper process that must stay alive (one started as another user, for example) is
   started from a background command: from a foreground call it holds that call until it ends.
+- **The delivery method.** Ask the agent to say so when the way the files reach it looks heavier than the
+  check needs (a full installer to check one changed file, for example): it sees the machine's side of the
+  cost. Its answer goes into your next choice of path (SKILL.md, "Proportionate effort").
 
 ### A task that is overdue
 
@@ -398,6 +418,10 @@ owner states it again.
    commit line, every RESULT line copied) is what a small model does well; writing code, keeping a habit over
    many steps (check between steps) and judging a diff are what it drops. Two of three local seats in one room
    were retired for silence; the runner seat caught a merge error the coordinator had made.
+7. **An owner decision about how something is done holds in this room from the next time.** When the owner
+   says how a thing is to be done, often while a fault is being written up as an improvement for the plugin,
+   it is not only a note for a later version: do it that way the next time it comes up in this room, and
+   record it at once (`scripts/Add-RelayDecision.ps1 -Owner`) so the agents' tools show it too.
 
 ## Messages from the owner
 
