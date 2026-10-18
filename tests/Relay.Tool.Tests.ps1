@@ -4,7 +4,9 @@
     Behaviour of the room tool, the same cases for every engine: relay.ps1 under PowerShell 7 and under Windows
     PowerShell 5.1. Every tool call is a real child process. Pester 6. ASCII only.
 
-    The last block reads the source of relay.ps1 for what no child process can show (a clock change, an old .NET).
+    Process identity uses the production functions with mocked operating-system process records: no executable
+    is copied or renamed. The last block reads the source for what no child process can show (a clock change,
+    an old .NET).
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester: a variable set in BeforeAll or BeforeEach is read in the It blocks')]
@@ -1260,6 +1262,24 @@ exit $code
     }
 
     Context 'Faults' {
+        It 'keeps a request pending when another agent answers in place of its receiver' {
+            $sent = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Still pending`n`nCount the files."
+            $sent.ExitCode | Should -Be 0
+            $id = 'olivia-emma-0001'
+            $wrongReply = "---`nid: jack-olivia-0002`nfrom: jack`nto: olivia`ntype: result`nre: $id`nsubject: Somebody else's result`nexpects: none`n---`nThis does not answer Emma's task.`n"
+            [System.IO.File]::WriteAllText((Join-Path $room 'agents\olivia\inbox\jack-0002.md'), $wrongReply)
+            $restarted = Invoke-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('start')
+            $restarted.ExitCode | Should -Be 0
+            $restarted.Output | Should -Match '=== you are waiting for 1 reply ==='
+            $restarted.Output | Should -Match 'olivia-emma-0001  task to Emma: Still pending'
+
+            $answered = Send-RelayTestMessage -Room $room -Agent 'emma' -Engine $engine -Words @('report', $id) -Text "Counted`n`nSeven files."
+            $answered.ExitCode | Should -Be 0
+            $complete = Invoke-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('start')
+            $complete.ExitCode | Should -Be 0
+            $complete.Output | Should -Not -Match '=== you are waiting for .* repl'
+        }
+
         It 'shows a request again to a session that starts after the receiver died before acting' {
             $null = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma') -Text "Survives a crash`n`nThis text must come back."
             (Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('check')).ExitCode | Should -Be 0
@@ -2013,13 +2033,13 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         Get-RelayTestJoinedName $other | Should -Be $openSeats[1]
     }
 
-    It 'session identity: a child joins through the wrapper without taking its parents seat' {
+    It 'session identity: an explicit new join through the wrapper leaves the inherited parent seat intact' {
         $parentEnvironment = @{ RELAY_SESSION = 'parent-session'; CLAUDE_CODE_SESSION_ID = 'parent-claude-session' }
-        $parent = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -AgentHost claude -Words @('join', 'claude-code-cli', 'm', 'e') -Environment $parentEnvironment
+        $parent = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'claude-code-cli', 'm', 'e') -Environment $parentEnvironment
         $parent.ExitCode | Should -Be 0 -Because $parent.Output
         $parentName = Get-RelayTestJoinedName $parent
         $childEnvironment = @{ RELAY_SESSION = 'parent-session'; CLAUDE_CODE_SESSION_ID = 'parent-claude-session'; RELAY_NAME = $parentName; RELAY_GEN = '1' }
-        $child = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -AgentHost codex -ChildAgentHost -JoinWrapper -Words @('codex-cli', 'm', 'e') -Environment $childEnvironment
+        $child = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -JoinWrapper -Words @('new', 'codex-cli', 'm', 'e') -Environment $childEnvironment
         $child.ExitCode | Should -Be 0 -Because $child.Output
         Get-RelayTestJoinedName $child | Should -Be $openSeats[1]
         $log = Get-Content -LiteralPath (Join-Path $room 'join.log') -Raw
@@ -2041,25 +2061,6 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $back.ExitCode | Should -Be 0
         Get-RelayTestJoinedName $back | Should -Be $name
         $back.Output | Should -Match '^BACK:'
-    }
-
-    It 'session identity: real agent processes separate inherited native IDs and recognize a restarted host' {
-        $inherited = @{ RELAY_SESSION = 'inherited-session'; CLAUDE_CODE_SESSION_ID = 'inherited-claude' }
-        $parent = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -AgentHost claude -Words @('join', 'claude-code-cli', 'm', 'e') -Environment $inherited
-        $parent.ExitCode | Should -Be 0 -Because $parent.Output
-        Get-RelayTestJoinedName $parent | Should -Be $openSeats[0]
-        $child = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -AgentHost codex -ChildAgentHost -Words @('join', 'codex-cli', 'm', 'e') -Environment $inherited
-        $child.ExitCode | Should -Be 0 -Because $child.Output
-        Get-RelayTestJoinedName $child | Should -Be $openSeats[1]
-        $restart = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -AgentHost claude -Words @('join', 'claude-code-cli', 'm', 'e') -Environment $inherited
-        $restart.ExitCode | Should -Be 1
-        $restart.Output | Should -Match 'joined this room before'
-        $claims = @($openSeats[0..1] | ForEach-Object { Get-Content -LiteralPath (Join-Path $room "agents\$_\claim") -Raw })
-        $full = @($claims | ForEach-Object { [regex]::Match($_, '(?m)^session: (\w+)').Groups[1].Value })
-        $native = @($claims | ForEach-Object { [regex]::Match($_, '(?m)^session_env: (\w+)').Groups[1].Value })
-        $full[0] | Should -Not -Be $full[1]
-        $native[0] | Should -Be $native[1]
-        $claims -join '' | Should -Not -Match 'inherited-session|inherited-claude'
     }
 
     It 'session identity: join new ignores inherited keys (<Position>)' -ForEach @(@{ Position = 'before' }, @{ Position = 'after' }) {
@@ -2200,11 +2201,104 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
     }
 }
 
+Describe 'Agent process identity from operating-system records' -Tag 'Tool' {
+
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'RelayTestHelpers.ps1')
+        $tokens = $null
+        $parseErrors = $null
+        $tool = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path (Get-RelayTestPath package) 'tools\relay.ps1'), [ref]$tokens, [ref]$parseErrors)
+        if (@($parseErrors).Count -gt 0) { throw 'The room tool does not parse' }
+        # Load only these production functions; the tool's main block never runs in this test process.
+        foreach ($name in 'ConvertTo-Sha256Hex', 'Get-ProcessEntry', 'Get-AgentProcessEntry', 'Get-SessionEnvironmentKey', 'Get-SessionKey') {
+            $definition = $tool.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $false)
+            if ($null -eq $definition) { throw "The room tool has no function $name" }
+            . ([scriptblock]::Create($definition.Extent.Text))
+        }
+    }
+
+    BeforeEach {
+        $savedSession = $env:RELAY_SESSION
+        $savedClaudeSession = $env:CLAUDE_CODE_SESSION_ID
+        $env:RELAY_SESSION = 'inherited-session'
+        $env:CLAUDE_CODE_SESSION_ID = 'inherited-claude'
+        $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
+        $script:ProcessEntries = $null
+        $script:ProcessNext = 0
+        $created = New-Object DateTime 2026, 10, 10, 12, 0, 0, ([DateTimeKind]::Utc)
+        # Names below are data returned by the mocked OS query, never files on disk.
+        $processes = @{
+            $PID = [pscustomobject]@{ ProcessId = $PID; ParentProcessId = 9001; Name = 'pwsh.exe'; ExecutablePath = ''; CreationDate = $created }
+            9001 = [pscustomobject]@{ ProcessId = 9001; ParentProcessId = 9002; Name = 'cmd.exe'; ExecutablePath = ''; CreationDate = $created }
+            9002 = [pscustomobject]@{ ProcessId = 9002; ParentProcessId = 9003; Name = 'codex.exe'; ExecutablePath = ''; CreationDate = $created }
+            9003 = [pscustomobject]@{ ProcessId = 9003; ParentProcessId = 9004; Name = 'claude.exe'; ExecutablePath = ''; CreationDate = $created.AddSeconds(-1) }
+            9004 = [pscustomobject]@{ ProcessId = 9004; ParentProcessId = 0; Name = 'WindowsTerminal.exe'; ExecutablePath = ''; CreationDate = $created.AddSeconds(-2) }
+        }
+        Mock Get-CimInstance {
+            param($Filter)
+            return $processes[[int]$Filter.Substring('ProcessId='.Length)]
+        }
+    }
+
+    AfterEach {
+        $env:RELAY_SESSION = $savedSession
+        $env:CLAUDE_CODE_SESSION_ID = $savedClaudeSession
+    }
+
+    It 'identifies the nearest agent through a shell and ignores its outer agent parent' {
+        $agent = Get-AgentProcessEntry
+        $agent.Id | Should -Be 9002
+        $agent.Name | Should -Be 'codex.exe'
+        $agent.Started | Should -Be $created.Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
+    }
+
+    It 'separates parent and child agents that inherit the same native session id' {
+        $native = Get-SessionEnvironmentKey
+        $child = Get-SessionKey
+        $processes[9001].ParentProcessId = 9003
+        $script:ProcessEntries = $null
+        $parent = Get-SessionKey
+        $child | Should -Match '^[0-9a-f]{24}$'
+        $parent | Should -Match '^[0-9a-f]{24}$'
+        $child | Should -Not -Be $parent
+        Get-SessionEnvironmentKey | Should -Be $native
+        Get-SessionKey | Should -Be $parent
+    }
+
+    It 'distinguishes a restarted agent even when its process id is reused' {
+        $first = Get-SessionKey
+        $processes[9002].CreationDate = $created.AddSeconds(1)
+        $script:ProcessEntries = $null
+        Get-SessionKey | Should -Not -Be $first
+    }
+
+    It 'stops at a terminal boundary and falls back to the explicit session id' {
+        $processes[9001].ParentProcessId = 9004
+        $processes[9004].ParentProcessId = 9003
+        Get-AgentProcessEntry | Should -BeNullOrEmpty
+        Get-SessionKey | Should -Be (Get-SessionEnvironmentKey)
+        $env:RELAY_SESSION = $null
+        $env:CLAUDE_CODE_SESSION_ID = $null
+        Get-SessionKey | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'Room tool source' -Tag 'Tool' {
 
     BeforeAll {
         . (Join-Path $PSScriptRoot 'RelayTestHelpers.ps1')
         $source = [System.IO.File]::ReadAllText((Join-Path (Get-RelayTestPath package) 'tools\relay.ps1'))
+    }
+
+    It 'starts test processes without copying executables to impersonate agent hosts' {
+        $tokens = $null
+        $parseErrors = $null
+        $helpers = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'RelayTestHelpers.ps1'), [ref]$tokens, [ref]$parseErrors)
+        @($parseErrors).Count | Should -Be 0
+        $runner = $helpers.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Start-RelayTool' }, $false)
+        $runner | Should -Not -BeNullOrEmpty
+        $copies = @($runner.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Copy-Item' }, $true))
+        $copies.Count | Should -Be 0 -Because 'test processes must use installed executables at their original paths'
     }
 
     It 'takes every span of time on the UTC clock: local time jumps an hour twice a year' {

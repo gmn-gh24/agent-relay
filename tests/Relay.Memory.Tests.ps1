@@ -298,6 +298,20 @@ Describe 'Add-RelayLocalMemory' -Tag 'Memory' {
         Test-Path -LiteralPath $notes | Should -BeFalse
     }
 
+    It 'refuses the notes file itself as a draft, including a path through a linked folder' {
+        Write-MemoryFile $notes @('- 2026-10-01T10:00:00Z The build needs the proxy variable set')
+        $before = [System.IO.File]::ReadAllText($notes)
+        $aliasFolder = Join-Path $root 'memory-alias'
+        (New-MemoryLink -Path $aliasFolder -Target (Split-Path -Parent $notes)) | Should -Not -BeNullOrEmpty
+        try {
+            foreach ($draft in @($notes, (Join-Path $aliasFolder 'notes.md'))) {
+                { & $keepMemory -DraftFile $draft } | Should -Throw '*draft*notes file itself*'
+                [System.IO.File]::ReadAllText($notes) | Should -Be $before
+            }
+        }
+        finally { Remove-MemoryLink $aliasFolder }
+    }
+
     It 'refuses to read or write through a linked memory folder' {
         $outside = Join-Path $root 'outside'
         $null = New-Item -ItemType Directory -Path $outside -Force

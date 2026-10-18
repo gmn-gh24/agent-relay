@@ -1360,6 +1360,26 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
     }
 
     Context 'R4: nothing is read or written through a link in the agent''s own folder' {
+        It 'refuses a linked message when its id is given directly to show, reply or report' -Tag 'MaySkip' {
+            $private = Join-Path $root ('private-message-' + (New-RelayTestId) + '.txt')
+            [System.IO.File]::WriteAllText($private, (Get-ReadableMessage -Type 'task' -Subject 'private-message-not-for-the-room'))
+            $link = Join-Path $room 'agents\emma\inbox\olivia-0001.md'
+            if ((New-TestLink -Path $link -Target $private) -ne 'symbolic link') { Set-ItResult -Skipped -Because 'this account may not make a symbolic link to a file here'; return }
+            try {
+                foreach ($verb in 'show', 'reply', 'report') {
+                    Set-RelayTestDraft -Room $room -Agent 'emma' -Text "Reply draft`n`nKeep this draft."
+                    $result = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @($verb, 'olivia-emma-0001')
+                    $result.ExitCode | Should -Be 1
+                    $result.Output | Should -Match 'there is no message'
+                    $result.Output | Should -Not -Match 'private-message-not-for-the-room'
+                    Test-Path -LiteralPath (Join-Path $room 'agents\emma\draft.md') | Should -BeTrue
+                }
+                @(Get-RelayTestInbox -Room $room -Agent 'olivia' -From 'emma').Count | Should -Be 1
+                [System.IO.File]::ReadAllText($private) | Should -Match 'private-message-not-for-the-room'
+            }
+            finally { Remove-TestLink $link }
+        }
+
         It 'refuses a draft that is a link, sends nothing of what it points at and leaves both alone' -Tag 'MaySkip' {
             $private = Join-Path $root ('private-' + (New-RelayTestId) + '.txt')
             [System.IO.File]::WriteAllText($private, "Private`n`nmachine example.invalid login me password not-for-the-room`n")

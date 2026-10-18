@@ -469,6 +469,8 @@ function Get-FileTimeUtc {
 function Read-Message {
     # One message file. Sender, receiver and number come from where the file is, not from what it says.
     param([string]$Path)
+    # Direct show, reply and report calls must refuse links just as the inbox listing does.
+    if (Test-Link $Path) { return $null }
     $text = (Read-Text $Path) + "`n"
     # Ordinal: a culture's comparison skips characters such as the soft hyphen, and "-<SHY>--" would be a "---"
     if (-not $text.StartsWith("---`n", [System.StringComparison]::Ordinal)) { return $null }
@@ -602,7 +604,7 @@ function Get-AwaitedReply {
     $closed = New-Object System.Collections.Hashtable -ArgumentList ([System.StringComparer]::Ordinal)
     foreach ($entry in @(Get-InboxEntry $script:Me)) {
         $message = Read-Message $entry.Path
-        if ($null -ne $message -and @('result', 'answer') -ccontains $message.Type -and $message.Re) { $closed[$message.Re] = $true }
+        if ($null -ne $message -and @('result', 'answer') -ccontains $message.Type -and $message.Re) { $closed["$($message.From)>$($message.Re)"] = $true }
     }
     foreach ($other in @(Get-Roster -IncludeRetired)) {
         if ($other -eq $script:Me) { continue }
@@ -611,7 +613,8 @@ function Get-AwaitedReply {
             $message = Read-Message $entry.Path
             if ($null -eq $message) { continue }
             if (@('task', 'question', 'proposal') -cnotcontains $message.Type) { continue }
-            if (-not $closed.ContainsKey($message.Id)) { $awaited.Add($message) }
+            # Only the receiver of this request can answer it.
+            if (-not $closed.ContainsKey("$other>$($message.Id)")) { $awaited.Add($message) }
         }
     }
     return @($awaited.ToArray())

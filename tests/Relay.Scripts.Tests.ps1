@@ -273,8 +273,8 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         $first.Id | Should -Be 'pester-psscriptanalyzer-training-vm'
         (Read-RelayKeyValue (Join-Path $first.Path 'ROOM'))['tab_titles'] | Should -Be 'yes'
 
-        # The same work again: the name stays, the date tells the two apart, then a number
-        $today = (Get-Date).ToString('yyyy-MM-dd')
+        # The same work again: the name stays, the UTC date tells the two apart, then a number.
+        $today = [DateTime]::UtcNow.ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
         $second = & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $file -PassThru
         $second.Id | Should -Be "pester-psscriptanalyzer-training-vm-$today"
         $third = & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $file -PassThru
@@ -409,7 +409,7 @@ Describe 'New-RelayRoom' -Tag 'Scripts' {
         [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject ([ordered]@{ job = 'Left over'; room_name = 'left over'; rooms_root = (Join-Path $root 'rooms'); open_seats = 1 })))
         $null = New-Item -ItemType Directory -Path (Join-Path $root 'local\rooms\left-over') -Force
         $made = & (Join-Path $scripts 'New-RelayRoom.ps1') -AnswersFile $file -PassThru
-        $made.Id | Should -Be ('left-over-' + (Get-Date).ToString('yyyy-MM-dd'))
+        $made.Id | Should -Be ('left-over-' + [DateTime]::UtcNow.ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture))
         @(Test-RelayTamper (Resolve-RelayRoom $made.Id)).Count | Should -Be 0
     }
 

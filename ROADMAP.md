@@ -18,6 +18,18 @@ cards; a room that is treated as untrusted.
   inside one account. A feature request for distributed agent teams in Claude Code
   (<https://github.com/anthropics/claude-code/issues/79507>) would cover the Claude-only half if it ships.
 
+## Owner request (2026-10-15): clipboard notices only when something was copied
+
+The owner does not want to be told when a prompt was NOT put on the clipboard; only a line saying what WAS copied.
+
+- `scripts/New-RelayRoom.ps1` (the `not on the clipboard` branch near the end) and `scripts/Add-RelayAgent.ps1` (the
+  `not on the clipboard` branches of `-Clipboard` and `-CopyJoin`): print nothing when nothing was copied; keep
+  `on the clipboard: <which prompt>` when it was. When copying was asked for and failed, say that it failed.
+- `tests/Relay.Scripts.Tests.ps1` asserts the old line (the cases that say `not on the clipboard`): change them to
+  assert that the line is absent.
+- Coordinator behaviour (SKILL.md and `references/startup-interview.md`): mention the clipboard to the owner only
+  when a prompt was copied, and say which one.
+
 ## Owner's priorities (2026-10-14)
 
 Set by the owner after the plugin-improvements room (eight agents of five products, twelve branches in two and a

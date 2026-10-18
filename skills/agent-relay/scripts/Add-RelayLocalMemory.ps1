@@ -26,7 +26,8 @@
     The text of the note. Default: with -Room, draft.md of that room on this PC (<local>\rooms\<room id>\draft.md,
     the file the coordinator's launcher names as its draft); without it, <local>\memory\draft.md. A file in a room
     folder is refused: any agent can write there. So is a path that leads into a room through a link. A relative
-    path is taken against the PowerShell location, once. The file is removed after use.
+    path is taken against the PowerShell location, once. The notes file itself is refused, including a path
+    through a linked folder, because the draft is removed after use.
 
 .PARAMETER Room
     Room id or room folder whose draft holds the text. The note itself is not tied to the room.
@@ -151,6 +152,13 @@ elseif ($DraftFile) {
     $DraftFile = $full
 }
 else { $DraftFile = Join-Path $folder 'draft.md' }
+
+# The draft is deleted after use; it must never be the notes file, even through a linked folder.
+$draftReal = Get-RelayRealPath $DraftFile
+$notesReal = Get-RelayRealPath $notesFile
+if ($draftReal -and $notesReal -and [string]::Equals($draftReal, $notesReal, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refused: the draft $DraftFile is the notes file itself. Write the note into a separate draft file."
+}
 
 $tagList = New-Object System.Collections.Generic.List[string]
 foreach ($item in @($Tags)) {

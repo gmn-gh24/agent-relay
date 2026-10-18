@@ -113,7 +113,8 @@ if (-not $PSCmdlet.ShouldProcess("$name memory: $($remove.Count) line(s)", 'Remo
 $stampFile = Format-RelayUtc -Format 'yyyyMMddTHHmmssZ'
 $evidenceFolder = Join-Path $roomObject.Local 'evidence'
 if (-not (Test-Path -LiteralPath $evidenceFolder)) { $null = New-Item -ItemType Directory -Path $evidenceFolder -Force }
-$evidence = Join-Path $evidenceFolder "memory-$name-$stampFile.txt"
+# Several repairs may happen in one second; each must keep its own evidence copy.
+$evidence = Join-Path $evidenceFolder ("memory-$name-$stampFile-{0}.txt" -f [guid]::NewGuid().ToString('N'))
 [System.IO.File]::WriteAllBytes($evidence, [System.IO.File]::ReadAllBytes($file))
 $kept = New-Object System.Collections.Generic.List[string]
 for ($index = 0; $index -lt $lines.Count; $index++) { if (-not $remove.Contains($index + 1)) { $kept.Add($lines[$index]) } }
