@@ -217,6 +217,21 @@ Describe 'Memory that nobody checks' -Tag 'Integrity' {
         { & (Join-Path $scripts 'Repair-RelayMemory.ps1') -Room $id -Agent nobody -List } | Should -Throw "*no agent 'nobody'*"
     }
 
+    It 'keeps both evidence copies when memory is repaired twice in the same second' {
+        # Keep the loaded module so the script uses this fixed clock for its evidence names.
+        Mock Import-Module { }
+        Mock Format-RelayUtc { return '20261013T100000Z' }
+        $before = [System.IO.File]::ReadAllText($memory)
+        $null = & (Join-Path $scripts 'Repair-RelayMemory.ps1') -Room $id -Agent emma -Line 2
+        $between = [System.IO.File]::ReadAllText($memory)
+        $null = & (Join-Path $scripts 'Repair-RelayMemory.ps1') -Room $id -Agent emma -Line 2
+        $copies = @(Get-ChildItem -LiteralPath (Join-Path $local 'evidence') -Filter 'memory-emma-*.txt')
+        $copies.Count | Should -Be 2
+        $contents = @($copies | ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) })
+        $contents | Should -Contain $before
+        $contents | Should -Contain $between
+    }
+
     It 'sees an empty memory file as no lines, and does not write blank lines into it' {
         [System.IO.File]::WriteAllText($memory, '', $utf8)
         $listing = @(& (Join-Path $scripts 'Repair-RelayMemory.ps1') -Room $id -Agent emma -List)

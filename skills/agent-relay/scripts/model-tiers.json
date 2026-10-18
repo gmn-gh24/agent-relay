@@ -3,7 +3,7 @@
   "tiers": [
     { "tier": "light", "words": [ "haiku", "mini", "nano", "flash", "lite", "small", "instant" ] },
     { "tier": "standard", "words": [ "luna" ] },
-    { "tier": "strong", "words": [ "opus", "fable", "astra", "sol", "terra", "pro", "ultra", "gpt-5", "gpt-6", "o3", "o4" ] },
+    { "tier": "strong", "words": [ "opus", "fable", "astra", "sol", "terra", "pro", "ultra", "gpt-5", "gpt-6", "o3", "o4", "kimi" ] },
     { "tier": "standard", "words": [ "sonnet", "gpt-4", "gemini", "codex", "medium" ] }
   ]
 }

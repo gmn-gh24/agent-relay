@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Protect local memory from being consumed as its own draft, preserve evidence from repairs in the same
+  second, and convert local times to UTC before formatting them.
+- Refuse linked message files in direct room commands, and keep a request pending until its receiver replies.
+- Replace tests that copied and launched system executables with mocked process records; correct UTC date
+  expectations and add regression coverage for the PowerShell fixes.
+- Add Kimi to the strong model tier and record the owner's clipboard priorities and room setup lessons.
+
 ## 0.11.0 (2026-10-15)
 
 One room, eighteen branches: the plugin-improvements room ran eight agents of five products for a day, each

@@ -789,6 +789,7 @@ Describe 'Shared helpers of the module: fixed time stamps, strict reads, whole w
             foreach ($name in 'fi-FI', 'th-TH', 'ar-SA', 'en-US') {
                 [System.Threading.Thread]::CurrentThread.CurrentCulture = New-Object System.Globalization.CultureInfo $name
                 Format-RelayUtc $time | Should -Be '2026-10-10T21:47:49Z'
+                Format-RelayUtc $time.ToLocalTime() | Should -Be '2026-10-10T21:47:49Z'
                 Format-RelayUtc $time 'yyyyMMddTHHmmssZ' | Should -Be '20261010T214749Z'
                 (ConvertFrom-RelayUtc '2026-10-10T21:47:49Z') | Should -Be $time
             }

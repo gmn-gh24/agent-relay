@@ -924,3 +924,9 @@ five products; twelve branches were accepted in two and a half hours, eighteen m
   passed `-StaticOnly` and failed only when Windows PowerShell 5.1 loaded the file; the local runner seat
   reported the parser's words and the fix took a minute. Not changed yet: a parse pass over every `.ps1`
   and `.psm1` on both engines belongs in the static step (the room's improvements file lists it).
+- **A whole user profile is not a root (room "laptop ollama setup", 2026-10-15).** Assigning an agent's whole profile
+  folder (with live AppData) as a root made the agent's own `wait` crash twice with "cannot find the file specified"
+  at the manifest scan, so a task and a note sat unread for about 20 minutes. Assign the narrow folders the agent edits
+  (one folder per client config) and check that its `wait` runs before sending the first task. Not changed yet: the
+  scan should skip per-item errors, `-Roots` should warn about a profile or drive root, and a missing root should count
+  as empty (the room's improvements file lists them).
