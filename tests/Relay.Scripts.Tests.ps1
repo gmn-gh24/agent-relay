@@ -615,6 +615,38 @@ Describe 'Agent names' -Tag 'Scripts' {
     }
 }
 
+Describe 'Agent kinds' -Tag 'Scripts' {
+
+    It 'gives every kind in agent-kinds.json its wait, context and what to give it, and knows antigravity, cursor-agent and opencode' {
+        # Read from the file itself, not from the module's kept copy of the table
+        $table = ConvertFrom-Json ([System.IO.File]::ReadAllText((Join-Path $scripts 'agent-kinds.json')))
+        foreach ($kind in $table.PSObject.Properties) {
+            $name = $kind.Name
+            $value = $kind.Value
+            $fields = @($value.PSObject.Properties | ForEach-Object { $_.Name })
+            foreach ($field in 'label', 'wake', 'wait_minutes', 'context_tokens', 'give_it', 'status') {
+                $fields | Should -Contain $field -Because "the kind $name needs $field"
+            }
+            ([string]$value.label).Trim() | Should -Not -BeNullOrEmpty -Because "$name.label"
+            ([string]$value.status).Trim() | Should -Not -BeNullOrEmpty -Because "$name.status"
+            ([string]$value.give_it).Trim() | Should -Not -BeNullOrEmpty -Because "$name.give_it"
+            @('background', 'loop', 'manual') | Should -Contain $value.wake -Because "$name.wake"
+            (($value.wait_minutes -is [int]) -or ($value.wait_minutes -is [long])) | Should -BeTrue -Because "$name.wait_minutes is a whole number"
+            $value.wait_minutes | Should -BeGreaterOrEqual 0 -Because "$name.wait_minutes"
+            if ($value.wake -eq 'loop') { $value.wait_minutes | Should -BeGreaterThan 0 -Because "$name waits in a loop" }
+            (($value.context_tokens -is [int]) -or ($value.context_tokens -is [long])) | Should -BeTrue -Because "$name.context_tokens is a whole number"
+            $value.context_tokens | Should -BeGreaterOrEqual 0 -Because "$name.context_tokens"
+        }
+        $known = @(Get-RelayAgentKindName)
+        foreach ($name in 'antigravity', 'cursor-agent', 'opencode') {
+            $known | Should -Contain $name
+            # Not the generic profile that an unknown name falls back to
+            (Get-RelayAgentKind $name).label | Should -Be $table.$name.label
+            (Get-RelayAgentKind $name).wake | Should -Be 'loop'
+        }
+    }
+}
+
 Describe 'Add-RelayAgent' -Tag 'Scripts' {
 
     BeforeEach {

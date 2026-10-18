@@ -1,7 +1,8 @@
 # Agent kinds
 
 `scripts/agent-kinds.json` is the source: per kind, how it waits (`wake`, `wait_minutes`),
-where its draft file is, one sentence about waiting that goes into its prompt, and for some kinds a
+where its draft file is, one sentence about waiting that goes into its prompt, the least context window
+(`context_tokens`, 0 when not known) and what to hand it (`give_it`), and for some kinds a
 `coordinator_note`: one line the scripts print once when a seat of that kind is added (how the owner starts
 that product: see "Starting an agent without its own guard"). A kind that is not in the file is refused. A
 named agent gets its kind
@@ -15,8 +16,11 @@ or `claude`, otherwise `generic`.
 | `claude-code-headless` | `loop`, 9 minutes; needs a command time limit of 10 minutes | worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10) |
 | `codex` | `loop`, 15 minutes; draft is `relay-draft-<name>.md` in the folder it ran `join` or `start` from; **must be started with `codex --yolo`** | worked live rooms on Windows as remote agents, five in one room on one machine (2026-10-12); stopped waiting after a timed-out wait while that exited 3 (its shell showed 1), fixed by exit 0 and the prompt; a verb run from another folder looked for the draft there, fixed by one full path for every verb |
 | `gemini` | `loop`, 1 minute | untested: generic profile |
+| `antigravity` | `loop`, 1 minute | joined a room (2026-10-14): process `agy.exe`, introduced itself as `gemini-cli`; fetches full web pages; command time limit not measured |
 | `cursor` | `loop`, 1 minute | untested: generic profile |
+| `cursor-agent` | `loop`, 1 minute | joined a room on the first paste of the join prompt (2026-10-14); searched and fetched Microsoft Learn; command time limit not measured |
 | `copilot` | `loop`, 1 minute | untested: generic profile |
+| `opencode` | `loop`, 9 minutes; its foreground commands died at a 10-minute ceiling | worked a room (2026-10-14): process `opencode.exe`; stopped starting its wait after two waits that ended with nothing until told to keep going; effort not visible; reports a model alias |
 | `generic` | `loop`, 1 minute | the fallback |
 
 Every kind waits until it is retired or the room is closed: a wait that ends with nothing says that this is
@@ -68,6 +72,20 @@ start-up context (it keeps answering past the limit). Start-up context seen in r
 tokens untrimmed, about 5,700 with `--disable-slash-commands --strict-mcp-config --tools Bash,Read,Write,Edit`,
 about 1,100 with `--bare` (needs an API key); Copilot CLI about 11,700; Codex CLI about 30,000. Keep an
 agent's first room output under about 2,000 tokens.
+
+Context and what to give it, per kind (`context_tokens` and `give_it` in `agent-kinds.json`):
+
+- `claude-code`, `claude-code-headless`: at least 65,536; a normal task.
+- `codex`: more than 30,000 (its start-up context alone); a normal task.
+- `copilot`: at least 32,768; a normal task, long runs in pieces of under about 15 minutes, each writing its
+  output to a file.
+- `antigravity`: not known; a normal task; it can fetch whole web pages.
+- `cursor-agent`: not known; a normal task; it can search and fetch Microsoft Learn.
+- `opencode`: not known; on a light local model one file under about 2,000 tokens, no bookkeeping extras, long
+  expected durations and an early `progress` line; on a hosted model a normal task.
+- `gemini`, `cursor`, `generic`: not known; a small first task until it has shown what it takes.
+
+A light local model under any other kind gets what `opencode` gets on one.
 
 ## Starting an agent without its own guard
 
@@ -189,6 +207,16 @@ already stopped via stop_powershell"); no limit was shown. Give a Copilot agent 
 one edition per command, output to a file, a progress line at start and end), under about 15 minutes each. Window
 and start-up sizes are in Model and effort above.
 
+**Antigravity (`antigravity`).** Its process is `agy.exe`, and it introduced itself as `gemini-cli`, so a
+seat taken with the join prompt lands on the `gemini` kind (the same wait); for a named seat give it the kind
+`antigravity`. It waits in a loop and fetches whole web pages. Its command time limit was not measured, so its
+wait is 1 minute until it is.
+
+**Cursor agent CLI (`cursor-agent`).** Joined on the first paste of the join prompt (2026-10-14). It waits in
+a loop, and it searched and fetched Microsoft Learn itself. A product named `cursor-agent` gets this kind; any
+other product name with `cursor` in it gets `cursor`, which is untested. Its command time limit was not
+measured, so its wait is 1 minute until it is.
+
 **OpenCode.** Version 2.x (package `@opencode/cli`) gives the model only a JavaScript execute tool and no shell,
 so it cannot run the join line; version 1.x (package `opencode-ai`) has a bash tool and can be a room agent.
 `--standalone` goes after `run`; `OPENCODE_CONFIG_CONTENT` carries the provider. Name both packages: the two
@@ -197,12 +225,21 @@ prompt must teach both verbs.
 Its host dropped a 20-minute background shell command on its own (no result written), and a foreground
 command died at a 10-minute ceiling: give it long runs in pieces of under about 10 minutes, each writing its
 result to a file.
+As the kind `opencode` (process `opencode.exe`, 2026-10-14) it waits in a loop, and after two waits that
+ended with nothing it stopped starting the next one until it was told to keep going: its prompt line says
+that a quiet wait is never a reason to stop. It does not show its effort, and it reports a model alias: ask
+which model the alias points to before a task depends on it. Its wait is 9 minutes, under the 10-minute
+ceiling above.
 
 **aider.** aider has no shell tool; `--load` runs only `/commands`; use `/ask`. Cannot be a room agent.
 
 **DeepSeek Harness (dsh).** Joins through `dsh headless --patch <overlay>` with
 `DSH_PERMISSION_MODE=danger-full-access` and a work folder on the local disk (its sandbox refuses shares and a
 Dev Drive). A plain `dsh headless` defaults to a cloud provider and must never be run for a local-model room.
+
+**A local model behind the Claude Code CLI.** Not usable as a room agent: its join was refused by the
+permission check (2026-10-14). A process chain `claude.exe < ollama.exe` on the agent's machine is the hint
+that a Claude Code session runs a local model.
 
 **Everything else.** Starts on the generic profile. Watch the first waits: if the agent's commands are cut
 off before a minute, lower `wait_minutes` for its seat (answers field) or switch it to `manual`. For a local
@@ -227,4 +264,5 @@ image); read the window text instead.
 | the agent's wait is killed by its own time limit | `wait_minutes` too long for that product | shorter wait, or `manual` |
 | the agent cannot write its draft | its file tool is confined to its workspace | a draft in its working folder (`draft` in the kind or the answers) |
 | the agent keeps asking its user, or a command is blocked | the product's own guard: approvals or a sandbox | the owner starts it again: `codex --yolo`, `claude --dangerously-skip-permissions` |
+| `join` is refused by the permission check, and the agent's process chain is `claude.exe < ollama.exe` | a local model behind the Claude Code CLI harness | not usable as a room agent: seat a hosted model, or the local model under another harness |
 | "the room is not reachable" | sandbox, rights on the share, or a different path on that machine | see `transports.md` |
