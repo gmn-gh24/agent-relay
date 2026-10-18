@@ -615,6 +615,38 @@ Describe 'Agent names' -Tag 'Scripts' {
     }
 }
 
+Describe 'Agent kinds' -Tag 'Scripts' {
+
+    It 'gives every kind in agent-kinds.json its wait, context and what to give it, and knows antigravity, cursor-agent and opencode' {
+        # Read from the file itself, not from the module's kept copy of the table
+        $table = ConvertFrom-Json ([System.IO.File]::ReadAllText((Join-Path $scripts 'agent-kinds.json')))
+        foreach ($kind in $table.PSObject.Properties) {
+            $name = $kind.Name
+            $value = $kind.Value
+            $fields = @($value.PSObject.Properties | ForEach-Object { $_.Name })
+            foreach ($field in 'label', 'wake', 'wait_minutes', 'context_tokens', 'give_it', 'status') {
+                $fields | Should -Contain $field -Because "the kind $name needs $field"
+            }
+            ([string]$value.label).Trim() | Should -Not -BeNullOrEmpty -Because "$name.label"
+            ([string]$value.status).Trim() | Should -Not -BeNullOrEmpty -Because "$name.status"
+            ([string]$value.give_it).Trim() | Should -Not -BeNullOrEmpty -Because "$name.give_it"
+            @('background', 'loop', 'manual') | Should -Contain $value.wake -Because "$name.wake"
+            (($value.wait_minutes -is [int]) -or ($value.wait_minutes -is [long])) | Should -BeTrue -Because "$name.wait_minutes is a whole number"
+            $value.wait_minutes | Should -BeGreaterOrEqual 0 -Because "$name.wait_minutes"
+            if ($value.wake -eq 'loop') { $value.wait_minutes | Should -BeGreaterThan 0 -Because "$name waits in a loop" }
+            (($value.context_tokens -is [int]) -or ($value.context_tokens -is [long])) | Should -BeTrue -Because "$name.context_tokens is a whole number"
+            $value.context_tokens | Should -BeGreaterOrEqual 0 -Because "$name.context_tokens"
+        }
+        $known = @(Get-RelayAgentKindName)
+        foreach ($name in 'antigravity', 'cursor-agent', 'opencode') {
+            $known | Should -Contain $name
+            # Not the generic profile that an unknown name falls back to
+            (Get-RelayAgentKind $name).label | Should -Be $table.$name.label
+            (Get-RelayAgentKind $name).wake | Should -Be 'loop'
+        }
+    }
+}
+
 Describe 'Add-RelayAgent' -Tag 'Scripts' {
 
     BeforeEach {
@@ -2195,6 +2227,34 @@ Describe 'Open seats' -Tag 'Scripts' {
         { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'params' -Assign $open[0] } | Should -Throw '*Give the assignment*'
         { & (Join-Path $scripts 'Add-RelayAgent.ps1') -Room 'params' -Assign $open[0] -Roots '=src/*' } | Should -Throw '*A root is a folder*'
         @(Test-RelayTamper (Resolve-RelayRoom 'params')).Count | Should -Be 0
+    }
+
+    It 'does not call a root read-only when the may list opens it, and says so again when -RemoveMay empties that list' {
+        $room = (New-RelayTestRoom -Root $root -RoomId 'maycall' -Extra @{ open_seats = 1 }).Path
+        $name = @(Get-RelayTestOpenSeat $room)[0]
+        (Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'm', 'e')).ExitCode | Should -Be 0
+        $add = Join-Path $scripts 'Add-RelayAgent.ps1'
+        $file = Join-Path $room "agents\$name\ASSIGNMENT.md"
+        $readOnly = '- `C:\work\kit`: read-only for you.'
+        $opened = '- `C:\work\kit`: you may change what "You may, without asking" below allows. The rest of this folder is read-only for you.'
+        $null = & $add -Room 'maycall' -Assign $name -Role tester -Work testing -Task 'Run the suite on the kit.' -DoneWhen 'A report is sent.' -Roots 'C:\work\kit' -May 'edit tests/*'
+        $first = Get-Content -LiteralPath $file -Raw
+        $first | Should -Not -Match ([regex]::Escape($readOnly))
+        $first | Should -Match ([regex]::Escape($opened))
+        $first | Should -Match '- edit tests/\*'
+        # The scope file holds the root alone: the may list is not a pattern of the root
+        ((Get-Content -LiteralPath (Join-Path $room "agents\$name\scope") -Raw) -replace "`r", '') | Should -Be "root: C:\work\kit`n"
+
+        # The list emptied: the root is read-only again
+        $null = & $add -Room 'maycall' -Assign $name -RemoveMay 'edit tests/*'
+        $assignment = Get-Content -LiteralPath $file -Raw
+        $assignment | Should -Match ([regex]::Escape($readOnly))
+        $assignment | Should -Not -Match ([regex]::Escape($opened))
+        # The line back: the same text as the full assignment
+        $null = & $add -Room 'maycall' -Assign $name -AddMay 'edit tests/*'
+        (Get-Content -LiteralPath $file -Raw) | Should -Be $first
+
+        @(Test-RelayTamper (Resolve-RelayRoom 'maycall')).Count | Should -Be 0
     }
 
     It 'changes one list of an assignment with -Add and -Remove parameters and keeps every other field' {

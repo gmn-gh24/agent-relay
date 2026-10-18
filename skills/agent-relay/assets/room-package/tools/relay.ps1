@@ -31,7 +31,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.7.0'
+$script:ToolVersion = '3.8.0'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -577,6 +577,18 @@ function Get-Roster {
     }
     $names.Sort([System.StringComparer]::Ordinal)
     return @($names.ToArray())
+}
+
+function Test-FreeSeat {
+    # A seat nobody has taken yet is not an agent: open, no claim, not retired, and a card without a
+    # single key: value line
+    param([string]$Agent)
+    $dir = Get-AgentDir $Agent
+    if ((Get-Value (Read-KeyValue (Join-Path $dir 'seat')) 'open' '') -ne 'yes') { return $false }
+    if ((Read-KeyValue (Join-Path $dir 'card')).Count -gt 0) { return $false }
+    if (Test-Path -LiteralPath (Join-Path $dir 'claim')) { return $false }
+    if (Test-Path -LiteralPath (Join-Path $dir 'retired')) { return $false }
+    return $true
 }
 
 function Get-DeliveredSet {
@@ -2476,8 +2488,7 @@ function Invoke-Team {
         $dir = Get-AgentDir $agent
         $card = Read-KeyValue (Join-Path $dir 'card')
         $seat = Read-KeyValue (Join-Path $dir 'seat')
-        # A seat nobody has taken yet is not an agent: open, no claim, and a card without a single key: value line
-        if ((Get-Value $seat 'open' '') -eq 'yes' -and $card.Count -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $dir 'claim'))) { continue }
+        if (Test-FreeSeat $agent) { continue }
         $state = Get-Value (Read-KeyValue (Join-Path $dir 'status')) 'state' 'not started'
         if ($state -eq 'listening') {
             $alive = Get-FileTimeUtc (Join-Path $dir 'alive')
@@ -3879,6 +3890,7 @@ function Invoke-Send {
     $rest = @($parsed.Rest)
     $minutes = 0
     $targets = @()
+    $skippedSeats = New-Object System.Collections.Generic.List[string]
     # task <name> [anyway] [<minutes>]: a plain number is how long the task should take. Without one the room's
     # default holds (task_minutes). No agent name is a number, so the two cannot be mixed up.
     $expected = 0
@@ -3899,7 +3911,12 @@ function Invoke-Send {
     elseif ($rest.Count -ge 1) {
         if ($rest[0] -eq 'all') {
             if (-not $script:IsCoordinator -or $Verb -ne 'note') { Exit-WithError "only the coordinator's note can go to all" "name one agent: $call $Verb <name>" }
-            $targets = @(@(Get-Roster) | Where-Object { $_ -ne $script:Me })
+            # A seat nobody has taken yet gets no note: who takes it later gets the coordinator's welcome
+            foreach ($agent in @(Get-Roster)) {
+                if ($agent -eq $script:Me) { continue }
+                if (Test-FreeSeat $agent) { $skippedSeats.Add((Get-Value (Read-KeyValue (Join-Path (Get-AgentDir $agent) 'seat')) 'display' $agent)); continue }
+                $targets += $agent
+            }
         }
         else { $targets = @($rest[0]) }
     }
@@ -3970,6 +3987,7 @@ function Invoke-Send {
         return 0
     }
     Say ("SENT $($sentIds -join ', ') ($type) to " + ((@($targets | ForEach-Object { Get-DisplayName $_ })) -join ', '))
+    if ($skippedSeats.Count -gt 0) { Say (ConvertTo-PrintableText "not sent to the free seats ($($skippedSeats.Count)), nobody there yet: $($skippedSeats -join ', ')") }
     foreach ($byeWarning in $byeWarnings) { Say $byeWarning }
     if ($Verb -eq 'task') {
         if ($script:TaskLog -and $notNoted.Count -eq 0) { Say "expected: $expected minutes. Your wait wakes you when the receiver has sent nothing for that long." }
@@ -4026,8 +4044,7 @@ function Invoke-Who {
         $card = Read-KeyValue (Join-Path $dir 'card')
         $seat = Read-KeyValue (Join-Path $dir 'seat')
         $isOpen = ((Get-Value $seat 'open' '') -eq 'yes')
-        # A seat nobody has taken yet is not an agent
-        if ($isOpen -and $card.Count -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $dir 'claim')) -and -not (Test-Path -LiteralPath (Join-Path $dir 'retired'))) { $free.Add((Get-Value $seat 'display' $agent)); continue }
+        if (Test-FreeSeat $agent) { $free.Add((Get-Value $seat 'display' $agent)); continue }
         $status = Read-KeyValue (Join-Path $dir 'status')
         $state = Get-Value $status 'state' 'not started'
         if (Test-Path -LiteralPath (Join-Path $dir 'retired')) { $state = 'retired' }

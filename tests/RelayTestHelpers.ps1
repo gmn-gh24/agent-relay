@@ -18,6 +18,57 @@ function Get-RelayTestPath {
     }
 }
 
+function Test-RelayTestManifest {
+    # The problems between .claude-plugin\plugin.json and the plugins entry of marketplace.json whose source is
+    # ./: the name, the description, and the version when the entry has one. Empty when they agree. Reads only.
+    param([Parameter(Mandatory)][string]$PluginPath, [Parameter(Mandatory)][string]$MarketplacePath)
+    $found = New-Object System.Collections.Generic.List[string]
+    $documents = @{}
+    foreach ($pair in @(@('plugin.json', $PluginPath), @('marketplace.json', $MarketplacePath))) {
+        $label = $pair[0]
+        $parsed = $null
+        try {
+            $parsed = [System.IO.File]::ReadAllText($pair[1]) | ConvertFrom-Json
+            if ($null -eq $parsed -or $parsed -isnot [System.Management.Automation.PSCustomObject]) { throw 'the file holds no JSON object' }
+        }
+        catch {
+            $message = $_.Exception.GetBaseException().Message -replace '\s+', ' '
+            $found.Add("plugin manifests: cannot read $label`: $($message.Trim())")
+            return $found.ToArray()
+        }
+        $documents[$label] = $parsed
+    }
+    # A field that is missing or not a string reads as '': a difference, not an error under strict mode
+    $readText = {
+        param($Object, [string]$Name)
+        if ($null -eq $Object) { return '' }
+        $property = $Object.PSObject.Properties[$Name]
+        if ($null -eq $property -or $property.Value -isnot [string]) { return '' }
+        return [string]$property.Value
+    }
+    $plugin = $documents['plugin.json']
+    $entries = @()
+    $plugins = $documents['marketplace.json'].PSObject.Properties['plugins']
+    if ($null -ne $plugins -and $null -ne $plugins.Value) {
+        $entries = @(@($plugins.Value) | Where-Object { $null -ne $_ -and $_ -is [System.Management.Automation.PSCustomObject] -and (& $readText $_ 'source') -ceq './' })
+    }
+    if ($entries.Count -ne 1) {
+        $found.Add("plugin manifests: marketplace.json has $($entries.Count) plugins entries with source ./, expected 1")
+        return $found.ToArray()
+    }
+    $entry = $entries[0]
+    $entryName = & $readText $entry 'name'
+    $pluginName = & $readText $plugin 'name'
+    if ($entryName -cne $pluginName) { $found.Add("plugin manifests: marketplace.json plugin name '$entryName' differs from plugin.json name '$pluginName'") }
+    if ((& $readText $entry 'description') -cne (& $readText $plugin 'description')) { $found.Add('plugin manifests: marketplace.json plugin description differs from plugin.json description') }
+    if ($null -ne $entry.PSObject.Properties['version']) {
+        $entryVersion = & $readText $entry 'version'
+        $pluginVersion = & $readText $plugin 'version'
+        if ($entryVersion -cne $pluginVersion) { $found.Add("plugin manifests: marketplace.json plugin version '$entryVersion' differs from plugin.json version '$pluginVersion'") }
+    }
+    return $found.ToArray()
+}
+
 function Get-RelayTestPwsh {
     if ($PSVersionTable.PSVersion.Major -ge 6) { return (Get-Process -Id $PID).Path }
     $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe'

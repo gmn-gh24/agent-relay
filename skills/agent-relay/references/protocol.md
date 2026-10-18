@@ -120,7 +120,9 @@ environment turns that off).
 `join` (room-level), `start`, `wait [minutes]`, `check`, `show <id>|open|rules`, `reply <id> [approve|deny]`,
 `report [<task id>]`, `ask`, `propose <minutes>`, `note`, `who`, `team`, `progress`, `remember [tag ...]`,
 `find [word|tag:name ...]`, `bye`; the coordinator
-also has `task <name> [anyway] [<minutes>]`, `ask <name>`, `note <name>|all`. Arguments are single plain words;
+also has `task <name> [anyway] [<minutes>]`, `ask <name>`, `note <name>|all`. `note all` skips a free seat
+(open, no card, no claim, not retired) and says so in one line; a later joiner gets its context from the
+welcome. Arguments are single plain words;
 text comes from the draft file. The words of `join` and `start` (product, model, effort) are taken as a user
 types them: a quoted word with blanks, or more than three words, becomes product, one model word with a dash
 for each blank, and effort; what then holds another character than letters, digits, dot and dash is refused

@@ -101,8 +101,9 @@ wait, send the welcome again as `ask <name>`, and tell the owner when that stays
 Three questions, in this order, for every task before it goes out. The board answers the first two in its
 `rights:` and `models:` lines.
 
-1. **Can it do the task alone?** Rights, shell, machine, product (see Introductions). An agent that cannot
-   is not a candidate, however good its model. That includes checking its own work: an agent whose machine
+1. **Can it do the task alone?** Rights, shell, machine, product, and the tools its product has (a full-page
+   fetch, for example): read them in its introduction and on the board before the task goes out. An agent
+   that cannot is not a candidate, however good its model. That includes checking its own work: an agent whose machine
    has no PowerShell 7 cannot run a test under `pwsh` (its introduction lists the shells its machine has). Give
    such a check to an agent that has the engine, or say in the task that you run it and when.
 2. **Is its model the right strength?** The lightest model that does a job well gets it:
@@ -222,27 +223,44 @@ work really takes, with the long command in it, not a hope: a task that runs a t
 five-minute task. One task per message. Long material goes into the room's `work` folder or as an attachment
 (put the files into your `attach` folder before you send), with the message pointing at it.
 
-When "done when" cannot be reached without a change that the assignment lists under "never", the task cannot
-carry the approval: the agent will ask its owner, every time, and it is right to. Re-assign first (`-Assign`
-with the wider `-May` or `-ProposeOk`, or a shorter `-Never`; or one line with `-AddMay`, `-AddProposeOk` or
-`-RemoveNever`, which keep every other field), then send. Your tool reads this PC's copy of
-the receiver's assignment before it sends a task (never the room's, which any agent can edit): when the
-task's words run into a line under "Never" or "Not part of this
-task" (requested actions in the task's active sentences), it refuses with `NOT SENT`, names the line, prints
-the task sentence that matched, and keeps your draft. Re-assign and send again; when the line does not apply,
-send it as it is with `task <name> anyway`. Negated clauses (`do not push`, `no install`) are ignored; noun
-mentions alone do not count unless the line is nouns only and two appear in one sentence. Read the matched
-sentence before you decide. Better, foresee it at assignment time: a test job on a
-disposable machine will need uninstalls, registry writes and files outside the work folder before it ends.
-When the change is one the assignment lists under "ask first", decide it
-before you send: approve that one change in the task itself, or record it as a standing rule first. And when a report's self-audit shows a change outside the assigned paths that you
-approved, that is as it should be: the audit lists what changed, not what was allowed, and the approval is
-in your own message.
+- When "done when" cannot be reached without a change that the assignment lists under "never", the task cannot
+  carry the approval: the agent will ask its owner, every time, and it is right to. Re-assign first (`-Assign`
+  with the wider `-May` or `-ProposeOk`, or a shorter `-Never`; or one line with `-AddMay`, `-AddProposeOk` or
+  `-RemoveNever`, which keep every other field), then send.
+- Your tool reads this PC's copy of the receiver's assignment before it sends a task (never the room's, which
+  any agent can edit): when the task's words run into a line under "Never" or "Not part of this task"
+  (requested actions in the task's active sentences), it refuses with `NOT SENT`, names the line, prints the
+  task sentence that matched, and keeps your draft. Re-assign and send again; when the line does not apply,
+  send it as it is with `task <name> anyway`.
+- Negated clauses (`do not push`, `no install`) are ignored; noun mentions alone do not count unless the line is
+  nouns only and two appear in one sentence. Read the matched sentence before you decide.
+- Better, foresee such a change at assignment time: a test job on a disposable machine will need uninstalls,
+  registry writes and files outside the work folder before it ends.
+- When the change is one the assignment lists under "ask first", decide it before you send: approve that one
+  change in the task itself, or record it as a standing rule first.
+- When a report's self-audit shows a change outside the assigned paths that you approved, that is as it should
+  be: the audit lists what changed, not what was allowed, and the approval is in your own message.
 
 Things a task says when they apply:
 
 - **Where to work.** Agents copy what they need out of the room and work on their own disk (their
   instructions say so). Name the folder in `work` to copy from, and say that results come back as attachments.
+  List by name the files you attached and the ones the agent is expected to read; "the kit" leaves it to
+  guess which.
+- **The shell.** Name the shell the commands are written for (`pwsh`, `powershell`, cmd or Git Bash).
+  Otherwise the agent runs them in its own, which its introduction names and which may be another.
+- **A protocol check.** Give the exact request or wire text to send and the reply to expect, or say "skip if
+  unknown". An agent that rebuilds a protocol from its name tests its guess, not the product.
+- **An agent that works one task at a time.** Send its next task after its result for the last one, not a
+  queue of them behind it.
+- **A screenshot of a destructive feature.** Say "do not trigger it": the agent opens the screen, captures
+  it and leaves it as it was. A delete, reset or uninstall that runs by mistake cannot be taken back.
+- **UI testing on a virtual machine.** Say up front that the machine's console must stay unlocked for the
+  whole task: a locked screen leaves nothing to click or capture. The agent's first step checks for a lock
+  and reports one at once, not after the first step that fails.
+- **A group.** When an instruction names a group ("the test machines", "the others") and the requests it
+  leads to cannot be taken back (a retire, a delete, an uninstall), write out the members you take it to
+  mean and confirm the set with whoever gave the instruction before the first one goes out.
 - **A long run.** A command that runs for many minutes is lost when the agent's session ends, and nobody
   knows how it came out. Ask for it in pieces (one test file, one engine at a time), each with its output
   written to a file in the agent's own folder, and for the files with the report. The agent's instructions
@@ -259,6 +277,9 @@ Things a task says when they apply:
   statements or a path with a space. Ask for one delete per command, and say which other way is allowed for a
   path the guard refuses. A helper process that must stay alive (one started as another user, for example) is
   started from a background command: from a foreground call it holds that call until it ends.
+- **The delivery method.** Ask the agent to say so when the way the files reach it looks heavier than the
+  check needs (a full installer to check one changed file, for example): it sees the machine's side of the
+  cost. Its answer goes into your next choice of path (SKILL.md, "Proportionate effort").
 
 ### A task that is overdue
 
@@ -398,6 +419,10 @@ owner states it again.
    commit line, every RESULT line copied) is what a small model does well; writing code, keeping a habit over
    many steps (check between steps) and judging a diff are what it drops. Two of three local seats in one room
    were retired for silence; the runner seat caught a merge error the coordinator had made.
+7. **An owner decision about how something is done holds in this room from the next time.** When the owner
+   says how a thing is to be done, often while a fault is being written up as an improvement for the plugin,
+   it is not only a note for a later version: do it that way the next time it comes up in this room, and
+   record it at once (`scripts/Add-RelayDecision.ps1 -Owner`) so the agents' tools show it too.
 
 ## Messages from the owner
 
@@ -426,6 +451,8 @@ you act on it. Thank the agent: it did the right thing by telling you and not ac
 | reported N min ago, nothing sent to it since | its last message was a report, it has no open task, and you have sent it nothing since | give it its next task or its reminder |
 | OVERDUE, next to an open task | the agent has sent nothing for the time its task should take | "A task that is overdue": ask it now; when that stays unanswered, hand the task on or tell the owner |
 | working, woken by N message(s), and nothing follows | the message was delivered and the agent's wait ended, but its session sits idle at a prompt or at a permission question and did not react | nothing is lost and nothing is to be sent again. Ask the owner to look at that session and type "check the room" |
+| working, woken by N idle-without-wait agent(s), on your own row (`*`) | your wait ended because N agents have no open task and have had no wait running for 3 minutes or more: it printed an `ATTENTION` line for each, once per agent, and the board marks the same agents ATTENTION. Such an agent reads nothing: what you send it lies in its inbox | ask the owner to tell each of those sessions to run wait, then run your own wait again |
+| working, woken by N overdue task(s), on your own row (`*`) | your wait ended with N `OVERDUE` blocks: an agent has sent nothing for the time its task should take, or (the second block, once per task) is still silent later. The board marks the same tasks OVERDUE | "A task that is overdue": do what each block's DO line says, with the board in front of you, then run your own wait again |
 | not started | a named agent whose prompt was never pasted | owner pastes it |
 | took a seat but has not introduced itself | join was interrupted | owner looks at that session; `-Retire` the seat if it is dead |
 | tried to join and found no free seat | more agents than seats | `-OpenSeats <n>`, then the owner tells that agent to run join again |

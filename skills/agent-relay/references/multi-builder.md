@@ -37,6 +37,11 @@ who decides and the one who puts the parts together. What made this work in a re
    reader of the same file: the author of one reads the other line by line next to its own and lists every
    place they differ. Run each finding on both before you decide which side moves, and write the decision
    into the contract.
+10. **Each builder can run the gate where it is.** Before work is handed out, check each builder's machine: the
+    tools and runtimes the gate needs (for this repository, both PowerShell editions), the kit staged there (see
+    "The kit" below), and no other suite running on it: one test gate at a time per machine. Where a builder
+    cannot, plan a runner seat on a machine that can, one runner seat per machine, and say so in the task text:
+    who runs the gate, and where.
 
 An agent at work does not read messages: it sees a changed contract when it next waits or checks. Its
 instructions tell it to keep a wait running in the background, or to `check` between steps; not every agent

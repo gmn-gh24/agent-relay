@@ -12,6 +12,9 @@ export type RelayAgent = {
   product: string
   model: string
   effort: string
+  // The owner stated it, not the agent
+  modelOwner: boolean
+  effortOwner: boolean
   tier: string
   rights: string
   owes: number

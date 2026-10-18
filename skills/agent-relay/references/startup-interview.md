@@ -4,6 +4,13 @@ What to settle with the owner before a room is built, and how the answers become
 `scripts/New-RelayRoom.ps1` takes. Run `scripts/Get-RelayRooms.ps1` first: it shows the shares and machines
 already known on this PC, so those are not asked again.
 
+## Check that a room is wanted
+
+The interview starts by checking that the job needs a room at all. A single question to one of the owner's own
+Claude sessions needs none: say so and ask nothing more. A room is for a scoped task, an agent of another
+product, a record of the work, or more than one agent. When it is unclear which the job is, that is the first
+question, asked as a choice.
+
 ## Ask as little as the job allows
 
 The owner often just wants agents in a room now. Then three answers are enough:

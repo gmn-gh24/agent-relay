@@ -9,7 +9,8 @@
        (the byte fixtures excepted) in every file git tracks or would add, so that logs, test results and eval
        transcripts that git ignores are not part of it; every PowerShell wrapper template of the room package
        parses once its placeholders are filled in; every test file is listed for a run and every listed one
-       exists.
+       exists; the plugins entry of .claude-plugin\marketplace.json agrees with plugin.json (name, description,
+       and version when it has one).
     2. The pane: claude plugin validate and claude plugin test, when claude is on PATH.
     3. Pester 6: the room tools under PowerShell 7 and Windows PowerShell 5.1, one run per test file and engine,
        and the coordinator-side scripts under both PowerShell editions.
@@ -211,6 +212,12 @@ foreach ($file in $missingFiles) { $problems.Add("the test file $file is missing
 $unlistedFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.Tests.ps1' -File | Where-Object { $listed -notcontains $_.Name } | ForEach-Object { $_.Name })
 foreach ($file in $unlistedFiles) { $problems.Add("the test file $file is in neither `$toolFiles nor `$scriptFiles of tests\Invoke-AllTests.ps1: the gate would never run it") }
 "static: test files, $($listed.Count) listed, $($missingFiles.Count) missing, $($unlistedFiles.Count) not listed"
+
+# The marketplace lists the plugin with its own copy of the name and description: the two must not drift apart
+$manifestFolder = Join-Path $repo '.claude-plugin'
+$manifestProblems = @(Test-RelayTestManifest -PluginPath (Join-Path $manifestFolder 'plugin.json') -MarketplacePath (Join-Path $manifestFolder 'marketplace.json'))
+foreach ($problem in $manifestProblems) { $problems.Add($problem) }
+"static: plugin manifests, $($manifestProblems.Count) problem(s)"
 
 function Write-GateResult {
     # The problems, what was not tested, and the GATE line; the exit code is the number of problems

@@ -18,18 +18,6 @@ cards; a room that is treated as untrusted.
   inside one account. A feature request for distributed agent teams in Claude Code
   (<https://github.com/anthropics/claude-code/issues/79507>) would cover the Claude-only half if it ships.
 
-## Owner request (2026-10-15): clipboard notices only when something was copied
-
-The owner does not want to be told when a prompt was NOT put on the clipboard; only a line saying what WAS copied.
-
-- `scripts/New-RelayRoom.ps1` (the `not on the clipboard` branch near the end) and `scripts/Add-RelayAgent.ps1` (the
-  `not on the clipboard` branches of `-Clipboard` and `-CopyJoin`): print nothing when nothing was copied; keep
-  `on the clipboard: <which prompt>` when it was. When copying was asked for and failed, say that it failed.
-- `tests/Relay.Scripts.Tests.ps1` asserts the old line (the cases that say `not on the clipboard`): change them to
-  assert that the line is absent.
-- Coordinator behaviour (SKILL.md and `references/startup-interview.md`): mention the clipboard to the owner only
-  when a prompt was copied, and say which one.
-
 ## Owner's priorities (2026-10-14)
 
 Set by the owner after the plugin-improvements room (eight agents of five products, twelve branches in two and a
@@ -63,7 +51,6 @@ for each item).
 | Permission mode in the introduction | Record whether the agent's product guard is off (`codex --yolo`, `claude --dangerously-skip-permissions`), as a hint on the board: risky tasks go only to a machine the owner called disposable |
 | Announced model and effort | The board marks a computer-name mismatch but not a model or effort mismatch. Store what the owner announced for a seat and mark the difference |
 | Dead coordinator wait | The board cannot tell a dead coordinator wait while the feed keeps the heartbeat alive. Check what the `OVERDUE` wake of 0.7.0 still misses before building anything |
-| Notes to all | A note to all also lands in every free seat's inbox, so a late joiner sees notes from before its time. Decide: keep (context) or stop (confusing) |
 
 ## Top priority: integrity and small-context agents (from a research room, closed 2026-10-13)
 
@@ -125,29 +112,9 @@ Each is minutes of work with a test or a text change. Not done in 0.10.0; the ow
   too. Tell the owner the chosen path and its limit. (One sentence is in SKILL.md since 0.10.0.)
 - **Q23. Handing files.** Plain files for small sets, `robocopy /E /MT:16 /R:1 /W:1` for folders, a hash
   manifest, a zip only when size or count makes it faster. (One sentence is in SKILL.md since 0.10.0.)
-- **Q24. Task template.** Name the shell the commands assume; list the exact files attached and those the agent
-  is expected to read; give exact request or wire text for a protocol check or say "skip if unknown"; one task
-  at a time to an agent that works one at a time; for a screenshot of a destructive feature say "do not
-  trigger it"; ask the agent to say when the delivery method looks heavier than the check needs.
 - **Q25. Verification tasks.** Demand an exact quote per row; treat a result that arrives in a small fraction of
   its budget as a flag to spot-check; show elapsed against budget on a result's board line (needs a small
   board change; see R5).
-- **Q26. UI testing on a virtual machine.** Say up front that the console must stay unlocked; the agent's first
-  step checks for a lock and reports at once.
-- **Q27. Match the task to the agent's tools** (full-page fetch, elevation, shell) from the introductions and
-  the board before sending.
-- **Q28. `-Assign`.** The allowed values of `-Work` and `-MachineCare` are listed in SKILL.md workflow 4 since
-  0.10.0. Open: `-Assign` with both `-Roots` and `-May` produced an assignment that calls the work folder
-  "read-only for you" while "You may" allows writing there; the label must not be written when `-May` grants
-  writes in that root. Reproduce with a test on `ASSIGNMENT.md` first.
-- **Q29. START-HERE template.** Say "start ONE wait; exit 4 means yours is already running, do nothing". Three
-  agents and the coordinator were confused by exit code 4 from a second `wait`. (The template has a sentence on
-  exit 4 under "Stay reachable"; check it is where a small model reads it, and say it in the `NEXT:` line of
-  the second wait.)
-- **Q30. When an instruction names a group, confirm the set** before sending requests that cannot be taken
-  back.
-- **Q31. An owner decision about how something is done applies from the next time in the same room**, not
-  only to the future plugin.
 - **Q32. A coordinator blocked from messaging its own in-process subagents while a room is bound.** The skill
   says subagents are part of the coordinator. Either remove the block for those, or name the exception in the
   refusal text. Look at the pane's refusal in `hooks/register.tsx`.
@@ -166,14 +133,6 @@ Each is minutes of work with a test or a text change. Not done in 0.10.0; the ow
 
 ### Agent-kind table (`agent-kinds.json`, `agent-kinds.md`)
 
-- **Q36. Add kinds with measured facts.** `antigravity` (process agy.exe; reported itself as gemini-cli; wake
-  loop; fetches full pages); `cursor-agent` (joined on first paste; wake loop; Learn search and fetch);
-  `opencode` (process opencode.exe; wake loop; stopped re-arming its wait after two empty waits unless told to
-  keep going; effort not visible; reports a model alias, so ask which model it points to); a local model behind
-  the Claude Code CLI harness (join refused by the permission check; not usable); the process chain
-  `claude.exe < ollama.exe` as the hint for a local model.
-- **Q37. Record each kind's usable context and a "give it" line.** A light local model: one file under about 2k
-  tokens, no bookkeeping extras, long expected durations, an early `progress`.
 - **Q38. Let the introduction carry a product the table lacks, and the underlying model** when the harness
   reports an alias. Two trial tasks done with a hosted strong model under Claude Code took 97 and 44 seconds; a
   27B local model under OpenCode took 4 and 2 minutes and was correct on both.
@@ -277,14 +236,6 @@ on a seat) are not listed: they ship, or are in the CHANGELOG.
   twice still delivers.
 - **Open.** The lease holds one owner; what two waiters reading one delivery record do.
 
-### D8. An owner flag for the stated model and effort in the feed and the pane
-
-- **What happened.** The board prints `(owner)` for a model or an effort the owner stated for a seat; the feed
-  JSON and the pane carry the effective values and no flag.
-- **Direction.** Add the flag to `Watch-RelayFeed.ps1`, the `to*` functions in `hooks/feed.ts`,
-  `types/index.d.ts` and `hooks/feed.test.ts`.
-- **Open.** How the pane shows it (next to the model, as on the board).
-
 ### D10. The known-models list offers a fake name
 
 - **What happened.** `models.json` on this PC holds each model name an agent's card gave, after a check of the
@@ -323,12 +274,6 @@ A checksum manifest (`MANIFEST.sha256`) for what a room is built from: `assets/r
   something the repository cannot silently rewrite. `release.yml` fails if the two differ. The in-plugin part comes
   first; the attestation is an add-on.
 
-## Next: skill
-
-- **Say when not to open a room.** A single question to one of the owner's own Claude sessions needs no room; a room
-  is for a scoped task, an agent of another product, a record, or more than one agent. Add it to `SKILL.md` or
-  `references/startup-interview.md`, with an eval case that must not load the skill.
-
 ## Next: documentation and references
 
 - Split `references/lessons.md`: keep job-design and coordination lessons; move tool-internals lessons (culture,
@@ -339,9 +284,6 @@ A checksum manifest (`MANIFEST.sha256`) for what a room is built from: `assets/r
 - Say each repeated rule once and point to it: the hold, "no ssh, no sh", the exit-0 wait history.
 - `agent-kinds.md`: move the wake-mode paragraphs out of "Model and effort", split the long Codex and Claude Code
   notes, and point to the vendor page for the model table instead of copying it.
-- `coordinating.md`: add the board status `woken by N overdue task(s)` and split the "Tasks" paragraph into bullets.
-- `multi-builder.md`: a ninth rule: before work is handed out, check that the builders can run the gate where they
-  are.
 
 ## Next: evals
 
@@ -354,8 +296,6 @@ A checksum manifest (`MANIFEST.sha256`) for what a room is built from: `assets/r
 
 ## Next: repository
 
-- `marketplace.json`: take `version`, `category` and the description from `plugin.json`, or add a CI check that
-  compares them.
 - `CLAUDE.md` at the root makes `claude plugin validate` warn that it is not loaded for plugin users. It is
   contributor guidance and stays.
 - Trim the `SKILL.md` description (636 characters; the guideline is about 500) if the evals stay at 1.00 on the

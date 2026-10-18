@@ -8,7 +8,7 @@
 approve or deny what goes beyond an assignment, and keep a record of all of it.</p>
 
 <p>
-<a href="CHANGELOG.md"><img alt="Version 0.12.0" src="https://img.shields.io/badge/version-0.12.0-blue"></a>
+<a href="CHANGELOG.md"><img alt="Version 0.13.0" src="https://img.shields.io/badge/version-0.13.0-blue"></a>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 <a href="https://github.com/gmn-gh24/agent-relay/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/gmn-gh24/agent-relay/actions/workflows/ci.yml/badge.svg"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-orange">
