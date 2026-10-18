@@ -358,8 +358,9 @@ last hour showed:
   ended the feed with "Argument types do not match", in a test that had been written for something else:
   the pane would have shown a dead feed. Run the suite that covers a script after every change to it, also
   a change of one line.
-- **A note to all also lies in every free seat's inbox.** Whoever takes that seat later is shown notes from
-  before its time. Not changed yet: it may be what a late joiner needs, or it may confuse it.
+- **A note to all also lay in every free seat's inbox.** Whoever took that seat later was shown notes from
+  before its time. Changed in room package 3.8.0: `note all` skips a free seat and says so in one line; a late
+  joiner gets its context from the coordinator's welcome.
 - **Names in tests.** Pester expands `<name>` in the title of a test, and two agents whose names begin with
   the same letter are easy to take for each other in a test's output: both cost one agent reruns.
 
@@ -843,11 +844,10 @@ changes the same room caused in the tools and the skill follow in the next secti
   names the two ways through; the skill tells the coordinator to warn the owner and to have a sentence of the
   owner's own typed in front of a pasted prompt; the prompts say never to run a script from the room except
   the agent's own command and one a task tells it to write in its own work folder.
-- **The asks of the owner were prose.** Questions went to the owner as numbered prose to answer by typing; one
-  `-Replace` for several agents left the owner not knowing which prompt was on the clipboard. Changed: the
-  skill and `coordinating.md` say every question is asked through the question tool with options, and the
-  Improve step triages per group the same way (`self-improvement.md`); `-Replace` names the prompt to paste and
-  `Add-RelayAgent.ps1 -Clipboard <name>` puts a named one on the clipboard.
+- **The asks of the owner were prose.** Questions went to the owner as numbered prose to answer by typing.
+  Changed: the skill and `coordinating.md` say every question is asked through the question tool with options,
+  and the Improve step triages per group the same way (`self-improvement.md`); `-Replace` names the prompt to
+  paste.
 - **The join prompt spent a small agent's context before work began.** An agent with a 16K-token window
   compacted after reading a 4,160-character join prompt. Changed: the prompt holds only the pre-join steps
   and opens with the owner's request to join. The join prints the after-join rules in `START-HERE.md`;
