@@ -222,22 +222,23 @@ work really takes, with the long command in it, not a hope: a task that runs a t
 five-minute task. One task per message. Long material goes into the room's `work` folder or as an attachment
 (put the files into your `attach` folder before you send), with the message pointing at it.
 
-When "done when" cannot be reached without a change that the assignment lists under "never", the task cannot
-carry the approval: the agent will ask its owner, every time, and it is right to. Re-assign first (`-Assign`
-with the wider `-May` or `-ProposeOk`, or a shorter `-Never`; or one line with `-AddMay`, `-AddProposeOk` or
-`-RemoveNever`, which keep every other field), then send. Your tool reads this PC's copy of
-the receiver's assignment before it sends a task (never the room's, which any agent can edit): when the
-task's words run into a line under "Never" or "Not part of this
-task" (requested actions in the task's active sentences), it refuses with `NOT SENT`, names the line, prints
-the task sentence that matched, and keeps your draft. Re-assign and send again; when the line does not apply,
-send it as it is with `task <name> anyway`. Negated clauses (`do not push`, `no install`) are ignored; noun
-mentions alone do not count unless the line is nouns only and two appear in one sentence. Read the matched
-sentence before you decide. Better, foresee it at assignment time: a test job on a
-disposable machine will need uninstalls, registry writes and files outside the work folder before it ends.
-When the change is one the assignment lists under "ask first", decide it
-before you send: approve that one change in the task itself, or record it as a standing rule first. And when a report's self-audit shows a change outside the assigned paths that you
-approved, that is as it should be: the audit lists what changed, not what was allowed, and the approval is
-in your own message.
+- When "done when" cannot be reached without a change that the assignment lists under "never", the task cannot
+  carry the approval: the agent will ask its owner, every time, and it is right to. Re-assign first (`-Assign`
+  with the wider `-May` or `-ProposeOk`, or a shorter `-Never`; or one line with `-AddMay`, `-AddProposeOk` or
+  `-RemoveNever`, which keep every other field), then send.
+- Your tool reads this PC's copy of the receiver's assignment before it sends a task (never the room's, which
+  any agent can edit): when the task's words run into a line under "Never" or "Not part of this task"
+  (requested actions in the task's active sentences), it refuses with `NOT SENT`, names the line, prints the
+  task sentence that matched, and keeps your draft. Re-assign and send again; when the line does not apply,
+  send it as it is with `task <name> anyway`.
+- Negated clauses (`do not push`, `no install`) are ignored; noun mentions alone do not count unless the line is
+  nouns only and two appear in one sentence. Read the matched sentence before you decide.
+- Better, foresee such a change at assignment time: a test job on a disposable machine will need uninstalls,
+  registry writes and files outside the work folder before it ends.
+- When the change is one the assignment lists under "ask first", decide it before you send: approve that one
+  change in the task itself, or record it as a standing rule first.
+- When a report's self-audit shows a change outside the assigned paths that you approved, that is as it should
+  be: the audit lists what changed, not what was allowed, and the approval is in your own message.
 
 Things a task says when they apply:
 
@@ -426,6 +427,8 @@ you act on it. Thank the agent: it did the right thing by telling you and not ac
 | reported N min ago, nothing sent to it since | its last message was a report, it has no open task, and you have sent it nothing since | give it its next task or its reminder |
 | OVERDUE, next to an open task | the agent has sent nothing for the time its task should take | "A task that is overdue": ask it now; when that stays unanswered, hand the task on or tell the owner |
 | working, woken by N message(s), and nothing follows | the message was delivered and the agent's wait ended, but its session sits idle at a prompt or at a permission question and did not react | nothing is lost and nothing is to be sent again. Ask the owner to look at that session and type "check the room" |
+| working, woken by N idle-without-wait agent(s), on your own row (`*`) | your wait ended because N agents have no open task and have had no wait running for 3 minutes or more: it printed an `ATTENTION` line for each, once per agent, and the board marks the same agents ATTENTION. Such an agent reads nothing: what you send it lies in its inbox | ask the owner to tell each of those sessions to run wait, then run your own wait again |
+| working, woken by N overdue task(s), on your own row (`*`) | your wait ended with N `OVERDUE` blocks: an agent has sent nothing for the time its task should take, or (the second block, once per task) is still silent later. The board marks the same tasks OVERDUE | "A task that is overdue": do what each block's DO line says, with the board in front of you, then run your own wait again |
 | not started | a named agent whose prompt was never pasted | owner pastes it |
 | took a seat but has not introduced itself | join was interrupted | owner looks at that session; `-Retire` the seat if it is dead |
 | tried to join and found no free seat | more agents than seats | `-OpenSeats <n>`, then the owner tells that agent to run join again |
