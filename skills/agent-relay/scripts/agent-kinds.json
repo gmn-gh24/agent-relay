@@ -7,6 +7,8 @@
     "draft": "",
     "prompt_extra": "When a NEXT line tells you to wait, start that command as a background command and end your turn: its exit is what wakes you. Do not run it in the foreground and do not poll its output.",
     "coordinator_note": "NOTE: Claude Code asks its user before commands; for a room without interruptions the owner starts it with claude --dangerously-skip-permissions",
+    "context_tokens": 65536,
+    "give_it": "a normal task",
     "status": "profile checked by the test suite; worked live rooms on Windows as coordinator and as remote agents on the same PC and on another machine (2026-10-10)"
   },
   "claude-code-headless": {
@@ -17,6 +19,8 @@
     "draft": "",
     "prompt_extra": "Run the wait command in the foreground with a command time limit of 10 minutes (timeout 600000). When it says nothing arrived, run it again.",
     "coordinator_note": "NOTE: Claude Code asks its user before commands; for a room without interruptions the owner starts it with claude --dangerously-skip-permissions",
+    "context_tokens": 65536,
+    "give_it": "a normal task",
     "status": "worked a rehearsal room on Windows on a light and a standard model at low effort, given only the start prompt (2026-10-10)"
   },
   "codex": {
@@ -27,6 +31,8 @@
     "draft": "relay-draft-{name}.md",
     "prompt_extra": "The wait command runs for up to 15 minutes. Start it, then keep waiting on that same running command until it exits; do not start a second one. When it says nothing arrived, run it again at once: a wait that ends with nothing is normal, not an error, and it is never a reason to stop. You never stop waiting on your own; only your user, or a message from the room that tells you to, ends it. If the command above is refused or cannot start, change nothing, stop, and tell your user to start you again with codex --yolo.",
     "coordinator_note": "NOTE: start Codex with codex --yolo: without it Codex keeps asking its user and its sandbox blocks the room's commands",
+    "context_tokens": 30000,
+    "give_it": "a normal task",
     "status": "worked live rooms on Windows as remote agents, up to five in one room on one machine (2026-10-12): must be started with codex --yolo; took a wait that timed out (then exit 3, shown by its shell as 1) for a failure and stopped waiting, so a timed-out wait exits 0 and says it is normal; its draft lies in the folder it ran join or start from, and a verb run from another folder once looked for it there (2026-10-12): every verb now uses the one full path its start printed; a foreground command of 16 minutes ran to its end in codex-cli 0.162.1 on Windows (2026-10-12), a longer one was not run to its end, so the wait is 15 minutes"
   },
   "gemini": {
@@ -36,7 +42,20 @@
     "shell": { "windows": "powershell" },
     "draft": "",
     "prompt_extra": "The wait command returns within one minute. When it says nothing arrived, run it again.",
+    "context_tokens": 0,
+    "give_it": "a small first task until it has shown what it takes: this kind is untested",
     "status": "untested: generic profile"
+  },
+  "antigravity": {
+    "label": "Antigravity (agy)",
+    "wake": "loop",
+    "wait_minutes": 1,
+    "shell": { "windows": "powershell" },
+    "draft": "",
+    "prompt_extra": "The wait command returns within one minute. When it says nothing arrived, run it again.",
+    "context_tokens": 0,
+    "give_it": "a normal task; it can fetch whole web pages",
+    "status": "joined a room (2026-10-14): process agy.exe, introduced itself as gemini-cli; waits in a loop; fetches full web pages; its command time limit was not measured, so the wait is 1 minute"
   },
   "cursor": {
     "label": "Cursor agent",
@@ -45,7 +64,20 @@
     "shell": { "windows": "powershell" },
     "draft": "",
     "prompt_extra": "The wait command returns within one minute. When it says nothing arrived, run it again.",
+    "context_tokens": 0,
+    "give_it": "a small first task until it has shown what it takes: this kind is untested",
     "status": "untested: generic profile"
+  },
+  "cursor-agent": {
+    "label": "Cursor agent CLI (cursor-agent)",
+    "wake": "loop",
+    "wait_minutes": 1,
+    "shell": { "windows": "powershell" },
+    "draft": "",
+    "prompt_extra": "The wait command returns within one minute. When it says nothing arrived, run it again.",
+    "context_tokens": 0,
+    "give_it": "a normal task; it can search and fetch Microsoft Learn",
+    "status": "joined a room on the first paste of the join prompt (2026-10-14); waits in a loop; searched and fetched Microsoft Learn; its command time limit was not measured, so the wait is 1 minute"
   },
   "copilot": {
     "label": "GitHub Copilot agent",
@@ -54,7 +86,21 @@
     "shell": { "windows": "powershell" },
     "draft": "",
     "prompt_extra": "The wait command returns within one minute. When it says nothing arrived, run it again.",
+    "context_tokens": 32768,
+    "give_it": "a normal task, long runs in pieces of under about 15 minutes, each writing its output to a file",
     "status": "untested: generic profile"
+  },
+  "opencode": {
+    "label": "OpenCode CLI (1.x, package opencode-ai)",
+    "wake": "loop",
+    "wait_minutes": 9,
+    "shell": { "windows": "powershell" },
+    "draft": "",
+    "prompt_extra": "The wait command runs for up to 9 minutes. When it says nothing arrived, run it again at once: a wait that ends with nothing is normal, not an error, and it is never a reason to stop. You never stop waiting on your own; only your user, or a message from the room that tells you to, ends it.",
+    "coordinator_note": "NOTE: OpenCode reports a model alias and no effort: ask the owner which model the alias points to",
+    "context_tokens": 0,
+    "give_it": "on a light local model: one file under about 2,000 tokens, no bookkeeping extras, long expected durations, an early progress line; on a hosted model: a normal task",
+    "status": "worked a room (2026-10-14): process opencode.exe; waits in a loop; after two waits that ended with nothing it stopped starting the next one until told to keep going, so its prompt says a quiet wait is never a reason to stop; effort not visible; reports a model alias, so ask which model it points to; the wait is 9 minutes, under the 10-minute ceiling its foreground commands died at"
   },
   "generic": {
     "label": "Any other coding agent",
@@ -63,6 +109,8 @@
     "shell": { "windows": "powershell" },
     "draft": "",
     "prompt_extra": "The wait command returns within one minute. When it says nothing arrived, run it again.",
+    "context_tokens": 0,
+    "give_it": "a small first task until it has shown what it takes",
     "status": "generic profile"
   }
 }
