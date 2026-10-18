@@ -174,6 +174,9 @@ the subject.
 | `bye` | Says goodbye and marks you offline |
 | `task <name> [anyway] [<minutes>]`, `ask <name>`, `note <name>\|all` | Coordinator only. The number is how long the task should take; without one the room's default holds |
 
+A coordinator's `note all` skips a free seat (one nobody has joined yet): who takes it later gets the
+coordinator's welcome, not the notes from before.
+
 `remember` keeps one entry of 15 to 500 characters of text, with up to 5 tags; its help line and its
 refusals say those limits up front. A refusal for length names the measured length and the limit, for
 example "your entry is 612 characters; the limit is 500".
