@@ -312,6 +312,19 @@ Describe 'Add-RelayLocalMemory' -Tag 'Memory' {
         finally { Remove-MemoryLink $aliasFolder }
     }
 
+    It 'refuses a draft whose way goes through a link it cannot follow, and leaves the draft in place' {
+        Write-MemoryFile $notes @('- 2026-10-01T10:00:00Z The build needs the proxy variable set')
+        $before = [System.IO.File]::ReadAllText($notes)
+        $draft = Join-Path $root 'unfollowable-draft.md'
+        [System.IO.File]::WriteAllText($draft, 'A note that must be neither kept nor deleted', $utf8)
+        # What the module answers for a link whose target it cannot read; the loaded module is kept for the mock
+        Mock Import-Module { }
+        Mock Get-RelayRealPath { return '' }
+        { & $keepMemory -DraftFile $draft } | Should -Throw '*link that cannot be followed*'
+        [System.IO.File]::ReadAllText($notes) | Should -Be $before
+        Test-Path -LiteralPath $draft | Should -BeTrue
+    }
+
     It 'refuses to read or write through a linked memory folder' {
         $outside = Join-Path $root 'outside'
         $null = New-Item -ItemType Directory -Path $outside -Force

@@ -113,8 +113,15 @@ if (-not $PSCmdlet.ShouldProcess("$name memory: $($remove.Count) line(s)", 'Remo
 $stampFile = Format-RelayUtc -Format 'yyyyMMddTHHmmssZ'
 $evidenceFolder = Join-Path $roomObject.Local 'evidence'
 if (-not (Test-Path -LiteralPath $evidenceFolder)) { $null = New-Item -ItemType Directory -Path $evidenceFolder -Force }
-# Several repairs may happen in one second; each must keep its own evidence copy.
-$evidence = Join-Path $evidenceFolder ("memory-$name-$stampFile-{0}.txt" -f [guid]::NewGuid().ToString('N'))
+# Several repairs may fall in one second: each keeps its own copy, the second one as -2, the next as -3
+$evidence = ''
+for ($copy = 1; $copy -le 1000; $copy++) {
+    $suffix = ''
+    if ($copy -gt 1) { $suffix = "-$copy" }
+    $candidate = Join-Path $evidenceFolder "memory-$name-$stampFile$suffix.txt"
+    if (-not [System.IO.File]::Exists($candidate)) { $evidence = $candidate; break }
+}
+if (-not $evidence) { throw "There is no free name for the evidence copy under $evidenceFolder" }
 [System.IO.File]::WriteAllBytes($evidence, [System.IO.File]::ReadAllBytes($file))
 $kept = New-Object System.Collections.Generic.List[string]
 for ($index = 0; $index -lt $lines.Count; $index++) { if (-not $remove.Contains($index + 1)) { $kept.Add($lines[$index]) } }

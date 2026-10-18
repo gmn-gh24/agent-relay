@@ -1380,6 +1380,39 @@ Describe 'Round 2 faults on <Engine>' -Tag 'Faults' -ForEach $engineCases {
             finally { Remove-TestLink $link }
         }
 
+        It 'reads no message through an inbox folder that is a link, by id or by listing' -Tag 'MaySkip' {
+            $private = Join-Path $root ('private-inbox-' + (New-RelayTestId))
+            $null = New-Item -ItemType Directory -Path $private -Force
+            [System.IO.File]::WriteAllText((Join-Path $private 'olivia-0001.md'), (Get-ReadableMessage -To 'henry' -Type 'task' -Subject 'private-inbox-not-for-the-room'))
+            $inbox = Join-Path $room 'agents\henry\inbox'
+            $aside = Join-Path $room 'agents\henry\inbox-aside'
+            $hadInbox = Test-Path -LiteralPath $inbox
+            if ($hadInbox) { [System.IO.Directory]::Move($inbox, $aside) }
+            if (-not (New-TestLink -Path $inbox -Target $private)) {
+                if ($hadInbox) { [System.IO.Directory]::Move($aside, $inbox) }
+                Set-ItResult -Skipped -Because 'this account may not make a link to a folder here'
+                return
+            }
+            try {
+                $shown = Invoke-RelayTool -Room $room -Agent 'emma' -Engine $engine -Words @('show', 'olivia-henry-0001')
+                $shown.ExitCode | Should -Be 1
+                $shown.Output | Should -Match 'there is no message'
+                $shown.Output | Should -Not -Match 'private-inbox-not-for-the-room'
+                $checked = Invoke-RelayTool -Room $room -Agent 'henry' -Engine $engine -Words @('check')
+                $checked.Output | Should -Not -Match 'private-inbox-not-for-the-room'
+                Get-DeliveredText -Room $room -Agent 'henry' | Should -Not -Match 'olivia-henry-0001'
+                # Nor is anything written through it
+                $sent = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'henry') -Text "Through the link`n`nThis must not land outside the room."
+                $sent.ExitCode | Should -Be 1
+                $sent.Output | Should -Match "the inbox of 'henry' is a link"
+                @(Get-ChildItem -LiteralPath $private -Force | ForEach-Object { $_.Name }) | Should -Be @('olivia-0001.md')
+            }
+            finally {
+                Remove-TestLink $inbox
+                if ($hadInbox) { [System.IO.Directory]::Move($aside, $inbox) }
+            }
+        }
+
         It 'refuses a draft that is a link, sends nothing of what it points at and leaves both alone' -Tag 'MaySkip' {
             $private = Join-Path $root ('private-' + (New-RelayTestId) + '.txt')
             [System.IO.File]::WriteAllText($private, "Private`n`nmachine example.invalid login me password not-for-the-room`n")

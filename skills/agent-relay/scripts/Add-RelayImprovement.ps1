@@ -60,7 +60,7 @@ foreach ($line in ($section -split "`n")) {
     if ($line -match '(?i)\b(token|password|passwd|api[ _-]?key|secret)\b\s*[:=]\s*\S+') { throw "Refused: a line of $DraftFile looks like it holds a secret (a token, a password or an api key with a value). A secret is never kept in an improvements file; take it out and run this again." }
 }
 
-$date = Format-RelayUtc -Time (Get-Date) -Format 'yyyy-MM-dd'
+$date = Format-RelayUtc -Format 'yyyy-MM-dd'
 if ($ProjectFolder) {
     $file = Join-Path (Get-RelayNormalPath $ProjectFolder) 'PLUGIN-IMPROVEMENTS.md'
 }

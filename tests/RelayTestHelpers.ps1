@@ -79,6 +79,9 @@ function Start-RelayTool {
         [switch]$ThroughShell,
         # Exercises the generated join wrapper, including its inherited-environment handling
         [switch]$JoinWrapper,
+        # A real program boundary without copying any executable: git runs the tool through an alias (git, then
+        # its sh, then the tool), so the tool's nearest parent that is neither a shell nor a terminal is git itself
+        [switch]$UnderGit,
         # The folder the agent's session stands in when it calls; the room folder when left out
         [string]$WorkingDirectory = ''
     )
@@ -147,6 +150,16 @@ function Start-RelayTool {
     $variables['RELAY_NO_TITLE'] = '1'
     if ($Engine -eq 'ps5' -and $variables.ContainsKey('PSModulePath')) { $variables.Remove('PSModulePath') }
     foreach ($key in $Environment.Keys) { $variables[[string]$key] = [string]$Environment[$key] }
+    if ($UnderGit) {
+        $git = Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1
+        # The alias runs in git's sh: each word in single quotes, so that the backslashes of a Windows path survive
+        $words = @(@($startInfo.FileName) + @($arguments) | ForEach-Object { "'" + ($_ -replace "'", "'\''") + "'" })
+        $alias = 'alias.relay=!' + ($words -join ' ')
+        $startInfo.FileName = $git.Source
+        $startInfo.Arguments = (@(@('-c', $alias, 'relay') | ForEach-Object { ConvertTo-RelayTestArgument $_ }) -join ' ')
+        # The room is no repository: git must not climb into one above it and run the alias from there
+        $variables['GIT_CEILING_DIRECTORIES'] = Split-Path -Parent $startInfo.WorkingDirectory
+    }
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
     $null = $process.Start()
@@ -189,9 +202,9 @@ function Invoke-RelayTool {
     param(
         [Parameter(Mandatory)][string]$Room, [Parameter(Mandatory)][AllowEmptyString()][string]$Agent, [Parameter(Mandatory)][string]$Engine,
         [string[]]$Words = @(), [hashtable]$Environment = @{}, [int]$Generation = 1, [int]$TimeoutSeconds = 120, [switch]$ThroughShell,
-        [string]$WorkingDirectory = '', [switch]$JoinWrapper
+        [string]$WorkingDirectory = '', [switch]$JoinWrapper, [switch]$UnderGit
     )
-    $handle = Start-RelayTool -Room $Room -Agent $Agent -Engine $Engine -Words $Words -Environment $Environment -Generation $Generation -ThroughShell:$ThroughShell -WorkingDirectory $WorkingDirectory -JoinWrapper:$JoinWrapper
+    $handle = Start-RelayTool -Room $Room -Agent $Agent -Engine $Engine -Words $Words -Environment $Environment -Generation $Generation -ThroughShell:$ThroughShell -WorkingDirectory $WorkingDirectory -JoinWrapper:$JoinWrapper -UnderGit:$UnderGit
     return (Wait-RelayTool -Handle $handle -TimeoutSeconds $TimeoutSeconds)
 }
 

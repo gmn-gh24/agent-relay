@@ -31,10 +31,12 @@ function Get-RelayPackageRoot { return $script:PackageRoot }
 
 function Format-RelayUtc {
     # A UTC time as text in a fixed form. Without the invariant culture the colon of the format is the culture's
-    # time separator (a dot in fi-FI) and the year that of the culture's calendar (2569 in th-TH). Convert local
-    # inputs before adding Z, which always means UTC.
+    # time separator (a dot in fi-FI) and the year that of the culture's calendar (2569 in th-TH). A local time is
+    # converted before the Z is added; a time of no stated kind is taken for UTC (ToUniversalTime would take it
+    # for local and shift it, [DateTime]::MinValue, the sentinel of a missing file, among them).
     param([DateTime]$Time = [DateTime]::UtcNow, [string]$Format = 'yyyy-MM-ddTHH:mm:ssZ')
-    return $Time.ToUniversalTime().ToString($Format, $script:Invariant)
+    if ($Time.Kind -eq [System.DateTimeKind]::Local) { $Time = $Time.ToUniversalTime() }
+    return $Time.ToString($Format, $script:Invariant)
 }
 
 function ConvertFrom-RelayUtc {
