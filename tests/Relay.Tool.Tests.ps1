@@ -1840,6 +1840,39 @@ Describe 'Joining on <Engine>' -Tag 'Tool' -ForEach $engineCases {
         $log | Should -Match "joined $($openSeats[1]) \S+ codex"
     }
 
+    It 'sends a note to all to every taken seat and skips the free ones' {
+        (Invoke-RelayTool -Room $room -Agent 'olivia' -Engine $engine -Words @('start', 'p', 'm', 'e')).ExitCode | Should -Be 0
+        $displays = @{}
+        foreach ($seatName in $openSeats) {
+            $seatText = Get-Content -LiteralPath (Join-Path $room "agents\$seatName\seat") -Raw
+            ($seatText -match '(?m)^display: (.+)$') | Should -BeTrue
+            $displays[$seatName] = $Matches[1].Trim()
+        }
+        $first = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'claude-code', 'm', 'e')
+        $first.ExitCode | Should -Be 0 -Because $first.Output
+        Get-RelayTestJoinedName $first | Should -Be $openSeats[0]
+
+        $sent = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'all') -Text "To everybody`n`nThe room closes at five."
+        $sent.ExitCode | Should -Be 0 -Because $sent.Output
+        $sent.Output | Should -Match '(?m)^SENT .* \(note\) to '
+        foreach ($taken in 'emma', 'jack', 'henry', $openSeats[0]) { @(Get-RelayTestInbox -Room $room -Agent $taken -From 'olivia').Count | Should -Be 1 -Because "$taken has a seat that is taken" }
+        foreach ($free in $openSeats[1], $openSeats[2]) { @(Get-RelayTestInbox -Room $room -Agent $free -From 'olivia').Count | Should -Be 0 -Because "$free is a free seat" }
+        # In the roster's order (byte order of the names), as who lists them
+        $freeNames = [string[]]@($openSeats[1], $openSeats[2])
+        [System.Array]::Sort($freeNames, [System.StringComparer]::Ordinal)
+        $sent.Output | Should -Match ('(?m)^not sent to the free seats \(2\), nobody there yet: ' + [regex]::Escape($displays[$freeNames[0]] + ', ' + $displays[$freeNames[1]]) + '$')
+
+        $second = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'm', 'e')
+        $second.ExitCode | Should -Be 0 -Because $second.Output
+        Get-RelayTestJoinedName $second | Should -Be $openSeats[1]
+        $again = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('note', 'all') -Text "Once more`n`nStill at five."
+        $again.ExitCode | Should -Be 0 -Because $again.Output
+        foreach ($taken in 'emma', 'jack', 'henry', $openSeats[0]) { @(Get-RelayTestInbox -Room $room -Agent $taken -From 'olivia').Count | Should -Be 2 -Because "$taken has a seat that is taken" }
+        @(Get-RelayTestInbox -Room $room -Agent $openSeats[1] -From 'olivia').Count | Should -Be 1
+        @(Get-RelayTestInbox -Room $room -Agent $openSeats[2] -From 'olivia').Count | Should -Be 0
+        $again.Output | Should -Match ('(?m)^not sent to the free seats \(1\), nobody there yet: ' + [regex]::Escape($displays[$openSeats[2]]) + '$')
+    }
+
     It 'takes how the agent waits and where it drafts from the product it names' {
         $codex = Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'm', 'e')
         $card = Get-Content -LiteralPath (Join-Path $room "agents\$($openSeats[0])\card") -Raw
