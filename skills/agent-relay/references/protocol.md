@@ -10,7 +10,8 @@ which files this PC writes, how the pieces fit, and where state lives.
   ROOM                      key: value: room, protocol, package, job, coordinator, authority, created_utc,
                             stale_minutes, pickup_minutes (the board's limit for a message nobody picked
                             up), silent_minutes, task_minutes (how long a task should take when the
-                            coordinator names no number, 15), proposal_limit
+                            coordinator names no number, 15), hold_seconds (how long the coordinator's
+                            wait goes on listening after a message arrived, 20), proposal_limit
   DECISIONS.md              standing rules and owner decisions (Add-RelayDecision.ps1 only)
   PLAN                      the team plan: parts, owners, status (Set-RelayPlan.ps1 only); see "The team plan"
   PROTOCOL.md               agents' reference

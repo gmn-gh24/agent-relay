@@ -185,7 +185,9 @@ retired); 7 on hold (`check` only: start nothing new until the hold is lifted).
 
 `wait` also returns when a proposal's time has run out, when you are paused or resumed, and when the
 coordinator has shown no sign of life for some minutes. The coordinator's `wait` also returns when a task it
-sent is overdue. Only one `wait` runs per agent: a second one waits up to
+sent is overdue, and it goes on listening for a while after a message arrived (`hold_seconds` in `ROOM`: a quiet
+period after the last arrival, capped at three times it), so that one wake brings everything that came in the
+meantime; a question, a proposal or a message from the owner ends that hold at once. Only one `wait` runs per agent: a second one waits up to
 35 seconds for the first to end and then listens in its place; when the first one is still alive after that it
 prints "A wait is already listening for <name>; nothing to do." and exits 0. Exit code 4 is for a lease lost
 while a wait already held it. A wait that is stopped before anything arrived (Ctrl+C, or its host stops it)

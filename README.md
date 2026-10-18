@@ -398,6 +398,7 @@ Given once, when the room is built. The skill asks only for what has no sensible
 | `stale_minutes` | A listening agent that is silent this long is marked | 5 |
 | `pickup_minutes` | An agent that leaves a message unread this long is marked | 30 |
 | `task_minutes` | How long a task should take when the coordinator names no number with it | 15 |
+| `hold_seconds` | How long the coordinator's wait goes on listening after a message arrived, so that one wake brings everything that came in the meantime (a quiet period after the last arrival, capped at three times it; a question, a proposal or an owner message is never held; 0 ends the wait at the first message) | 20 |
 
 </details>
 

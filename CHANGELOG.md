@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **The coordinator's `wait` goes on listening after a message arrived and delivers everything that came in
+  the meantime in one wake.** Every wake is a turn of the coordinator, and one wake per message was the real
+  cost of a room. The wait holds for a quiet period after the last arrival, capped at three times it; a
+  question, a proposal or a message from the owner ends the hold at once. The board shows
+  `listening, holding N message(s)` meanwhile, and the journal records how long a batch was held. Agents'
+  waits and `check` are unchanged.
+- **A room setting for it:** `hold_seconds` in `ROOM` (20; 0 ends the wait at the first message, as before),
+  `New-RelayRoom.ps1 -HoldSeconds` or the answers file. The coordinator reads it from this PC's copy of the
+  room, never from the room. A room made before holds the default.
 - Protect local memory from being consumed as its own draft, preserve evidence from repairs in the same
   second, and convert local times to UTC before formatting them.
 - Refuse linked message files in direct room commands, and keep a request pending until its receiver replies.
