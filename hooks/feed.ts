@@ -57,6 +57,8 @@ const toAgent = (value: unknown): RelayAgent => {
     product: asText(row.product),
     model: asText(row.model),
     effort: asText(row.effort),
+    modelOwner: row.modelOwner === true,
+    effortOwner: row.effortOwner === true,
     tier: asText(row.tier),
     rights: asText(row.rights),
     owes: Number(row.owes) || 0,
@@ -481,13 +483,29 @@ export const statusOf = (view: RelayView | null): string | undefined => {
   return parts.join(' | ')
 }
 
+// An agent's model, its tier and its effort, and what of them the owner stated rather than the agent:
+// `sonnet-5.5 (standard, owner model)/high`, `sonnet-5.5 (standard)/high (owner)`. Get-RelayModelLabel is
+// its twin on the board.
+const modelMark = (agent: RelayAgent): string => {
+  const hasEffort = agent.effort !== ''
+  const about: string[] = []
+  if (agent.tier !== '' && agent.tier !== 'unknown') about.push(agent.tier)
+  // Said once: when the owner stated both, the effort's mark says it
+  if (agent.modelOwner && !(hasEffort && agent.effortOwner)) about.push('owner model')
+  const model = about.length > 0 ? `${agent.model} (${about.join(', ')})` : agent.model
+  if (!hasEffort) return model
+  const owner = agent.effortOwner ? (agent.modelOwner ? ' (owner)' : ' (owner effort)') : ''
+
+  return `${model}/${agent.effort}${owner}`
+}
+
 // What an agent's row says after its name and its state
 export const agentLine = (agent: RelayAgent): string => {
   const marks: string[] = []
   if (agent.isCoordinator) marks.push('coordinator')
   else if (agent.role !== '' && agent.role !== 'agent') marks.push(agent.role)
   if (agent.isIntroduced && !agent.isCoordinator) {
-    if (agent.model !== '') marks.push(agent.tier !== '' && agent.tier !== 'unknown' ? `${agent.model} (${agent.tier})` : agent.model)
+    if (agent.model !== '') marks.push(modelMark(agent))
     if (agent.rights === 'elevated') marks.push('ELEVATED')
     if (agent.rights === 'can-elevate') marks.push('not elevated')
     if (agent.rights === 'none') marks.push('no admin rights')

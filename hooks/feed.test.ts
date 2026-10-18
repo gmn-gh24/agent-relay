@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { applyFeedLine, applyRoomLine, claimDecision, clockOf, decisionOn, emptyView, isCutText, isHomeOrEnd, openingView, paneRegions, paneRows, plainText, reasonOf, refusalOf, releaseDecision, scrollBar, scrolledTo, splitOwnerText, statusOf, takeLines, textWidth, windowTop, wrapText } from './feed'
+import { agentLine, applyFeedLine, applyRoomLine, claimDecision, clockOf, decisionOn, emptyView, isCutText, isHomeOrEnd, openingView, paneRegions, paneRows, plainText, reasonOf, refusalOf, releaseDecision, scrollBar, scrolledTo, splitOwnerText, statusOf, takeLines, textWidth, windowTop, wrapText } from './feed'
 
 const SNAPSHOT = JSON.stringify({
   type: 'snapshot',
@@ -290,6 +290,60 @@ test('a plan comes with the snapshot and changes with a plan line; an agent carr
   expect(plain.plan).toBe(null)
   expect(plain.agents[1]?.progress).toBe('')
   expect(plain.agents[1]?.parts).toEqual([])
+})
+
+test("an agent's model mark carries its effort and what the owner stated, as the board marks it", () => {
+  const agents = [
+    { name: 'ava', display: 'Ava', role: 'agent', state: 'listening', isIntroduced: true, model: 'sonnet-5.5', tier: 'standard', effort: 'high', rights: 'elevated' },
+    { name: 'ben', display: 'Ben', role: 'agent', state: 'listening', isIntroduced: true, model: 'opus-5.5', tier: 'strong', effort: 'max', modelOwner: true, effortOwner: true },
+    { name: 'cleo', display: 'Cleo', role: 'agent', state: 'listening', isIntroduced: true, model: 'haiku-5.5', tier: 'light', effort: 'low', modelOwner: true },
+    { name: 'dan', display: 'Dan', role: 'agent', state: 'listening', isIntroduced: true, model: 'other-model', tier: 'unknown', effort: 'medium', effortOwner: true },
+  ]
+  const view = applyFeedLine(emptyView('room'), JSON.stringify({ type: 'snapshot', room: 'room', job: 'job', agents })).view
+  const [ava, ben, cleo, dan] = view.agents
+  expect([ava?.modelOwner, ava?.effortOwner]).toEqual([false, false])
+  expect([ben?.modelOwner, ben?.effortOwner]).toEqual([true, true])
+  expect([cleo?.modelOwner, cleo?.effortOwner]).toEqual([true, false])
+  expect([dan?.modelOwner, dan?.effortOwner]).toEqual([false, true])
+  expect(ben?.effort).toBe('max')
+
+  expect(view.agents.map(agentLine)).toEqual([
+    'sonnet-5.5 (standard)/high, ELEVATED',
+    'opus-5.5 (strong)/max (owner)',
+    'haiku-5.5 (light, owner model)/low',
+    'other-model/medium (owner effort)',
+  ])
+
+  // Without an effort the mark is the one of before; the owner's model is still said
+  expect(agentLine({ ...ava!, effort: '' })).toBe('sonnet-5.5 (standard), ELEVATED')
+  expect(agentLine({ ...ava!, effort: '', modelOwner: true })).toBe('sonnet-5.5 (standard, owner model), ELEVATED')
+
+  // An effort is a text an agent wrote: a control character in it reaches the pane as a blank
+  const escaped = applyFeedLine(emptyView('room'), JSON.stringify({ type: 'snapshot', room: 'room', agents: [{ ...agents[0], effort: `high${String.fromCharCode(27)}[2J` }] })).view
+  expect(escaped.agents[0]?.effort).toBe('high [2J')
+  expect(agentLine(escaped.agents[0]!)).toBe('sonnet-5.5 (standard)/high [2J, ELEVATED')
+
+  const textOf = (rows: ReturnType<typeof paneRows>): string[] => rows.map(row => row.spans.map(span => span.text).join(''))
+  expect(textOf(paneRows(view, 100, 0)).slice(3, 7)).toEqual([
+    'Ava      listening   sonnet-5.5 (standard)/high, ELEVATED',
+    'Ben      listening   opus-5.5 (strong)/max (owner)',
+    'Cleo     listening   haiku-5.5 (light, owner model)/low',
+    'Dan      listening   other-model/medium (owner effort)',
+  ])
+
+  // Narrow: the mark stands under the name
+  const narrow = textOf(paneRows(view, 40))
+  expect(narrow.slice(3, 11)).toEqual([
+    'Ava      listening',
+    '  sonnet-5.5 (standard)/high, ELEVATED',
+    'Ben      listening',
+    '  opus-5.5 (strong)/max (owner)',
+    'Cleo     listening',
+    '  haiku-5.5 (light, owner model)/low',
+    'Dan      listening',
+    '  other-model/medium (owner effort)',
+  ])
+  expect(narrow.every(row => textWidth(row) <= 40)).toBe(true)
 })
 
 test('a control character from a room file reaches the pane as a blank; a line feed stays', () => {
