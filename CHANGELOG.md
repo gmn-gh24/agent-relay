@@ -8,6 +8,17 @@
 - Replace tests that copied and launched system executables with mocked process records; correct UTC date
   expectations and add regression coverage for the PowerShell fixes.
 - Add Kimi to the strong model tier and record the owner's clipboard priorities and room setup lessons.
+- Only the receiver's answer settles a proposal: an `answer` from another agent neither closes it at delivery nor
+  counts as its verdict. An agent folder or an inbox that is a link is no inbox: nothing in it is listed, shown,
+  replied to, reported on or waited for, and nothing is sent into it. A request to a retired agent is no longer
+  listed as awaited (the wait already closed it as retired).
+- `Format-RelayUtc` converts a local time and takes a time of no stated kind for UTC, so `[DateTime]::MinValue`
+  (a missing file) prints as midnight again; the three scripts that handed it the local clock take its default.
+  A local memory draft behind a link that cannot be followed is refused instead of read and deleted. Evidence
+  copies of a repaired memory file keep readable names (`-2`, `-3` for repairs in the same second).
+- Tests: the seat test with two real agent programs is back through a `git` alias (no executable is copied);
+  the mocked process records carry local times as Windows gives them; the process-identity block is skipped off
+  Windows; the UTC test pins a time of no stated kind.
 
 ## 0.11.0 (2026-10-15)
 

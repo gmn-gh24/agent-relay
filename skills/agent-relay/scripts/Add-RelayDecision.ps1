@@ -52,7 +52,7 @@ if ($rules.Count -eq 0) { throw "There is no rule to record: $DraftFile is missi
 # What is recorded is written back whole: a copy that cannot be read right now is an error, never an empty file,
 # which would keep only the new rules
 $current = (Read-RelayTextStrict (Join-Path $roomObject.Canon 'DECISIONS.md')).TrimEnd()
-$date = Format-RelayUtc -Time (Get-Date) -Format 'yyyy-MM-dd'
+$date = Format-RelayUtc -Format 'yyyy-MM-dd'
 $added = New-Object System.Collections.Generic.List[string]
 foreach ($rule in $rules) {
     $text = $rule

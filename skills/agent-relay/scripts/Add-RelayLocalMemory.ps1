@@ -153,10 +153,14 @@ elseif ($DraftFile) {
 }
 else { $DraftFile = Join-Path $folder 'draft.md' }
 
-# The draft is deleted after use; it must never be the notes file, even through a linked folder.
+# The draft is deleted after use; it must never be the notes file, even through a linked folder. A link on
+# either way that cannot be followed leaves that unknown: refused, never read and deleted on a guess.
 $draftReal = Get-RelayRealPath $DraftFile
 $notesReal = Get-RelayRealPath $notesFile
-if ($draftReal -and $notesReal -and [string]::Equals($draftReal, $notesReal, [System.StringComparison]::OrdinalIgnoreCase)) {
+if (-not $draftReal -or -not $notesReal) {
+    throw "Refused: the way to the draft $DraftFile or to the notes file $notesFile goes through a link that cannot be followed."
+}
+if ([string]::Equals($draftReal, $notesReal, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Refused: the draft $DraftFile is the notes file itself. Write the note into a separate draft file."
 }
 

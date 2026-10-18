@@ -154,7 +154,7 @@ if (-not $roomId) {
     $roomId = $baseName
     $attempt = 1
     while ((Test-Path -LiteralPath (Join-Path $roomsRoot $roomId)) -or ($known -contains $roomId) -or (Test-Path -LiteralPath (Join-Path $localRooms $roomId))) {
-        $roomId = '{0}-{1}' -f $baseName, (Format-RelayUtc -Time (Get-Date) -Format 'yyyy-MM-dd')
+        $roomId = '{0}-{1}' -f $baseName, (Format-RelayUtc -Format 'yyyy-MM-dd')
         if ($attempt -gt 1) { $roomId = "$roomId-$attempt" }
         $attempt++
     }

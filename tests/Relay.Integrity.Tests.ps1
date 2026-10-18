@@ -225,11 +225,11 @@ Describe 'Memory that nobody checks' -Tag 'Integrity' {
         $null = & (Join-Path $scripts 'Repair-RelayMemory.ps1') -Room $id -Agent emma -Line 2
         $between = [System.IO.File]::ReadAllText($memory)
         $null = & (Join-Path $scripts 'Repair-RelayMemory.ps1') -Room $id -Agent emma -Line 2
-        $copies = @(Get-ChildItem -LiteralPath (Join-Path $local 'evidence') -Filter 'memory-emma-*.txt')
-        $copies.Count | Should -Be 2
-        $contents = @($copies | ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) })
-        $contents | Should -Contain $before
-        $contents | Should -Contain $between
+        $folder = Join-Path $local 'evidence'
+        @(Get-ChildItem -LiteralPath $folder -Filter 'memory-emma-*.txt').Count | Should -Be 2
+        # Readable names: the stamp, and a counter only for a second copy in the same second
+        [System.IO.File]::ReadAllText((Join-Path $folder 'memory-emma-20261013T100000Z.txt')) | Should -Be $before
+        [System.IO.File]::ReadAllText((Join-Path $folder 'memory-emma-20261013T100000Z-2.txt')) | Should -Be $between
     }
 
     It 'sees an empty memory file as no lines, and does not write blank lines into it' {

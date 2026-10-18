@@ -516,9 +516,11 @@ function Read-Message {
 function Get-InboxEntry {
     # The message files in one agent's inbox, oldest first
     param([string]$Agent)
-    $inbox = Join-Path (Get-AgentDir $Agent) 'inbox'
+    $dir = Get-AgentDir $Agent
+    $inbox = Join-Path $dir 'inbox'
     $entries = New-Object System.Collections.Generic.List[object]
-    if (Test-Path -LiteralPath $inbox) {
+    # An agent folder or an inbox that is a link is not the room's: nothing behind it is a message
+    if ((Test-Path -LiteralPath $inbox) -and -not (Test-Link $dir) -and -not (Test-Link $inbox)) {
         foreach ($file in @(Get-ChildItem -LiteralPath $inbox -Filter '*.md' -File -Force -ErrorAction Stop)) {
             # A message file that is a link is no message: what lies behind it is not the room's and is not read
             if ((($file.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) -and (Test-Link $file.FullName)) { continue }
@@ -542,6 +544,26 @@ function Get-InboxEntry {
             return $order
         })
     return @($entries.ToArray())
+}
+
+function Read-InboxMessage {
+    # One message by where its id says it is: the file the sender's tool left in the receiver's inbox. Nothing
+    # behind a link is a message: not a linked agent folder, not a linked inbox, not a linked file.
+    param([string]$From, [string]$To, [string]$Number)
+    $dir = Get-AgentDir $To
+    $inbox = Join-Path $dir 'inbox'
+    $path = Join-Path $inbox ('{0}-{1}.md' -f $From, $Number)
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    if ((Test-Link $dir) -or (Test-Link $inbox)) { return $null }
+    return (Read-Message $path)
+}
+
+function Test-ReplySender {
+    # True when a result or answer comes from the agent that received the request it names. Only the receiver
+    # of a request answers it; any agent can write a file that names another agent's request.
+    param($Message)
+    if (-not $Message.Re -or $Message.Re -cnotmatch $script:IdPattern) { return $false }
+    return ($Message.From -ceq $Matches[2])
 }
 
 function Get-Roster {
@@ -606,7 +628,8 @@ function Get-AwaitedReply {
         $message = Read-Message $entry.Path
         if ($null -ne $message -and @('result', 'answer') -ccontains $message.Type -and $message.Re) { $closed["$($message.From)>$($message.Re)"] = $true }
     }
-    foreach ($other in @(Get-Roster -IncludeRetired)) {
+    # A retired agent answers nothing: a request to it is closed as retired, as the wait closes it
+    foreach ($other in @(Get-Roster)) {
         if ($other -eq $script:Me) { continue }
         foreach ($entry in @(Get-InboxEntry $other)) {
             if ($entry.From -ne $script:Me) { continue }
@@ -746,6 +769,8 @@ function Send-Message {
         if ($found) { Exit-WithError "the text looks like it contains $found; nothing was sent" "take the secret out of the draft and send again. If it is a false alarm, add the word allow-secret to the same command" }
     }
     $inbox = Join-Path $toDir 'inbox'
+    # Nothing is written through a link: an agent folder or an inbox that is one leads out of the room
+    if ((Test-Link $toDir) -or (Test-Link $inbox)) { Exit-WithError "the inbox of '$To' is a link (a symbolic link or a junction); nothing was sent" 'tell the coordinator: the room folder was changed by hand' }
     if (-not (Test-Path -LiteralPath $inbox)) { $null = New-Item -ItemType Directory -Path $inbox -Force }
 
     $attachDir = Join-Path $script:MyDir 'attach'
@@ -1066,7 +1091,7 @@ function Test-ProposalAnswered {
     $unknown = $false
     foreach ($entry in @(Get-InboxEntry $script:Me)) {
         $message = Read-Message $entry.Path
-        if ($null -ne $message -and $message.Type -ceq 'answer' -and $message.Re -ceq $Id) { return 'yes' }
+        if ($null -ne $message -and $message.Type -ceq 'answer' -and $message.Re -ceq $Id -and (Test-ReplySender $message)) { return 'yes' }
         if ($null -eq $message -or -not $message.Type) { $unknown = $true; continue }
         if (-not $delivered.ContainsKey($entry.Id)) { $unknown = $true }
     }
@@ -3166,7 +3191,7 @@ function Send-Delivery {
     }
     foreach ($item in $items) {
         if ($item.Placeholder) { continue }
-        if ($item.Message.Type -ceq 'answer' -and $item.Message.Re) { $null = Save-ProposalEntry -Id $item.Message.Re -State 'closed' }
+        if ($item.Message.Type -ceq 'answer' -and (Test-ReplySender $item.Message)) { $null = Save-ProposalEntry -Id $item.Message.Re -State 'closed' }
     }
     Write-Status 'working' "woken by $($items.Count) message(s)"
     Add-Journal 'delivered' ((@($items | ForEach-Object { $_.Entry.Id })) -join ',')
@@ -3435,9 +3460,10 @@ function Invoke-WaitOverdue {
     $due = New-Object System.Collections.Generic.List[object]
     foreach ($task in $tasks) {
         $dir = Get-AgentDir $task.To
-        $file = Join-Path (Join-Path $dir 'inbox') ('{0}-{1}.md' -f $script:Me, $task.Number)
-        # A task whose file is not in the room is not waited for
-        if (-not [System.IO.File]::Exists($file)) { continue }
+        $inbox = Join-Path $dir 'inbox'
+        $file = Join-Path $inbox ('{0}-{1}.md' -f $script:Me, $task.Number)
+        # A task whose file is not in the room is not waited for; behind a link nothing is the room's
+        if (-not [System.IO.File]::Exists($file) -or (Test-Link $dir) -or (Test-Link $inbox)) { continue }
         if (Test-Path -LiteralPath (Join-Path $dir 'retired')) { $null = Add-TaskEvent $task.Id 'closed' 'retired'; continue }
         if ($null -eq $answered) {
             # What the coordinator's inbox holds as results and answers. A message never changes, so each file is
@@ -3756,9 +3782,7 @@ function Invoke-Show {
         return 0
     }
     if ($what -notmatch $script:IdPattern) { Exit-WithError "show needs a message id (like $($script:Coordinator)-$($script:Me)-0001), or the word open or rules" "example: $call show open" }
-    $path = Join-Path (Join-Path (Get-AgentDir $Matches[2]) 'inbox') ('{0}-{1}.md' -f $Matches[1], $Matches[3])
-    $message = $null
-    if (Test-Path -LiteralPath $path) { $message = Read-Message $path }
+    $message = Read-InboxMessage -From $Matches[1] -To $Matches[2] -Number $Matches[3]
     if ($null -eq $message) { Exit-WithError "there is no message $what" "list what you owe with: $call show open" }
     Show-Message $message
     $files = Join-Path $script:FilesDir $message.Id
@@ -3797,9 +3821,7 @@ function Invoke-Reply {
     if (@($parsed.Rest).Count -lt 1 -or $parsed.Rest[0] -notmatch $script:IdPattern) { Exit-WithError 'reply needs the id of the message you answer' "see what you owe with: $call show open" }
     $id = $parsed.Rest[0]
     if ($Matches[2] -ne $script:Me) { Exit-WithError "$id was not sent to you" "see what you owe with: $call show open" }
-    $path = Join-Path (Join-Path $script:MyDir 'inbox') ('{0}-{1}.md' -f $Matches[1], $Matches[3])
-    $original = $null
-    if (Test-Path -LiteralPath $path) { $original = Read-Message $path }
+    $original = Read-InboxMessage -From $Matches[1] -To $script:Me -Number $Matches[3]
     if ($null -eq $original) { Exit-WithError "there is no message $id in your inbox" "see what you owe with: $call show open" }
     if ($original.From -eq 'owner') { Exit-WithError 'the owner is not answered through the room' 'tell the owner in your own session; cards for the owner are made on the coordinator''s PC' }
     $decision = ''
@@ -3935,8 +3957,7 @@ function Invoke-Report {
     $original = $null
     if ($rest.Count -ge 1) {
         if ($rest[0] -notmatch $script:IdPattern -or $Matches[2] -ne $script:Me) { Exit-WithError "report needs the id of a task that was sent to you, not '$($rest[0])'" "see your tasks with: $call show open" }
-        $path = Join-Path (Join-Path $script:MyDir 'inbox') ('{0}-{1}.md' -f $Matches[1], $Matches[3])
-        if (Test-Path -LiteralPath $path) { $original = Read-Message $path }
+        $original = Read-InboxMessage -From $Matches[1] -To $script:Me -Number $Matches[3]
         if ($null -eq $original) { Exit-WithError "there is no message $($rest[0]) in your inbox" "see your tasks with: $call show open" }
     }
     elseif ($open.Count -eq 1) { $original = $open[0] }
