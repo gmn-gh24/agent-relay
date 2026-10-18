@@ -2197,6 +2197,34 @@ Describe 'Open seats' -Tag 'Scripts' {
         @(Test-RelayTamper (Resolve-RelayRoom 'params')).Count | Should -Be 0
     }
 
+    It 'does not call a root read-only when the may list opens it, and says so again when -RemoveMay empties that list' {
+        $room = (New-RelayTestRoom -Root $root -RoomId 'maycall' -Extra @{ open_seats = 1 }).Path
+        $name = @(Get-RelayTestOpenSeat $room)[0]
+        (Invoke-RelayTool -Room $room -Agent '' -Engine $engine -Words @('join', 'codex', 'm', 'e')).ExitCode | Should -Be 0
+        $add = Join-Path $scripts 'Add-RelayAgent.ps1'
+        $file = Join-Path $room "agents\$name\ASSIGNMENT.md"
+        $readOnly = '- `C:\work\kit`: read-only for you.'
+        $opened = '- `C:\work\kit`: you may change what "You may, without asking" below allows. The rest of this folder is read-only for you.'
+        $null = & $add -Room 'maycall' -Assign $name -Role tester -Work testing -Task 'Run the suite on the kit.' -DoneWhen 'A report is sent.' -Roots 'C:\work\kit' -May 'edit tests/*'
+        $first = Get-Content -LiteralPath $file -Raw
+        $first | Should -Not -Match ([regex]::Escape($readOnly))
+        $first | Should -Match ([regex]::Escape($opened))
+        $first | Should -Match '- edit tests/\*'
+        # The scope file holds the root alone: the may list is not a pattern of the root
+        ((Get-Content -LiteralPath (Join-Path $room "agents\$name\scope") -Raw) -replace "`r", '') | Should -Be "root: C:\work\kit`n"
+
+        # The list emptied: the root is read-only again
+        $null = & $add -Room 'maycall' -Assign $name -RemoveMay 'edit tests/*'
+        $assignment = Get-Content -LiteralPath $file -Raw
+        $assignment | Should -Match ([regex]::Escape($readOnly))
+        $assignment | Should -Not -Match ([regex]::Escape($opened))
+        # The line back: the same text as the full assignment
+        $null = & $add -Room 'maycall' -Assign $name -AddMay 'edit tests/*'
+        (Get-Content -LiteralPath $file -Raw) | Should -Be $first
+
+        @(Test-RelayTamper (Resolve-RelayRoom 'maycall')).Count | Should -Be 0
+    }
+
     It 'changes one list of an assignment with -Add and -Remove parameters and keeps every other field' {
         $room = (New-RelayTestRoom -Root $root -RoomId 'incr' -Extra @{ open_seats = 1 }).Path
         $name = @(Get-RelayTestOpenSeat $room)[0]

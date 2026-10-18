@@ -2510,6 +2510,10 @@ function Add-RelayAgentSeat {
 
     $scope = New-Object System.Collections.Generic.List[string]
     $rootLines = New-Object System.Collections.Generic.List[string]
+    # A root with no patterns of its own is not read-only when the seat's "may" list opens something: the same test
+    # as ConvertTo-RelayBulletList, which prints its default for a list with no line
+    $hasMay = $false
+    foreach ($item in @($Spec['may'])) { if ($null -ne $item -and ([string]$item).Trim()) { $hasMay = $true } }
     foreach ($root in @($Spec['roots'])) {
         $folder = [string](Get-RelayProperty $root 'root' '')
         if (-not $folder) { continue }
@@ -2517,6 +2521,7 @@ function Add-RelayAgentSeat {
         $patterns = @(Get-RelayProperty $root 'may' @())
         foreach ($pattern in $patterns) { $scope.Add("may: $pattern") }
         if ($patterns.Count -gt 0) { $rootLines.Add("- ``$folder``: you may change " + ((@($patterns | ForEach-Object { "``$_``" })) -join ', ') + '. The rest of this folder is read-only for you.') }
+        elseif ($hasMay) { $rootLines.Add("- ``$folder``: you may change what ""You may, without asking"" below allows. The rest of this folder is read-only for you.") }
         else { $rootLines.Add("- ``$folder``: read-only for you.") }
     }
     $scopeText = ''
