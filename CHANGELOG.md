@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.13.0 (2026-10-18)
+
+Nine quick roadmap items, each with a spec and a failing test first (room package 3.8.0; running rooms:
+`Update-RelayRoom.ps1 -Room <id>`).
+
+- **A note to all skips a free seat.** `note all` reaches every taken or named seat and leaves a seat nobody
+  has joined alone, saying so in one line (`not sent to the free seats (N), nobody there yet: ...`); a later
+  joiner gets its context from the coordinator's welcome, not from notes sent before its time. `who`, the team
+  listing and `note all` share one test of what a free seat is.
+- **`-Assign` no longer calls a root read-only when the seat's "You may" list opens it.** A root without
+  patterns of its own says `you may change what "You may, without asking" below allows` when `-May` is given,
+  and `read-only for you` only when it is not; `-AddMay` and `-RemoveMay` produce the same text as a fresh
+  `-Assign`.
+- **The pane shows the effort and marks what the owner stated.** An agent's row reads
+  `model (tier)/effort (owner)`, `(owner model)` or `(owner effort)` as the board does; the feed already carried
+  the flags, the pane now keeps them.
+- **The static gate checks that `marketplace.json` agrees with `plugin.json`** (name, description, and version
+  when the entry has one), and the marketplace description is the plugin's, word for word.
+- **The skill says when not to open a room.** A single question to one of the owner's own Claude sessions needs
+  none; a room is for a scoped task, an agent of another product, a record of the work, or more than one agent
+  (SKILL.md workflow 1, `startup-interview.md`), with an eval case that must not load the skill.
+- **Three agent kinds with measured facts** (`antigravity`, `cursor-agent`, `opencode`), and on every kind a
+  least context window (`context_tokens`) and what to hand it (`give_it`); `agent-kinds.md` records the local
+  model behind the Claude Code CLI as not usable and the `claude.exe < ollama.exe` chain as the hint.
+- **Coordinator guidance.** `coordinating.md` documents the board's `woken by N idle-without-wait agent(s)` and
+  `woken by N overdue task(s)` wakes, splits the task-approval paragraph into one rule per bullet, and adds the
+  task template points from the October rooms: name the shell, list the files, exact wire text for a protocol
+  check, one task at a time, "do not trigger it" for a destructive screenshot, an unlocked console on a virtual
+  machine, confirm a named group before irreversible requests, match the task to the product's tools, and an
+  owner decision holds in the same room from the next time. `multi-builder.md` gains rule 10: each builder can
+  run the gate where it is, or a runner seat does.
+- Roadmap: the clipboard-notices request is withdrawn (the notices come from the owner's own instructions, not
+  the plugin) and the exit-4 note on a second `wait` was already done in 0.11.0.
+
 ## 0.12.0 (2026-10-18)
 
 The coordinator's wait batches, with the fixes merged since 0.11.0 (room package 3.7.0; running rooms:
