@@ -951,3 +951,18 @@ probes; six restages; no owner card. Promoted from the room's record with the ow
   with `task <name> anyway`, and that form carried the room default of 20 minutes instead of the 30 or 45
   given on the line, so every OVERDUE threshold was wrong. Not changed yet: `anyway` keeps the minutes
   argument, and the filter matches phrases or ignores generic verbs (the improvements file lists it).
+
+## 2026-10-22: the follow-up room, where the owner steered the agent from its own session (0.13.0)
+
+One elevated tester, one task, then a real deployment through the device management service that the owner
+started by hand. Promoted with the owner's approval:
+
+- **When the owner works in the agent's own session, the coordinator sees only claims.** The owner told the
+  agent there to proceed without asking, to monitor a deployment that was already running, and to restart
+  the machine after the job; the agent reported each line as a note, which was right, and the coordinator
+  could neither verify them nor plan around them (the deployment task was never sent, because the owner had
+  started it). Nothing went wrong, but the record of the room says "the agent says the owner said" for the
+  most important steps. Not changed yet: the skill should say that an owner who gives an agent instructions
+  in its session types the same lines in the chat window, so the board marks them verified; and a flag on the
+  seat ("the owner steers this agent directly") would tell the coordinator to expect notes instead of
+  results and to put the owner's lines into the task record (the room's improvements file lists both).
