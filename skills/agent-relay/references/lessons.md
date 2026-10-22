@@ -966,3 +966,31 @@ started by hand. Promoted with the owner's approval:
   in its session types the same lines in the chat window, so the board marks them verified; and a flag on the
   seat ("the owner steers this agent directly") would tell the coordinator to expect notes instead of
   results and to put the owner's lines into the task record (the room's improvements file lists both).
+
+## 2026-10-22: the download-wrapper room, a planned restart with a replacement that never spoke, and the task filter again (0.13.0)
+
+One elevated tester on a disposable machine, ten tasks in under 90 minutes, three generations of the same
+seat. Promoted with the owner's approval:
+
+- **A replaced seat kept the stale progress line of the generation that restarted the machine, and the first
+  replacement session never introduced itself.** The replacement was prepared the moment the "restarting now"
+  line arrived (the lesson of the previous room), the owner pasted the prompt after the sign-in, and the board
+  showed generation 2 as "working" under the old "restarting now" line for 13 minutes while no hello ever came;
+  the owner asked for a third generation, which joined at once. Not changed yet: `-Replace` should clear the
+  previous generation's progress line and the board should say "no introduction yet" for a replaced seat
+  until its hello arrives; a seat whose hello does not arrive within a few minutes of the replacement should be
+  flagged, not shown as working.
+- **`-Clipboard` on `Add-RelayAgent.ps1` takes the agent's name and does not combine with `-Replace`.** Two
+  calls were needed (`-Replace <name> -Force -Reason ...`, then `-Clipboard <name>`), found by two parameter
+  errors at the moment the owner was waiting at the signed-in machine. Not changed yet: the skill's restart
+  lesson names the two-call form, or `-Replace` accepts `-Clipboard` as a switch.
+- **The task word filter refused every task of the room for the third room in a row** (generic verbs of the
+  assignment's own "Never" sentence: test, remove, commit, installer, stop), and every `anyway` dropped the
+  minutes given on the line (30 instead of 40-60), so every OVERDUE threshold was wrong. Not changed yet: the
+  same two changes as the previous rooms; this room adds the evidence that the filter has refused 100 percent of
+  tasks in three rooms.
+- **The coordinator's own host blocked two commands whose text held a copy or registry switch beside a delete
+  verb**, the same guard the tester hit on its machine; both went through a file write instead. Not changed yet:
+  the Claude Code agent kind (and the coordinator's own practice) says one delete per command, and no copy or
+  registry tool switches in a command that also deletes; message text goes into the draft file by a file write,
+  never by a command that embeds it.
