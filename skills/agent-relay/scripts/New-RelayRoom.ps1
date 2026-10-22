@@ -27,7 +27,8 @@
         }
 
     "project_folder" in the answers names the project folder of the job; it is kept in the room's canonical
-    ROOM, and Add-RelayImprovement.ps1 appends the room's section to its PLUGIN-IMPROVEMENTS.md at the close.
+    ROOM for the record. The room's improvement section goes to the plugin's own PLUGIN-IMPROVEMENTS.md at the
+    close (Add-RelayImprovement.ps1), not to that folder.
 
     The room folder is named after "room_name": the project, script or task in a few words
     ("toy calculator tests" becomes toy-calculator-tests). Without it the first words of the job are used.

@@ -937,22 +937,47 @@ Describe 'Add-RelayImprovement and the close check' -Tag 'Scripts' {
         @([regex]::Matches($text, '(?m)^# Plugin improvements$')).Count | Should -Be 1
     }
 
-    It 'takes the project folder from the room answers, and falls back to this PC with a warning' {
+    It 'writes to the root of the plugin working copy by default, ignores the project folder of the room, and falls back to this PC with a warning in an installed copy' {
+        # A copy of the scripts in a tree of their own stands in for the plugin: with a .git entry at its root
+        # it is a working copy, without one an installed copy. The real repository's file is never touched.
+        $copyRoot = Join-Path $root 'plugin-copy'
+        $copyScripts = Join-Path $copyRoot 'skills\agent-relay\scripts'
+        $null = New-Item -ItemType Directory -Path $copyScripts -Force
+        Copy-Item -Path (Join-Path $scripts '*') -Destination $copyScripts -Recurse -Force
+        [System.IO.File]::WriteAllText((Join-Path $copyRoot '.git'), "gitdir: nowhere`n")
         $project = Join-Path $root 'from-answers'
         $created = New-RelayTestRoom -Root $root -RoomId "improve-$case" -Extra @{ project_folder = $project }
+        $object = Resolve-RelayRoom $created.Id
         $draft = Join-Path $root 'section.md'
-        [System.IO.File]::WriteAllText($draft, "From the answers of the room.`n")
-        $null = & (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $created.Id -DraftFile $draft
-        [System.IO.File]::ReadAllText((Join-Path $project 'PLUGIN-IMPROVEMENTS.md')) | Should -Match 'From the answers of the room\.'
+        [System.IO.File]::WriteAllText($draft, "Kept with the plugin.`n")
+        # The copied script imports the copy's RelayCommon next to the real one; a second module of that name
+        # left loaded breaks every later test that looks the module up by name, so each run drops it again
+        $runCopy = {
+            param($RoomId, $DraftPath)
+            try { @(& (Join-Path $copyScripts 'Add-RelayImprovement.ps1') -Room $RoomId -DraftFile $DraftPath) }
+            finally {
+                Get-Module -Name 'RelayCommon' | Where-Object { $_.Path -like "$copyRoot*" } | Remove-Module -Force
+                Import-Module (Join-Path $scripts 'RelayCommon.psm1') -Force
+            }
+        }
+        $printed = @(& $runCopy $created.Id $draft)
+        $file = Join-Path $copyRoot 'PLUGIN-IMPROVEMENTS.md'
+        ($printed -join "`n") | Should -Not -Match 'WARNING'
+        ($printed -join "`n") | Should -Match ([regex]::Escape($file))
+        [System.IO.File]::ReadAllText($file) | Should -Match 'Kept with the plugin\.'
+        Test-Path -LiteralPath (Join-Path $project 'PLUGIN-IMPROVEMENTS.md') | Should -BeFalse
+        (Read-RelayKeyValue (Join-Path $object.Local 'improvements.txt'))['path'] | Should -Be $file
 
+        Remove-Item -LiteralPath (Join-Path $copyRoot '.git') -Force
         $other = New-RelayTestRoom -Root (Join-Path $root 'other') -RoomId "fallback-$case"
         $object = Resolve-RelayRoom $other.Id
-        [System.IO.File]::WriteAllText($draft, "No project folder was named.`n")
-        $printed = @(& (Join-Path $scripts 'Add-RelayImprovement.ps1') -Room $other.Id -DraftFile $draft)
+        [System.IO.File]::WriteAllText($draft, "No repository to keep it in.`n")
+        $printed = @(& $runCopy $other.Id $draft)
         $fallback = Join-Path $object.Local 'PLUGIN-IMPROVEMENTS.md'
         ($printed -join "`n") | Should -Match 'WARNING'
         ($printed -join "`n") | Should -Match ([regex]::Escape($fallback))
-        [System.IO.File]::ReadAllText($fallback) | Should -Match 'No project folder was named\.'
+        [System.IO.File]::ReadAllText($fallback) | Should -Match 'No repository to keep it in\.'
+        [System.IO.File]::ReadAllText($file) | Should -Not -Match 'No repository to keep it in\.'
     }
 
     It 'refuses an empty draft, a draft in the room folder and a secret-looking line, and writes nothing then' {

@@ -23,8 +23,9 @@ The owner often just wants agents in a room now. Then three answers are enough:
 Everything else has a default (below) or is learned from the agents' introductions. Ask the remaining
 questions only when the owner already knows the answers, or when a default would be wrong.
 
-Ask for the job's project folder (`project_folder`) when the job has one: at the close, the room's
-improvement notes are appended to that folder's `PLUGIN-IMPROVEMENTS.md`.
+Ask for the job's project folder (`project_folder`) when the job has one: it is kept with the room's answers
+for the record. The room's improvement notes go to the plugin's own `PLUGIN-IMPROVEMENTS.md` at the close,
+never into the job's folder.
 
 Two things are never defaulted from memory and never taken from an earlier job:
 
@@ -85,7 +86,7 @@ Both can be mixed in one room. Seats can be added at any time.
 | May each agent's tool name its terminal tab after the agent? | `tab_titles` | `yes` |
 | How long should a task take when you give no number with it? | `task_minutes` | 15 |
 | How long does your wait go on listening after a message arrived, before it wakes you with all of them? | `hold_seconds` | 20 |
-| Where do the room's improvement notes go at the close? | `project_folder` | local state, with a warning |
+| Which folder holds the job (for the record)? | `project_folder` | none; the improvement notes go to the plugin's working copy either way |
 
 `task_minutes`: do not ask, unless the job's tasks are plainly longer (a build or a test cycle of half an
 hour). It is only the default: every task can say its own time (`task <name> <minutes>`), and your wait ends

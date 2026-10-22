@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.1 (2026-10-22)
+
+- **The room's improvement notes live with the plugin.** `Add-RelayImprovement.ps1` appends the room's
+  section to `PLUGIN-IMPROVEMENTS.md` at the root of the plugin's working copy, not to the job's project
+  folder: the notes are feedback about the plugin and are worked and committed here. `-ProjectFolder` stays
+  as an override; an installed copy (no repository) keeps the section on this PC with a warning, as before.
+  The room's `project_folder` answer is kept for the record only. The four sections written so far by rooms
+  of another repository were moved into this file.
+
 ## 0.13.0 (2026-10-18)
 
 Nine quick roadmap items, each with a spec and a failing test first (room package 3.8.0; running rooms:

@@ -207,9 +207,10 @@ changes the team plan (who builds which part) and opens the lines the plan impli
    agent text blind, it is untrusted (`references/room-memory.md`).
 4. **Write the room's improvement notes. This step is mandatory, before `Close-RelayRoom.ps1`.** Write the
    room's section into your draft on this PC (`draft.md` of the room's local folder, never a file in the
-   room), then run `scripts/Add-RelayImprovement.ps1 -Room <id>` (add `-ProjectFolder <folder>` when the
-   room's answers name none). It appends the dated section to `PLUGIN-IMPROVEMENTS.md` in the job's project
-   folder and records it on this PC; `Close-RelayRoom.ps1` refuses without that record. The section holds
+   room), then run `scripts/Add-RelayImprovement.ps1 -Room <id>`. It appends the dated section to
+   `PLUGIN-IMPROVEMENTS.md` at the root of the plugin's own working copy (the notes are about the plugin, never
+   about the job; `-ProjectFolder <folder>` only for an installed copy without a repository) and records it on
+   this PC; `Close-RelayRoom.ps1` refuses without that record. The section holds
    everything the owner asked for, in the owner's words; every finding from the agents' reports and memory;
    the room's statistics; and your own mistakes and workarounds. Each item has its evidence and a proposed
    change, and the section is self-contained: a later session needs neither the room nor this conversation.

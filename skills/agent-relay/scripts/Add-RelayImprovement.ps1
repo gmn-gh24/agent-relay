@@ -2,22 +2,25 @@
 
 <#
 .SYNOPSIS
-    Appends the improvement section of a room to PLUGIN-IMPROVEMENTS.md of its project folder.
+    Appends the improvement section of a room to PLUGIN-IMPROVEMENTS.md of the plugin's working copy.
 
 .DESCRIPTION
     Closing a room includes this section: what the room found and what the owner asked for, kept in the
-    project folder of the job so a later session can work the list in the plugin repository. The file is
-    appended to, never overwritten: a new file gets the header "# Plugin improvements", every call adds
-    one dated section "## Room <id> (closed <date>)" at the end.
+    plugin's own repository (the file is feedback about the plugin, not about the job) so a later session
+    works the list where the fixes are made. The file is appended to, never overwritten: a new file gets the
+    header "# Plugin improvements", every call adds one dated section "## Room <id> (closed <date>)" at the
+    end.
 
     The text comes from the coordinator's draft file on this PC (default: draft.md of the room on this PC,
     <local>\rooms\<room id>\draft.md). A file in the room folder is refused: any agent can write there. So
     is an empty draft, and a draft that holds a line which looks like a secret (a token, a password or an
     api key followed by a value). The draft is removed after use.
 
-    Where the file lives: -ProjectFolder, else the "project_folder" of the room's answers (New-RelayRoom.ps1
-    keeps it in the canonical ROOM of the room), else PLUGIN-IMPROVEMENTS.md in the room's folder on this PC
-    (<local>\rooms\<room id>), with a warning. What was written where is recorded in
+    Where the file lives: -ProjectFolder when given (an override), else PLUGIN-IMPROVEMENTS.md at the root of
+    the plugin's git working copy (Get-RelayRooms.ps1 says which copy this is; an installed copy has no
+    repository), else PLUGIN-IMPROVEMENTS.md in the room's folder on this PC
+    (<local>\rooms\<room id>), with a warning. The "project_folder" of the room's answers is the job's folder,
+    kept for the record; the notes never go there. What was written where is recorded in
     <local>\rooms\<room id>\improvements.txt (path and date), which Close-RelayRoom.ps1 asks for before it
     closes the room, and the path is printed. A file inside the room folder (also by way of a link), a file
     that is a link, and a draft that is the file itself are refused. The file is written through a handle no
@@ -30,10 +33,14 @@
     The section text. Default: draft.md of this room on this PC. A file in the room folder is refused.
 
 .PARAMETER ProjectFolder
-    The project folder the PLUGIN-IMPROVEMENTS.md lives in. Wins over the room's answers.
+    A folder whose PLUGIN-IMPROVEMENTS.md gets the section instead of the plugin's working copy (an override
+    for a copy that is not a git working copy, or for a file kept elsewhere on purpose).
 
 .EXAMPLE
-    .\Add-RelayImprovement.ps1 -Room 2026-10-10-docs -ProjectFolder C:\work\plugin
+    .\Add-RelayImprovement.ps1 -Room 2026-10-10-docs
+
+.EXAMPLE
+    .\Add-RelayImprovement.ps1 -Room 2026-10-10-docs -ProjectFolder C:\work\plugin-notes
 
 .NOTES
     Windows PowerShell 5.1 syntax, ASCII only.
@@ -61,15 +68,17 @@ foreach ($line in ($section -split "`n")) {
 }
 
 $date = Format-RelayUtc -Format 'yyyy-MM-dd'
+# The file is the plugin's own backlog: it lives at the root of the plugin's git working copy, where the
+# fixes are made. An installed copy has no repository to commit it in, so there the section waits on this PC.
 if ($ProjectFolder) {
     $file = Join-Path (Get-RelayNormalPath $ProjectFolder) 'PLUGIN-IMPROVEMENTS.md'
 }
-elseif ([string](Get-RelayValue $roomObject.Info 'project_folder' '')) {
-    $file = Join-Path (Get-RelayNormalPath ([string](Get-RelayValue $roomObject.Info 'project_folder' ''))) 'PLUGIN-IMPROVEMENTS.md'
+elseif (Test-RelayWorkingCopy) {
+    $file = Join-Path (Get-RelayRepoRoot) 'PLUGIN-IMPROVEMENTS.md'
 }
 else {
     $file = Join-Path $roomObject.Local 'PLUGIN-IMPROVEMENTS.md'
-    ConvertTo-RelayPrintedLine "WARNING: no project folder is named for room $($roomObject.Id) (no -ProjectFolder and no project_folder in its answers): the section goes to this PC instead: $file"
+    ConvertTo-RelayPrintedLine "WARNING: this copy of the plugin is not a git working copy and no -ProjectFolder was given: the section goes to this PC instead: $file (move it into the plugin repository later)"
 }
 # The file is written with this PC's rights, so it never lies inside the room, also not by way of a link: an
 # agent could put a link in place of it there, and the write would follow it. A file that is a link is refused
