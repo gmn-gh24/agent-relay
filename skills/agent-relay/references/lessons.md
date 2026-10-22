@@ -930,3 +930,24 @@ five products; twelve branches were accepted in two and a half hours, eighteen m
   (one folder per client config) and check that its `wait` runs before sending the first task. Not changed yet: the
   scan should skip per-item errors, `-Roots` should warn about a profile or drive root, and a missing root should count
   as empty (the room's improvements file lists them).
+
+## 2026-10-21/22: a SYSTEM test room with one elevated tester and a coordinator who writes all the code (0.13.0)
+
+One script, four live-test rounds, one agent of Claude Code on a disposable virtual machine; the coordinator
+wrote every fix, the agent ran the rounds and reported evidence. Four real defects came out of the agent's
+probes; six restages; no owner card. Promoted from the room's record with the owner's approval:
+
+- **A task that restarts the machine ends the agent's session; the restart is the last step and the
+  replacement is prepared before it.** The second task asked the agent to restart the machine and carry on;
+  the session died with the restart, the new terminal came up unelevated, and the owner had to ask for a
+  rejoin prompt while the agent's own `start` refused ("the session is still alive") although nothing of it
+  ran any more. What worked afterwards: `Add-RelayAgent.ps1 -Replace <name> -Force` with `-Clipboard` the
+  moment the "restarting now" progress line arrives, and a task that says "start the new session elevated".
+  Not changed yet: a seat lease that ends with a reboot, and a restart procedure in the agent instructions
+  (the room's improvements file lists both).
+- **The task word filter refused every task of the room, and `anyway` dropped the minutes.** Eleven tasks,
+  eleven NOT SENT blocks, all false positives on generic words of the assignment's own lines ("test",
+  "stop", "remove", "commit" in "host background command", "msi", "json", "hashes"). Every task went out
+  with `task <name> anyway`, and that form carried the room default of 20 minutes instead of the 30 or 45
+  given on the line, so every OVERDUE threshold was wrong. Not changed yet: `anyway` keeps the minutes
+  argument, and the filter matches phrases or ignores generic verbs (the improvements file lists it).
