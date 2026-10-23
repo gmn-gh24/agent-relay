@@ -994,3 +994,20 @@ seat. Promoted with the owner's approval:
   the Claude Code agent kind (and the coordinator's own practice) says one delete per command, and no copy or
   registry tool switches in a command that also deletes; message text goes into the draft file by a file write,
   never by a command that embeds it.
+## 2026-10-23: one elevated agent on a remote test machine watching a managed install (a share, two subnets)
+
+- **A background-command agent cannot be woken by a poller it must keep alive.** The agent's watcher exited at
+  every milestone so that its end would wake the agent, then resumed from a state file; the minute between
+  exit and restart had no registry snapshots, and the one window that mattered fell into it. Promoted from the
+  room's bye with the owner's approval: a long watch on such an agent is two processes, a poller that only
+  writes a log and a short waiter that ends on a marker file (or the host's background command restarted
+  after each wake). Not changed yet: `agent-kinds.md` should say so for the products that wake this way (the
+  room's improvements file lists it).
+- **The management agent acted within a minute of the portal change**, before the owner's word reached the
+  coordinator; the "quiet window" the task promised had already passed. The watcher must run before the owner
+  touches the console, and a task should not count a window from a time the coordinator does not have.
+- **`task <name> anyway` dropped the minutes of the refused send** (expected fell back to the default), and the
+  keyword check refused a read-only data-collection task on nouns inside a registry path and a folder name.
+  Not changed yet; both are on the improvements file with the proposed fixes.
+- **A read-only root on a system-written log folder** filled the self-audit with the system's own rotation.
+  Changed: a local note; proposed in the improvements file: an observe-only root flag.
