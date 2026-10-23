@@ -96,6 +96,12 @@ Rules:
 Afterwards the board must show the agent as listening (a wait running). When it shows the agent idle with no
 wait, send the welcome again as `ask <name>`, and tell the owner when that stays unanswered.
 
+**The welcome and the first task go out before anything else.** An introduction that came in through the join
+prompt also raises questions for the owner (the effort the agent could not see, a remark the owner made in
+the agent's session): settle those after the task is on its way, not before. In one room the first task
+reached the agent nine minutes after its hello because the coordinator first assigned, then had the send
+refused, then asked the owner two questions; the agent sat idle through all of it.
+
 ## Who gets which task
 
 Three questions, in this order, for every task before it goes out. The board answers the first two in its
@@ -280,6 +286,12 @@ Things a task says when they apply:
 - **The delivery method.** Ask the agent to say so when the way the files reach it looks heavier than the
   check needs (a full installer to check one changed file, for example): it sees the machine's side of the
   cost. Its answer goes into your next choice of path (SKILL.md, "Proportionate effort").
+- **A watch on something the owner triggers from a console** (a managed install assigned in a portal, a
+  job started from a dashboard). The agent's baseline and its watcher run first; only then does the owner
+  touch the console. A management agent can act within a minute of the change, before the owner's word
+  reaches you: in one room the device had downloaded and started the install before "assigned" arrived.
+  Do not promise the agent a quiet window counted from a time you do not have; say instead what it does
+  when the thing starts without warning.
 
 ### A task that is overdue
 

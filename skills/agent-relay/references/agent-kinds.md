@@ -122,6 +122,11 @@ it has one, with a mark in front that moves while it works. The room tool's tab 
 the first live room. While the agent works on a task Claude Code's own title is back. If the name should stay
 then as well, the owner can type `/rename <Name>` in that session (Claude Code shows a session's name on its
 tab), or start it with the environment variable `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`.
+A long watch (polling a log or the registry for an hour) is two processes, not one: a poller that only writes
+its log and never stops for a milestone, and a short waiter that ends on a marker file the poller writes, so
+that its end wakes the agent. One agent made a single script exit at every milestone to wake itself and resume
+from a state file; the minute between exit and restart had no snapshots, and the one window that mattered fell
+into it. The agent starts both with the host's background command and sends a `progress` line on each wake.
 Its command tool shows every exit code but 0 as an error: `robocopy` returns 1 for "files were copied", and
 an agent that copies a kit with it reports a failed copy, or copies again, until it reads the code. A task
 that has it copy files says so (`robocopy` codes below 8 are success), or has it copy with `Copy-Item`.

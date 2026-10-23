@@ -130,6 +130,20 @@ Each is minutes of work with a test or a text change. Not done in 0.10.0; the ow
 - **Q35. The `task` word-match refusal** (`NOT SENT`, "two of that line's telling words") fired on most tasks
   of that room, so `anyway` was needed almost every time. Narrow the match, or the default "Never" lines of a
   tester assignment. Evidence: the room's transcript in the archive. Start with a test on real task texts.
+  More evidence (2026-10-23, a monitoring room): a read-only data-collection task was refused on the noun
+  "uninstall" inside "both HKLM Uninstall hives" and inside the CamelCase log folder name
+  `UninstallVirtualDesktopStreamer`, against a "Never" line about installing and a non-goal about uninstalling
+  on the agent's own initiative. Proposed narrowing: no hit inside a backslash path, a quoted string or a
+  CamelCase identifier; a noun followed by "hives", "entries", "log", "logs", "folder" or "key" is a name, not
+  a request.
+- **Q39. An observe-only root.** A root given read-only on a folder the system writes to (a management agent's
+  log folder, rotated during the task) filled the agent's self-audit with the system's own writes: 11 OUTSIDE
+  lines (M, A and D) in one report, which the agent then had to explain in a note of its own, and the
+  coordinator had to read as noise. Proposed: a root flag such as `<folder>=observe` (or treating every bare,
+  read-only root this way) that lists changes under "changed in a read-only root (not the agent's)" instead
+  of OUTSIDE, so OUTSIDE keeps meaning the agent's own writes. Evidence: the vds-streamer-intune-upgrade section
+  of `PLUGIN-IMPROVEMENTS.md`. Needs the self-audit format in `RelayCommon.psm1`, the coordinator's reading of
+  it (`coordinating.md`, "Results") and a test with a fixture folder that changes under the agent.
 
 ### Agent-kind table (`agent-kinds.json`, `agent-kinds.md`)
 

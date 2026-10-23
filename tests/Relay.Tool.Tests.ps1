@@ -217,6 +217,11 @@ Describe 'Room tool on <Engine>' -Tag 'Tool' -ForEach $engineCases {
             $blocked.Output | Should -Match '(?m)^  Emma, Never: Push, publish, deploy or send anything outside this room\.   \(the task says: push, publish\)$'
             $blocked.Output | Should -Match 'NEXT: if the task needs it, change the assignment first \(scripts\\Add-RelayAgent\.ps1 -Assign emma'
             $blocked.Output | Should -Match ' task emma anyway'
+            # A refused send that carried the minutes gets them back in the hint: a coordinator who copies the
+            # hint keeps the task's time (one room resent without it and the task fell to the room's default)
+            $blockedTimed = Send-RelayTestMessage -Room $room -Agent 'olivia' -Engine $engine -Words @('task', 'emma', '45') -Text "Publish the package`n`nPush the branch and publish the package to the feed."
+            $blockedTimed.ExitCode | Should -Be 1
+            $blockedTimed.Output | Should -Match ' task emma 45 anyway'
             # The draft stays, and nothing reached the agent
             Test-Path -LiteralPath (Join-Path $room 'agents\olivia\draft.md') | Should -BeTrue
             @(Get-RelayTestInbox -Room $room -Agent 'emma').Count | Should -Be 0

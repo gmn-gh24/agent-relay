@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.2 (2026-10-23)
+
+- **The `NOT SENT` hint keeps the task's minutes.** When a `task <name> <minutes>` is refused by the
+  assignment check, the hint now reads `task <name> <minutes> anyway`, so a coordinator who copies it resends
+  with the same time. One room copied the hint without the number and the task fell to the room's default
+  (15 instead of 65 minutes). Room package 3.8.1; a test covers the hint with and without a number.
+- **Coordinator guidance from a monitoring room.** `coordinating.md`: the welcome and the first task go out
+  before the owner's questions about the arrival are settled (the first task once reached an idle agent nine
+  minutes after its hello); a watch on something the owner triggers from a console starts before the owner
+  touches it, since a management agent can act within a minute (the device had started the install before
+  "assigned" arrived). `agent-kinds.md`, Claude Code: a long watch is two processes, a poller that never stops
+  and a short waiter that ends on a marker file; a poller that exits to wake the agent leaves gaps.
+- Roadmap: Q35 (the task word filter) gets this room's evidence and a proposed narrowing; new Q39, an
+  observe-only root, so a system-written log folder given read-only does not fill the self-audit with OUTSIDE.
+
 ## 0.13.1 (2026-10-22)
 
 - **The room's improvement notes live with the plugin.** `Add-RelayImprovement.ps1` appends the room's

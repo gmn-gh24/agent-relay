@@ -31,7 +31,7 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     $env:PSModulePath = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules') + ';' + (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules') + ';' + (Join-Path $PSHOME 'Modules')
 }
 
-$script:ToolVersion = '3.8.0'
+$script:ToolVersion = '3.8.1'
 $script:Protocol = '3'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 try { [Console]::OutputEncoding = $script:Utf8 } catch { $null = $_ }
@@ -3948,7 +3948,10 @@ function Invoke-Send {
         if ($conflicts.Count -gt 0) {
             Say 'NOT SENT: this task may run into the receiver''s assignment, which says'
             foreach ($conflictLine in $conflicts) { Say (ConvertTo-PrintableText $conflictLine) }
-            Say "NEXT: if the task needs it, change the assignment first (scripts\Add-RelayAgent.ps1 -Assign $($targets -join ',') with the wider -May, -ProposeOk or -Never), then send the task again. If it does not, send it as it is: $call task $($targets[0]) anyway   (your draft is still there)"
+            # The hint repeats the minutes of this attempt: a coordinator who copies it keeps the task's time
+            $minutesHint = ''
+            if ($numbers.Count -eq 1) { $minutesHint = "$($numbers[0]) " }
+            Say "NEXT: if the task needs it, change the assignment first (scripts\Add-RelayAgent.ps1 -Assign $($targets -join ',') with the wider -May, -ProposeOk or -Never), then send the task again. If it does not, send it as it is: $call task $($targets[0]) ${minutesHint}anyway   (your draft is still there)"
             return 1
         }
     }
