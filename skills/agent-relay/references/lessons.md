@@ -1011,3 +1011,18 @@ seat. Promoted with the owner's approval:
   Not changed yet; both are on the improvements file with the proposed fixes.
 - **A read-only root on a system-written log folder** filled the self-audit with the system's own rotation.
   Changed: a local note; proposed in the improvements file: an observe-only root flag.
+## 2026-10-23: a pre-deployment test of a module family on a disposable test machine (one elevated agent, five tasks)
+
+- **Pester 6.2 on Windows PowerShell 5.1 fails before discovery when the current location is a UNC path**
+  ("FindRepoRoot ... The given path's format is not supported"); PowerShell 7 copes. An agent that joined from
+  the share keeps the share as its working directory, so its first 5.1 suite pass died in two seconds per suite
+  and had to be rerun. Every test task says "from a local working directory (Set-Location to a local folder
+  first)". Not changed yet: the join's instructions should tell the agent to work from a local folder.
+- **PsExec as SYSTEM loses a redirected child's stdout** (only fragments survived `PsExec64 -s powershell -File
+  x.ps1 > out`). The reliable form captures inside the child: `PsExec64 -s powershell.exe -Command "& '<script>'
+  *> '<file>'; exit $LASTEXITCODE"`, which keeps the script's exit code.
+- **A kit of only the folder under test is not enough when the suites belong to a larger repository.** Tests that
+  compare files elsewhere in the repository (reference copies, packaging profiles) failed by the dozen on the
+  remote machine although the code was fine; staging the repository's working tree without `.git` and with a
+  size filter (`robocopy /MAX`, here 576 files, 21 MB) brought every suite to the dev machine's totals in one
+  round. Put the checksum file inside every folder a copy command names, or it does not travel with it.

@@ -160,3 +160,31 @@ One agent (Claude Code CLI, strong model, effort set by the owner to medium, ele
 
 ## Statistics
 messages 11 in 13 min (hello 1, note 6, task 1, question 1, answer 1, result 1); requests 2 answered 2; reply median 4 min, longest 9 min (the first task); cards to owner 0; outside-path reports 1 (11 entries, all system log rotation); tamper alarms 0; agents: alice 5 sent / 6 received, kate 6 sent / 5 received, one second-wait, no timeouts, no silence.
+
+## Room teamswebhook-color-markup-vm-test (closed 2026-10-23)
+
+Pre-deployment test of a PowerShell module family on a disposable, Intune-enrolled test VM: SYSTEM deploy lifecycle, all module Pester suites on both editions, one live Teams card, a regression run of a consumer script, and a final deploy from the exact package payload. One coordinator, one elevated Claude Code agent on the VM, room on a NAS share.
+
+### What the owner asked for (owner's words)
+- "When the modules are 100% green and ready, ask me and I'll set up a VM so we can use agent relay and test the module deployment and all the modules and the new features, everything in a remote machine before deployment."
+- "When absolutely all is 100% green and fully tested commit and push to main, also package the modules for Intune deployment having tested the deployment on the VM first with all the latest version, run all tests, test all modules on the remote vm, then package it."
+
+### Statistics
+- Agents: 1 (elevated, background waker). Tasks: 5, all delivered and answered faster than their estimate (estimates 10/20/15/25/30 min; reports after about 3, 4, 2, 10 and 8 min). Questions: 1. Proposals: 0. Owner cards: 0. Room open about 40 minutes.
+- Result rounds lost: 2 (task 4 harness rerun on the agent's side; task 4 kit gap on the coordinator's side, fixed in task 5).
+
+### Findings and proposed changes
+1. Task-send guard false positives (every task needed `anyway`). Evidence: task 1 was refused because the non-goal line "uninstalling apps not named in a task" matched the word "named" in a read-only check ("has a value named WebhookUri"); task 2 was refused on "uninstalling" although the uninstall step had been added to the agent's may-list one command earlier. Proposal: (a) do not match a non-goal word that only appears as a participle/adjective inside a noun phrase ("a value named"); (b) when the matched task sentence is also covered by a line of the receiver's `may` list, send and print `COVERED BY MAY: <line>` instead of refusing.
+2. Repeated hello from one agent. Evidence: the agent sent three hello messages within 70 seconds (effort unknown, then medium, then high), apparently re-running start after its user changed the effort setting. Proposal: on a repeated start of the same generation within a few minutes, the board shows one line "re-introduced: effort unknown -> high" instead of three full hello messages; document in coordinating.md that a re-hello with changed effort needs no action.
+3. Kit for a repo with repo-wide consistency tests. Evidence: a kit holding only the module folder made 52 of 1,200+ tests fail on the VM (tests that compare files elsewhere in the repository). Staging the repository working tree without .git and without files over 5 MB (576 files, 21 MB, robocopy /MAX) fixed it in one round. Proposal: multi-builder.md / coordinating.md "stage a kit" note: when the suites belong to a larger repository, stage the working tree with a size filter, not only the folder under test.
+4. Planned work folders not foreseen in the assignment. Evidence: task 5 used three new local folders; the agent correctly stopped and asked, costing one round. Proposal: coordinating.md, assignment hint for test jobs on a disposable machine: grant one parent work folder (for example `C:\temp\<job>=*`) instead of one folder per task.
+5. Agent working directory stays on the share after join. Evidence: the agent's cwd was the UNC room share; Pester 6.2 on Windows PowerShell 5.1 throws before discovery when the current location is a UNC path ("FindRepoRoot ... path's format is not supported"), costing a full rerun of 8 suites. Proposal: the agent instructions printed by join say "work from a local folder: Set-Location to your local work folder before running anything"; lessons.md entry for the Pester/UNC trap.
+6. PsExec as SYSTEM loses redirected stdout. Evidence: `PsExec64 -s powershell -File x.ps1 > out` kept only fragments; the reliable capture was `powershell -Command "& '<script>' *> '<file>'; exit $LASTEXITCODE"` inside the PsExec call. Proposal: lessons.md entry (SYSTEM test runs through PsExec: capture inside the child).
+7. Checksum file placement. Evidence: the package checksum file sat one folder above the folder the task told the agent to copy, so it did not travel with it. Proposal: coordinating.md "Where to work": put the checksum file inside every folder you name in a copy command.
+8. Host without the chat-window bind tool. Evidence: the coordinator ran in a desktop host with no `relay_bind`; the feed ran in a terminal tab opened by the host's own terminal tool and stayed green the whole room. Proposal: SKILL.md step 6 names this as the second route ("a terminal tab your host can open and keep") so a coordinator does not look for a bind tool that is not there.
+
+### Coordinator mistakes and workarounds
+- Wrote an import check that expected six top-level modules; the umbrella loads its children nested, so only one showed. The agent stopped and diagnosed correctly; the expectation, not the product, was wrong. Lesson: verify a check script's expectation locally before it goes into a task.
+- Staged a module-only kit (finding 3) and misplaced a checksum file (finding 7).
+- Did not foresee the later work folders in the assignment (finding 4).
+- Used `task ... anyway` for every task after checking each matched sentence (finding 1).
